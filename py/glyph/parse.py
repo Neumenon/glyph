@@ -591,12 +591,16 @@ class Parser:
 
     def _parse_tabular_row(self, cols: List[str]) -> GValue:
         """Parse a single tabular row: |val|val|val|"""
-        self.expect(TokenType.PIPE)
+        # The current token is PIPE. The lexer.pos is right after the pipe character.
+        # We need to read raw characters for each cell, not tokenize them.
+        if self.current.type != TokenType.PIPE:
+            raise ValueError(f"expected |, got {self.current.type}")
+
+        # lexer.pos is right after the opening pipe - that's where cell content starts
         entries = []
 
         for i, col in enumerate(cols):
-            # Read until next pipe
-            cell_start = self.lexer.pos
+            # Read until next pipe (handling escapes)
             cell_chars = []
 
             while self.lexer.pos < self.lexer.length:
@@ -620,10 +624,10 @@ class Parser:
                 cell_chars.append(c)
                 self.lexer.pos += 1
 
-            # Expect pipe after cell
+            # Must have a pipe after cell
             if self.lexer.pos >= self.lexer.length or self.lexer.text[self.lexer.pos] != '|':
                 raise ValueError("expected | after cell")
-            self.lexer.pos += 1
+            self.lexer.pos += 1  # Skip the closing pipe
 
             cell_text = "".join(cell_chars).strip()
 
@@ -636,7 +640,7 @@ class Parser:
 
             entries.append(MapEntry(col, value))
 
-        # Update current token
+        # Now get the next token (should be NEWLINE or @)
         self.current = self.lexer.next_token()
 
         return GValue.map_(*entries)
