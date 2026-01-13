@@ -36,16 +36,16 @@
     "gs1",
     "sjson"
   ],
-  "author": "phenomenon0",
-  "license": "MIT",
+  "author": "Neumenon",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/phenomenon0/Agent-GO.git",
-    "directory": "sjson/glyph-js"
+    "url": "https://github.com/Neumenon/glyph.git",
+    "directory": "js"
   },
-  "homepage": "https://github.com/phenomenon0/Agent-GO/tree/main/sjson/glyph-js#readme",
+  "homepage": "https://github.com/Neumenon/glyph/tree/main/js#readme",
   "bugs": {
-    "url": "https://github.com/phenomenon0/Agent-GO/issues"
+    "url": "https://github.com/Neumenon/glyph/issues"
   },
   "publishConfig": {
     "access": "public",

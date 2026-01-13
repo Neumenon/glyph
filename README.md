@@ -154,4 +154,4 @@ See [COOKBOOK.md](./docs/COOKBOOK.md) for detailed examples.
 
 ---
 
-MIT License · Built for AI agents by [Neumenon](https://neumenon.ai)
+Apache 2.0 License · Built for AI agents by [Neumenon](https://neumenon.ai)

@@ -7,7 +7,7 @@ name = "glyph-serial"
 version = "1.0.0"
 description = "Token-efficient serialization for AI agents"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 authors = [
     {name = "Neumenon", email = "contact@neumenon.ai"}
 ]
@@ -15,7 +15,7 @@ keywords = ["serialization", "json", "llm", "ai", "tokens", "glyph"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

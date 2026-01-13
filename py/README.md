@@ -189,4 +189,4 @@ pip install -e .
 
 ## License
 
-MIT
+Apache 2.0
