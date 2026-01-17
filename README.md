@@ -25,7 +25,8 @@ GLYPH: {action=search query="weather in NYC" max_results=10}
 | **Go** | `go get github.com/Neumenon/glyph` | [go/](./go/) |
 | **Python** | `pip install glyph-serial` | [py/](./py/) |
 | **JavaScript** | `npm install glyph-js` | [js/](./js/) |
-| **Rust** | *In progress* | [rs/](./rs/) |
+| **Rust** | `cargo add glyph-codec` | [rust/](./rust/glyph-codec/) |
+| **C** | `make` (see [README](./c/glyph-codec/)) | [c/](./c/glyph-codec/) |
 
 ## Quick Start
 
@@ -64,6 +65,28 @@ console.log(value.get('action'));  // search
 
 const text = emit(fromJSON({ name: 'Alice', scores: [95, 87, 92] }));
 // {name=Alice scores=[95 87 92]}
+```
+
+**Rust**
+```rust
+use glyph_codec::{from_json, canonicalize_loose};
+use serde_json::json;
+
+let data = json!({"action": "search", "query": "weather"});
+let gvalue = from_json(&data);
+let glyph = canonicalize_loose(&gvalue);
+// {action=search query=weather}
+```
+
+**C**
+```c
+#include "glyph.h"
+
+glyph_value_t *v = glyph_from_json("{\"action\": \"search\"}");
+char *glyph = glyph_canonicalize_loose(v);
+// {action=search}
+glyph_free(glyph);
+glyph_value_free(v);
 ```
 
 ## Token Savings

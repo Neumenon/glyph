@@ -748,6 +748,37 @@ func detectTabular(items []*GValue, opts LooseCanonOpts) ([]string, bool) {
 				return nil, false
 			}
 		}
+	} else {
+		// Even with AllowMissing, don't use tabular if items have mostly disjoint keys
+		// (this would result in mostly-null rows which defeats the purpose)
+		// Find common keys across all items
+		firstKeys := make(map[string]struct{})
+		for _, k := range getObjectKeys(items[0]) {
+			firstKeys[k] = struct{}{}
+		}
+
+		commonKeys := make(map[string]struct{})
+		for k := range firstKeys {
+			commonKeys[k] = struct{}{}
+		}
+
+		for _, item := range items[1:] {
+			itemKeys := make(map[string]struct{})
+			for _, k := range getObjectKeys(item) {
+				itemKeys[k] = struct{}{}
+			}
+			// Intersect with commonKeys
+			for k := range commonKeys {
+				if _, ok := itemKeys[k]; !ok {
+					delete(commonKeys, k)
+				}
+			}
+		}
+
+		// If less than half the keys are common, don't use tabular
+		if len(commonKeys) < len(keySet)/2 {
+			return nil, false
+		}
 	}
 
 	return cols, true

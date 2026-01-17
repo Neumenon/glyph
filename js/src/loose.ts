@@ -87,7 +87,7 @@ export interface LooseCanonOpts {
  * Default options for loose canonicalization with smart auto-tabular ENABLED.
  * Lists of 3+ homogeneous objects are automatically emitted as @tab blocks.
  * Non-eligible data gracefully falls back to standard format.
- * Uses ∅ for null (human-readable default).
+ * Uses _ for null (ASCII-safe, LLM-friendly - matches Go/Python).
  */
 export function defaultLooseCanonOpts(): LooseCanonOpts {
   return {
@@ -95,7 +95,7 @@ export function defaultLooseCanonOpts(): LooseCanonOpts {
     minRows: 3,
     maxCols: 20,
     allowMissing: true,
-    nullStyle: 'symbol',
+    nullStyle: 'underscore',
   };
 }
 
@@ -120,6 +120,20 @@ export function llmLooseCanonOpts(): LooseCanonOpts {
 export function noTabularLooseCanonOpts(): LooseCanonOpts {
   return {
     autoTabular: false,
+    minRows: 3,
+    maxCols: 20,
+    allowMissing: true,
+    nullStyle: 'underscore',
+  };
+}
+
+/**
+ * Options for human-readable "pretty" output.
+ * Uses ∅ for null (unicode symbol) for nicer visual appearance.
+ */
+export function prettyLooseCanonOpts(): LooseCanonOpts {
+  return {
+    autoTabular: true,
     minRows: 3,
     maxCols: 20,
     allowMissing: true,
@@ -468,8 +482,26 @@ function detectTabular(items: GValue[], opts: LooseCanonOpts): string[] | null {
         }
       }
     }
+  } else {
+    // Even with allowMissing, don't use tabular if items have mostly disjoint keys
+    // (this would result in mostly-null rows which defeats the purpose)
+    // Find common keys across all items
+    let commonKeys = new Set(rowKeys[0]);
+    for (let i = 1; i < rowKeys.length; i++) {
+      const itemKeys = rowKeys[i];
+      for (const k of commonKeys) {
+        if (!itemKeys.has(k)) {
+          commonKeys.delete(k);
+        }
+      }
+    }
+
+    // If less than half the keys are common, don't use tabular
+    if (commonKeys.size < allKeys.size / 2) {
+      return null;
+    }
   }
-  
+
   // Sort keys by bytewise UTF-8 (same as canonString comparison)
   const cols = [...allKeys].sort((a, b) => {
     const ca = canonString(a);
