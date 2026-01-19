@@ -32,8 +32,6 @@ const (
 	TokenRBracket // ]
 	TokenLParen   // (
 	TokenRParen   // )
-	TokenLT       // <
-	TokenGT       // >
 	TokenEq       // = or :
 	TokenComma    // , (optional)
 	TokenPipe     // |
@@ -83,10 +81,6 @@ func (t TokenType) String() string {
 		return "("
 	case TokenRParen:
 		return ")"
-	case TokenLT:
-		return "<"
-	case TokenGT:
-		return ">"
 	case TokenEq:
 		return "EQ"
 	case TokenComma:
@@ -188,12 +182,6 @@ func (l *Lexer) nextToken() Token {
 	case ')':
 		l.advance()
 		return Token{Type: TokenRParen, Value: ")", Pos: startPos}
-	case '<':
-		l.advance()
-		return Token{Type: TokenLT, Value: "<", Pos: startPos}
-	case '>':
-		l.advance()
-		return Token{Type: TokenGT, Value: ">", Pos: startPos}
 	case '=', ':':
 		l.advance()
 		return Token{Type: TokenEq, Value: string(ch), Pos: startPos}

@@ -748,37 +748,6 @@ func detectTabular(items []*GValue, opts LooseCanonOpts) ([]string, bool) {
 				return nil, false
 			}
 		}
-	} else {
-		// Even with AllowMissing, don't use tabular if items have mostly disjoint keys
-		// (this would result in mostly-null rows which defeats the purpose)
-		// Find common keys across all items
-		firstKeys := make(map[string]struct{})
-		for _, k := range getObjectKeys(items[0]) {
-			firstKeys[k] = struct{}{}
-		}
-
-		commonKeys := make(map[string]struct{})
-		for k := range firstKeys {
-			commonKeys[k] = struct{}{}
-		}
-
-		for _, item := range items[1:] {
-			itemKeys := make(map[string]struct{})
-			for _, k := range getObjectKeys(item) {
-				itemKeys[k] = struct{}{}
-			}
-			// Intersect with commonKeys
-			for k := range commonKeys {
-				if _, ok := itemKeys[k]; !ok {
-					delete(commonKeys, k)
-				}
-			}
-		}
-
-		// If less than half the keys are common, don't use tabular
-		if len(commonKeys) < len(keySet)/2 {
-			return nil, false
-		}
 	}
 
 	return cols, true
@@ -1257,48 +1226,27 @@ func unquoteString(s string) (string, error) {
 	b.Grow(len(inner))
 
 	for i := 0; i < len(inner); i++ {
-		if inner[i] != '\\' {
+		if inner[i] == '\\' && i+1 < len(inner) {
+			next := inner[i+1]
+			switch next {
+			case '\\':
+				b.WriteByte('\\')
+			case '"':
+				b.WriteByte('"')
+			case 'n':
+				b.WriteByte('\n')
+			case 'r':
+				b.WriteByte('\r')
+			case 't':
+				b.WriteByte('\t')
+			default:
+				// Unknown escape - keep as is
+				b.WriteByte('\\')
+				b.WriteByte(next)
+			}
+			i++
+		} else {
 			b.WriteByte(inner[i])
-			continue
-		}
-		if i+1 >= len(inner) {
-			return "", fmt.Errorf("unterminated escape in string")
-		}
-
-		next := inner[i+1]
-		switch next {
-		case '\\':
-			b.WriteByte('\\')
-			i++
-		case '"':
-			b.WriteByte('"')
-			i++
-		case 'n':
-			b.WriteByte('\n')
-			i++
-		case 'r':
-			b.WriteByte('\r')
-			i++
-		case 't':
-			b.WriteByte('\t')
-			i++
-		case 'u':
-			// Unicode escape: \uXXXX (canonical output uses \u00XX for control chars)
-			if i+5 >= len(inner) {
-				return "", fmt.Errorf("invalid unicode escape")
-			}
-			hexStr := inner[i+2 : i+6]
-			v, err := strconv.ParseUint(hexStr, 16, 16)
-			if err != nil {
-				return "", fmt.Errorf("invalid unicode escape: %s", hexStr)
-			}
-			b.WriteRune(rune(v))
-			i += 5
-		default:
-			// Unknown escape - keep as is
-			b.WriteByte('\\')
-			b.WriteByte(next)
-			i++
 		}
 	}
 
