@@ -113,6 +113,14 @@ const (
 	ErrCodeConstraintPat   = "CONSTRAINT_PATTERN"
 	ErrCodeConstraintEnum  = "CONSTRAINT_ENUM"
 	ErrCodeInvalidType     = "INVALID_TYPE"
+	ErrCodeLimitExceeded   = "LIMIT_EXCEEDED"
+)
+
+// Default limits
+const (
+	DefaultMaxBuffer = 1 << 20 // 1MB
+	DefaultMaxFields = 1000
+	DefaultMaxErrors = 100
 )
 
 // ============================================================
@@ -162,6 +170,11 @@ type StreamingValidator struct {
 
 	// Timeline events
 	timeline []TimelineEvent
+
+	// Hard limits to prevent OOM
+	maxBufferSize int
+	maxFieldCount int
+	maxErrorCount int
 }
 
 // TimelineEvent records a significant event during validation.
@@ -175,9 +188,25 @@ type TimelineEvent struct {
 
 // NewStreamingValidator creates a new validator with the given registry.
 func NewStreamingValidator(registry *ToolRegistry) *StreamingValidator {
-	v := &StreamingValidator{
-		registry:     registry,
-		parsedFields: make(map[string]interface{}),
+	return &StreamingValidator{
+		registry:      registry,
+		parsedFields:  make(map[string]interface{}),
+		maxBufferSize: DefaultMaxBuffer,
+		maxFieldCount: DefaultMaxFields,
+		maxErrorCount: DefaultMaxErrors,
+	}
+}
+
+// WithLimits sets custom limits. Returns self for chaining.
+func (v *StreamingValidator) WithLimits(bufSize, fieldCount, errCount int) *StreamingValidator {
+	if bufSize > 0 {
+		v.maxBufferSize = bufSize
+	}
+	if fieldCount > 0 {
+		v.maxFieldCount = fieldCount
+	}
+	if errCount > 0 {
+		v.maxErrorCount = errCount
 	}
 	return v
 }
@@ -277,6 +306,16 @@ func (v *StreamingValidator) PushToken(token string) *StreamValidationResult {
 }
 
 func (v *StreamingValidator) processChar(char rune) {
+	// Check hard limits before processing
+	if v.buffer.Len() >= v.maxBufferSize {
+		v.state = StateError
+		return
+	}
+	if len(v.parsedFields) >= v.maxFieldCount {
+		v.state = StateError
+		return
+	}
+
 	v.buffer.WriteRune(char)
 
 	// Handle escape sequences

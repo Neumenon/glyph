@@ -221,7 +221,7 @@ func TestFIDRenameSafety(t *testing.T) {
 	}
 
 	score := result.Get("score")
-	if score == nil || score.AsInt() != 2 {
+	if score == nil || mustAsInt(t, score) != 2 {
 		t.Errorf("Expected score = 2, got %v", score)
 	}
 }

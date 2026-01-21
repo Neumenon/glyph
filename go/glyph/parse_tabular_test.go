@@ -48,17 +48,17 @@ func TestTabularReaderBasic(t *testing.T) {
 
 	// Check first row values
 	id := row1.Get("id")
-	if id == nil || id.AsInt() != 1 {
+	if id == nil || mustAsInt(t, id) != 1 {
 		t.Errorf("row1.id = %v, want 1", id)
 	}
 
 	name := row1.Get("name")
-	if name == nil || name.AsStr() != "Blue Lake Trail" {
+	if name == nil || mustAsStr(t, name) != "Blue Lake Trail" {
 		t.Errorf("row1.name = %v, want 'Blue Lake Trail'", name)
 	}
 
 	distance := row1.Get("distance")
-	if distance == nil || distance.AsFloat() != 7.5 {
+	if distance == nil || mustAsFloat(t, distance) != 7.5 {
 		t.Errorf("row1.distance = %v, want 7.5", distance)
 	}
 
@@ -67,7 +67,7 @@ func TestTabularReaderBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Next row 2 error: %v", err)
 	}
-	if row2.Get("name").AsStr() != "Ridge Overlook" {
+	if mustAsStr(t, row2.Get("name")) != "Ridge Overlook" {
 		t.Errorf("row2.name = %v, want 'Ridge Overlook'", row2.Get("name"))
 	}
 
@@ -75,7 +75,7 @@ func TestTabularReaderBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Next row 3 error: %v", err)
 	}
-	if row3.Get("name").AsStr() != "Wildflower Loop" {
+	if mustAsStr(t, row3.Get("name")) != "Wildflower Loop" {
 		t.Errorf("row3.name = %v, want 'Wildflower Loop'", row3.Get("name"))
 	}
 
@@ -208,7 +208,7 @@ func TestTabularReaderFIDColumns(t *testing.T) {
 	if rows[0].Get("id").idVal.Value != "ARS" {
 		t.Errorf("rows[0].id = %v, want 'ARS'", rows[0].Get("id"))
 	}
-	if rows[0].Get("name").AsStr() != "Arsenal" {
+	if mustAsStr(t, rows[0].Get("name")) != "Arsenal" {
 		t.Errorf("rows[0].name = %v, want 'Arsenal'", rows[0].Get("name"))
 	}
 }
@@ -256,11 +256,11 @@ func TestTabularRoundTrip(t *testing.T) {
 	}
 
 	// Compare
-	if parsed[0].Get("name").AsStr() != "Blue Lake Trail" {
-		t.Errorf("parsed[0].name = %q, want 'Blue Lake Trail'", parsed[0].Get("name").AsStr())
+	if mustAsStr(t, parsed[0].Get("name")) != "Blue Lake Trail" {
+		t.Errorf("parsed[0].name = %q, want 'Blue Lake Trail'", mustAsStr(t, parsed[0].Get("name")))
 	}
-	if parsed[1].Get("distance").AsFloat() != 9.2 {
-		t.Errorf("parsed[1].distance = %v, want 9.2", parsed[1].Get("distance").AsFloat())
+	if mustAsFloat(t, parsed[1].Get("distance")) != 9.2 {
+		t.Errorf("parsed[1].distance = %v, want 9.2", mustAsFloat(t, parsed[1].Get("distance")))
 	}
 }
 

@@ -232,92 +232,125 @@ func (v *GValue) IsNull() bool {
 	return v == nil || v.typ == TypeNull
 }
 
-// AsBool returns the boolean value. Panics if not a bool.
-func (v *GValue) AsBool() bool {
+// AsBool returns the boolean value.
+func (v *GValue) AsBool() (bool, error) {
+	if v == nil {
+		return false, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeBool {
-		panic("glyph: not a bool")
+		return false, fmt.Errorf("glyph: expected bool, got %s", v.typ)
 	}
-	return v.boolVal
+	return v.boolVal, nil
 }
 
-// AsInt returns the integer value. Panics if not an int.
-func (v *GValue) AsInt() int64 {
+// AsInt returns the integer value.
+func (v *GValue) AsInt() (int64, error) {
+	if v == nil {
+		return 0, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeInt {
-		panic("glyph: not an int")
+		return 0, fmt.Errorf("glyph: expected int, got %s", v.typ)
 	}
-	return v.intVal
+	return v.intVal, nil
 }
 
-// AsFloat returns the float value. Panics if not a float.
-func (v *GValue) AsFloat() float64 {
+// AsFloat returns the float value.
+func (v *GValue) AsFloat() (float64, error) {
+	if v == nil {
+		return 0, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeFloat {
-		panic("glyph: not a float")
+		return 0, fmt.Errorf("glyph: expected float, got %s", v.typ)
 	}
-	return v.floatVal
+	return v.floatVal, nil
 }
 
-// AsStr returns the string value. Panics if not a string.
-func (v *GValue) AsStr() string {
+// AsStr returns the string value.
+func (v *GValue) AsStr() (string, error) {
+	if v == nil {
+		return "", fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeStr {
-		panic("glyph: not a str")
+		return "", fmt.Errorf("glyph: expected str, got %s", v.typ)
 	}
-	return v.strVal
+	return v.strVal, nil
 }
 
-// AsBytes returns the bytes value. Panics if not bytes.
-func (v *GValue) AsBytes() []byte {
+// AsBytes returns the bytes value.
+func (v *GValue) AsBytes() ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeBytes {
-		panic("glyph: not bytes")
+		return nil, fmt.Errorf("glyph: expected bytes, got %s", v.typ)
 	}
-	return v.bytesVal
+	return v.bytesVal, nil
 }
 
-// AsTime returns the time value. Panics if not a time.
-func (v *GValue) AsTime() time.Time {
+// AsTime returns the time value.
+func (v *GValue) AsTime() (time.Time, error) {
+	if v == nil {
+		return time.Time{}, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeTime {
-		panic("glyph: not a time")
+		return time.Time{}, fmt.Errorf("glyph: expected time, got %s", v.typ)
 	}
-	return v.timeVal
+	return v.timeVal, nil
 }
 
-// AsID returns the reference ID. Panics if not an ID.
-func (v *GValue) AsID() RefID {
+// AsID returns the reference ID.
+func (v *GValue) AsID() (RefID, error) {
+	if v == nil {
+		return RefID{}, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeID {
-		panic("glyph: not an id")
+		return RefID{}, fmt.Errorf("glyph: expected id, got %s", v.typ)
 	}
-	return v.idVal
+	return v.idVal, nil
 }
 
-// AsList returns the list elements. Panics if not a list.
-func (v *GValue) AsList() []*GValue {
+// AsList returns the list elements.
+func (v *GValue) AsList() ([]*GValue, error) {
+	if v == nil {
+		return nil, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeList {
-		panic("glyph: not a list")
+		return nil, fmt.Errorf("glyph: expected list, got %s", v.typ)
 	}
-	return v.listVal
+	return v.listVal, nil
 }
 
-// AsMap returns the map entries. Panics if not a map.
-func (v *GValue) AsMap() []MapEntry {
+// AsMap returns the map entries.
+func (v *GValue) AsMap() ([]MapEntry, error) {
+	if v == nil {
+		return nil, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeMap {
-		panic("glyph: not a map")
+		return nil, fmt.Errorf("glyph: expected map, got %s", v.typ)
 	}
-	return v.mapVal
+	return v.mapVal, nil
 }
 
-// AsStruct returns the struct value. Panics if not a struct.
-func (v *GValue) AsStruct() *StructValue {
+// AsStruct returns the struct value.
+func (v *GValue) AsStruct() (*StructValue, error) {
+	if v == nil {
+		return nil, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypeStruct {
-		panic("glyph: not a struct")
+		return nil, fmt.Errorf("glyph: expected struct, got %s", v.typ)
 	}
-	return v.structVal
+	return v.structVal, nil
 }
 
-// AsSum returns the sum value. Panics if not a sum.
-func (v *GValue) AsSum() *SumValue {
-	if v.typ != TypeSum {
-		panic("glyph: not a sum")
+// AsSum returns the sum value.
+func (v *GValue) AsSum() (*SumValue, error) {
+	if v == nil {
+		return nil, fmt.Errorf("glyph: nil value")
 	}
-	return v.sumVal
+	if v.typ != TypeSum {
+		return nil, fmt.Errorf("glyph: expected sum, got %s", v.typ)
+	}
+	return v.sumVal, nil
 }
 
 // Len returns the length of a list, map, or struct.
@@ -354,14 +387,14 @@ func (v *GValue) Get(key string) *GValue {
 }
 
 // Index returns the i-th element of a list.
-func (v *GValue) Index(i int) *GValue {
-	if v.typ != TypeList {
-		panic("glyph: not a list")
+func (v *GValue) Index(i int) (*GValue, error) {
+	if v == nil || v.typ != TypeList {
+		return nil, fmt.Errorf("glyph: not a list")
 	}
 	if i < 0 || i >= len(v.listVal) {
-		panic("glyph: index out of bounds")
+		return nil, fmt.Errorf("glyph: index %d out of bounds (len=%d)", i, len(v.listVal))
 	}
-	return v.listVal[i]
+	return v.listVal[i], nil
 }
 
 // Pos returns the source position of this value.

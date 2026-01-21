@@ -6,6 +6,91 @@ import (
 )
 
 // ============================================================
+// Test Helpers - must* functions for cleaner test assertions
+// ============================================================
+
+func mustAsInt(t *testing.T, v *GValue) int64 {
+	t.Helper()
+	i, err := v.AsInt()
+	if err != nil {
+		t.Fatalf("AsInt failed: %v", err)
+	}
+	return i
+}
+
+func mustAsStr(t *testing.T, v *GValue) string {
+	t.Helper()
+	s, err := v.AsStr()
+	if err != nil {
+		t.Fatalf("AsStr failed: %v", err)
+	}
+	return s
+}
+
+func mustAsFloat(t *testing.T, v *GValue) float64 {
+	t.Helper()
+	f, err := v.AsFloat()
+	if err != nil {
+		t.Fatalf("AsFloat failed: %v", err)
+	}
+	return f
+}
+
+func mustAsBool(t *testing.T, v *GValue) bool {
+	t.Helper()
+	b, err := v.AsBool()
+	if err != nil {
+		t.Fatalf("AsBool failed: %v", err)
+	}
+	return b
+}
+
+func mustAsList(t *testing.T, v *GValue) []*GValue {
+	t.Helper()
+	l, err := v.AsList()
+	if err != nil {
+		t.Fatalf("AsList failed: %v", err)
+	}
+	return l
+}
+
+func mustAsStruct(t *testing.T, v *GValue) *StructValue {
+	t.Helper()
+	sv, err := v.AsStruct()
+	if err != nil {
+		t.Fatalf("AsStruct failed: %v", err)
+	}
+	return sv
+}
+
+func mustAsSum(t *testing.T, v *GValue) *SumValue {
+	t.Helper()
+	sv, err := v.AsSum()
+	if err != nil {
+		t.Fatalf("AsSum failed: %v", err)
+	}
+	return sv
+}
+
+func mustAsID(t *testing.T, v *GValue) RefID {
+	t.Helper()
+	id, err := v.AsID()
+	if err != nil {
+		t.Fatalf("AsID failed: %v", err)
+	}
+	return id
+}
+
+func mustAsTime(t *testing.T, v *GValue) time.Time {
+	t.Helper()
+	tm, err := v.AsTime()
+	if err != nil {
+		t.Fatalf("AsTime failed: %v", err)
+	}
+	return tm
+}
+
+// ============================================================
 // Lexer Tests
 // ============================================================
 
@@ -132,12 +217,12 @@ func TestParse_List(t *testing.T) {
 		t.Fatalf("Expected list, got %s", result.Value.Type())
 	}
 
-	list := result.Value.AsList()
+	list := mustAsList(t, result.Value)
 	if len(list) != 3 {
 		t.Fatalf("Expected 3 elements, got %d", len(list))
 	}
 
-	if list[0].AsInt() != 1 || list[1].AsInt() != 2 || list[2].AsInt() != 3 {
+	if mustAsInt(t, list[0]) != 1 || mustAsInt(t, list[1]) != 2 || mustAsInt(t, list[2]) != 3 {
 		t.Errorf("Unexpected list values")
 	}
 }
@@ -155,10 +240,10 @@ func TestParse_Map(t *testing.T) {
 	a := result.Value.Get("a")
 	b := result.Value.Get("b")
 
-	if a == nil || a.AsInt() != 1 {
+	if a == nil || mustAsInt(t, a) != 1 {
 		t.Errorf("Expected a=1, got %v", a)
 	}
-	if b == nil || b.AsInt() != 2 {
+	if b == nil || mustAsInt(t, b) != 2 {
 		t.Errorf("Expected b=2, got %v", b)
 	}
 }
@@ -173,13 +258,13 @@ func TestParse_Struct(t *testing.T) {
 		t.Fatalf("Expected struct, got %s", result.Value.Type())
 	}
 
-	sv := result.Value.AsStruct()
+	sv := mustAsStruct(t, result.Value)
 	if sv.TypeName != "Team" {
 		t.Errorf("Expected type Team, got %s", sv.TypeName)
 	}
 
 	name := result.Value.Get("name")
-	if name == nil || name.AsStr() != "Arsenal" {
+	if name == nil || mustAsStr(t, name) != "Arsenal" {
 		t.Errorf("Expected name=Arsenal, got %v", name)
 	}
 }
@@ -194,11 +279,11 @@ func TestParse_Sum(t *testing.T) {
 		t.Fatalf("Expected sum, got %s", result.Value.Type())
 	}
 
-	sv := result.Value.AsSum()
+	sv := mustAsSum(t, result.Value)
 	if sv.Tag != "Success" {
 		t.Errorf("Expected tag Success, got %s", sv.Tag)
 	}
-	if sv.Value.AsInt() != 42 {
+	if mustAsInt(t, sv.Value) != 42 {
 		t.Errorf("Expected value 42, got %v", sv.Value)
 	}
 }
@@ -213,7 +298,7 @@ func TestParse_Ref(t *testing.T) {
 		t.Fatalf("Expected id, got %s", result.Value.Type())
 	}
 
-	ref := result.Value.AsID()
+	ref := mustAsID(t, result.Value)
 	if ref.Prefix != "m" {
 		t.Errorf("Expected prefix 'm', got %s", ref.Prefix)
 	}
@@ -239,7 +324,7 @@ func TestParse_NestedStruct(t *testing.T) {
 		t.Fatalf("Expected struct, got %s", result.Value.Type())
 	}
 
-	sv := result.Value.AsStruct()
+	sv := mustAsStruct(t, result.Value)
 	if sv.TypeName != "Match" {
 		t.Errorf("Expected type Match, got %s", sv.TypeName)
 	}
@@ -248,7 +333,7 @@ func TestParse_NestedStruct(t *testing.T) {
 	if home == nil || home.Type() != TypeStruct {
 		t.Fatalf("Expected home struct")
 	}
-	if home.AsStruct().TypeName != "Team" {
+	if mustAsStruct(t, home).TypeName != "Team" {
 		t.Errorf("Expected Team type for home")
 	}
 
@@ -256,7 +341,7 @@ func TestParse_NestedStruct(t *testing.T) {
 	if odds == nil || odds.Type() != TypeList {
 		t.Fatalf("Expected odds list")
 	}
-	if len(odds.AsList()) != 3 {
+	if len(mustAsList(t, odds)) != 3 {
 		t.Errorf("Expected 3 odds values")
 	}
 }
@@ -270,7 +355,7 @@ func TestParse_TolerantMode(t *testing.T) {
 
 	// Test tolerance to optional commas
 	result2, _ := Parse("[1, 2, 3]")
-	if len(result2.Value.AsList()) != 3 {
+	if len(mustAsList(t, result2.Value)) != 3 {
 		t.Error("Should accept commas in lists")
 	}
 }
@@ -500,7 +585,7 @@ func TestBridge_TimeValue(t *testing.T) {
 		t.Fatalf("Expected time type, got %s", roundTripped.Type())
 	}
 
-	rtTime := roundTripped.AsTime()
+	rtTime := mustAsTime(t, roundTripped)
 	if !rtTime.Equal(now) {
 		t.Errorf("Time mismatch: %v vs %v", now, rtTime)
 	}
@@ -570,7 +655,7 @@ func TestFootballSchema(t *testing.T) {
 	if match.Type() != TypeStruct {
 		t.Fatal("Expected struct")
 	}
-	if match.AsStruct().TypeName != "Match" {
+	if mustAsStruct(t, match).TypeName != "Match" {
 		t.Error("Expected Match type")
 	}
 

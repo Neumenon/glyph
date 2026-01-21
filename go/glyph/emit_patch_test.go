@@ -174,7 +174,7 @@ func TestPatchApply(t *testing.T) {
 		t.Fatal("home field missing")
 	}
 	ftH := home.Get("ft_h")
-	if ftH == nil || ftH.AsInt() != 2 {
+	if ftH == nil || mustAsInt(t, ftH) != 2 {
 		t.Errorf("Expected home.ft_h = 2, got: %v", ftH)
 	}
 
@@ -183,7 +183,7 @@ func TestPatchApply(t *testing.T) {
 		t.Fatal("away field missing")
 	}
 	ftA := away.Get("ft_a")
-	if ftA == nil || ftA.AsInt() != 1 {
+	if ftA == nil || mustAsInt(t, ftA) != 1 {
 		t.Errorf("Expected away.ft_a = 1, got: %v", ftA)
 	}
 
@@ -210,8 +210,12 @@ func TestPatchApplyAppend(t *testing.T) {
 	if events == nil || events.Len() != 2 {
 		t.Errorf("Expected 2 events, got: %v", events)
 	}
-	if events.Index(0).AsStr() != "Kickoff" {
-		t.Errorf("Expected first event = Kickoff, got: %s", events.Index(0).AsStr())
+	idx0, err := events.Index(0)
+	if err != nil {
+		t.Fatalf("Index(0) failed: %v", err)
+	}
+	if mustAsStr(t, idx0) != "Kickoff" {
+		t.Errorf("Expected first event = Kickoff, got: %s", mustAsStr(t, idx0))
 	}
 }
 
@@ -246,8 +250,8 @@ func TestPatchApplyDelta(t *testing.T) {
 	home := result.Get("home")
 	rating := home.Get("rating")
 	expected := 1850.5 + 50.5
-	if rating.AsFloat() != expected {
-		t.Errorf("Expected rating = %f, got: %f", expected, rating.AsFloat())
+	if mustAsFloat(t, rating) != expected {
+		t.Errorf("Expected rating = %f, got: %f", expected, mustAsFloat(t, rating))
 	}
 }
 
@@ -439,16 +443,20 @@ func TestDeepCopy(t *testing.T) {
 	copied.Get("nested").Get("x").floatVal = 9.99
 
 	// Verify original is unchanged
-	if original.Get("num").AsInt() != 42 {
+	if mustAsInt(t, original.Get("num")) != 42 {
 		t.Error("Original num was modified")
 	}
-	if original.Get("str").AsStr() != "hello" {
+	if mustAsStr(t, original.Get("str")) != "hello" {
 		t.Error("Original str was modified")
 	}
-	if original.Get("list").Index(0).AsInt() != 1 {
+	idx0, err := original.Get("list").Index(0)
+	if err != nil {
+		t.Fatalf("Index(0) failed: %v", err)
+	}
+	if mustAsInt(t, idx0) != 1 {
 		t.Error("Original list was modified")
 	}
-	if original.Get("nested").Get("x").AsFloat() != 3.14 {
+	if mustAsFloat(t, original.Get("nested").Get("x")) != 3.14 {
 		t.Error("Original nested was modified")
 	}
 }

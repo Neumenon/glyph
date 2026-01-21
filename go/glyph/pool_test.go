@@ -110,22 +110,24 @@ func TestPool(t *testing.T) {
 	}
 
 	// Get entries
-	v0 := pool.Get(0)
-	if v0 == nil || v0.AsStr() != "Hello" {
+	v0, err := pool.Get(0)
+	if err != nil || v0 == nil || mustAsStr(t, v0) != "Hello" {
 		t.Error("Get(0) should return Hello")
 	}
 
-	v2 := pool.Get(2)
-	if v2 == nil || v2.AsInt() != 42 {
+	v2, err := pool.Get(2)
+	if err != nil || v2 == nil || mustAsInt(t, v2) != 42 {
 		t.Error("Get(2) should return 42")
 	}
 
 	// Out of range
-	if pool.Get(-1) != nil {
-		t.Error("Get(-1) should return nil")
+	_, err = pool.Get(-1)
+	if err == nil {
+		t.Error("Get(-1) should return error")
 	}
-	if pool.Get(100) != nil {
-		t.Error("Get(100) should return nil")
+	_, err = pool.Get(100)
+	if err == nil {
+		t.Error("Get(100) should return error")
 	}
 }
 
@@ -177,15 +179,19 @@ func TestPoolRegistry(t *testing.T) {
 
 	// Resolve reference
 	ref := PoolRef{PoolID: "S1", Index: 0}
-	resolved := registry.Resolve(ref)
-	if resolved == nil || resolved.AsStr() != "system prompt" {
+	resolved, err := registry.Resolve(ref)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if resolved == nil || mustAsStr(t, resolved) != "system prompt" {
 		t.Error("Resolve should return correct value")
 	}
 
 	// Resolve non-existent
 	badRef := PoolRef{PoolID: "S2", Index: 0}
-	if registry.Resolve(badRef) != nil {
-		t.Error("Resolve should return nil for non-existent pool")
+	_, err = registry.Resolve(badRef)
+	if err == nil {
+		t.Error("Resolve should return error for non-existent pool")
 	}
 
 	// Clear
@@ -255,7 +261,10 @@ func TestPoolRefValue(t *testing.T) {
 		t.Error("IsPoolRef should return true")
 	}
 
-	ref := v.AsPoolRef()
+	ref, err := v.AsPoolRef()
+	if err != nil {
+		t.Fatalf("AsPoolRef error: %v", err)
+	}
 	if ref.PoolID != "S1" {
 		t.Errorf("PoolID = %q, want S1", ref.PoolID)
 	}
@@ -301,9 +310,15 @@ func TestAutoInterner(t *testing.T) {
 	}
 
 	// Verify reference resolves correctly
-	ref := v4.AsPoolRef()
-	resolved := registry.Resolve(ref)
-	if resolved == nil || resolved.AsStr() != longString {
+	ref, err := v4.AsPoolRef()
+	if err != nil {
+		t.Fatalf("AsPoolRef failed: %v", err)
+	}
+	resolved, err := registry.Resolve(ref)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if resolved == nil || mustAsStr(t, resolved) != longString {
 		t.Error("Reference should resolve to original string")
 	}
 }
@@ -352,7 +367,7 @@ func TestParsePool_EscapedBackslash(t *testing.T) {
 				t.Fatalf("Expected %d entries, got %d", tt.wantLen, len(pool.Entries))
 			}
 			for i, want := range tt.want {
-				got := pool.Entries[i].AsStr()
+				got := mustAsStr(t, pool.Entries[i])
 				if got != want {
 					t.Errorf("Entry %d = %q, want %q", i, got, want)
 				}

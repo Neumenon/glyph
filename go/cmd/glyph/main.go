@@ -733,17 +733,20 @@ func resolvePoolRefs(gv *glyph.GValue, poolReg *glyph.PoolRegistry) (*glyph.GVal
 
 	// Check if this is a pool reference (stored as a string starting with ^)
 	if gv.Type() == glyph.TypeStr {
-		s := gv.AsStr()
+		s, err := gv.AsStr()
+		if err != nil {
+			return nil, err
+		}
 		if strings.HasPrefix(s, "^") && strings.Contains(s, ":") {
 			// Parse pool reference
 			ref, err := glyph.ParsePoolRef(s)
 			if err == nil && ref != nil {
 				// Resolve from registry
-				resolved := poolReg.Resolve(*ref)
-				if resolved != nil {
+				resolved, err := poolReg.Resolve(*ref)
+				if err == nil && resolved != nil {
 					return resolved, nil
 				}
-				// If not found, keep as-is (string)
+				// If not found or error, keep as-is (string)
 			}
 		}
 		return gv, nil
@@ -752,7 +755,10 @@ func resolvePoolRefs(gv *glyph.GValue, poolReg *glyph.PoolRegistry) (*glyph.GVal
 	// Recursively resolve containers
 	switch gv.Type() {
 	case glyph.TypeList:
-		items := gv.AsList()
+		items, err := gv.AsList()
+		if err != nil {
+			return nil, err
+		}
 		resolved := make([]*glyph.GValue, len(items))
 		for i, item := range items {
 			r, err := resolvePoolRefs(item, poolReg)
@@ -764,7 +770,10 @@ func resolvePoolRefs(gv *glyph.GValue, poolReg *glyph.PoolRegistry) (*glyph.GVal
 		return glyph.List(resolved...), nil
 
 	case glyph.TypeMap:
-		entries := gv.AsMap()
+		entries, err := gv.AsMap()
+		if err != nil {
+			return nil, err
+		}
 		resolvedEntries := make([]glyph.MapEntry, len(entries))
 		for i, e := range entries {
 			r, err := resolvePoolRefs(e.Value, poolReg)
@@ -776,7 +785,10 @@ func resolvePoolRefs(gv *glyph.GValue, poolReg *glyph.PoolRegistry) (*glyph.GVal
 		return glyph.Map(resolvedEntries...), nil
 
 	case glyph.TypeStruct:
-		sv := gv.AsStruct()
+		sv, err := gv.AsStruct()
+		if err != nil {
+			return nil, err
+		}
 		if sv == nil {
 			return gv, nil
 		}

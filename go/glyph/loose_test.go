@@ -1164,11 +1164,11 @@ func TestCompactKeys_Parsing(t *testing.T) {
 
 	// Check the keys were resolved
 	action := got.Get("action")
-	if action == nil || action.AsStr() != "search" {
+	if action == nil || mustAsStr(t, action) != "search" {
 		t.Errorf("action: got %v", action)
 	}
 	query := got.Get("query")
-	if query == nil || query.AsStr() != "weather NYC" {
+	if query == nil || mustAsStr(t, query) != "weather NYC" {
 		t.Errorf("query: got %v", query)
 	}
 }

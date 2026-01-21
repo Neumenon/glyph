@@ -26,6 +26,7 @@ type SchemaContext struct {
 	Keys    []string          // Ordered list of keys (immutable after creation)
 	KeyToID map[string]uint32 // Key name -> numeric ID (immutable after creation)
 	IDToKey []string          // Numeric ID -> key name (immutable after creation)
+	Version int64             // Incremented on eviction to detect stale refs
 }
 
 // NewSchemaContext creates a new schema context from a list of keys.
@@ -183,6 +184,12 @@ func (sr *SchemaRegistry) Define(ctx *SchemaContext) {
 			break
 		}
 		oldID := oldest.Value.(string)
+
+		// Invalidate stale references by incrementing version
+		if entry, ok := sr.schemas[oldID]; ok {
+			entry.ctx.Version++
+		}
+
 		sr.lruList.Remove(oldest)
 		delete(sr.schemas, oldID)
 	}

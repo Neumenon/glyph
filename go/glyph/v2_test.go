@@ -163,13 +163,13 @@ func TestV2PackedRoundTrip(t *testing.T) {
 	}
 
 	// Verify fields
-	if parsed.Get("id").AsID().Value != "ARS" {
+	if mustAsID(t, parsed.Get("id")).Value != "ARS" {
 		t.Errorf("id mismatch: expected ARS, got %v", parsed.Get("id"))
 	}
-	if parsed.Get("name").AsStr() != "Arsenal" {
+	if mustAsStr(t, parsed.Get("name")) != "Arsenal" {
 		t.Errorf("name mismatch: expected Arsenal, got %v", parsed.Get("name"))
 	}
-	if parsed.Get("league").AsStr() != "EPL" {
+	if mustAsStr(t, parsed.Get("league")) != "EPL" {
 		t.Errorf("league mismatch: expected EPL, got %v", parsed.Get("league"))
 	}
 }
@@ -211,10 +211,10 @@ func TestV2BitmapRoundTrip(t *testing.T) {
 	}
 
 	// Verify present fields
-	if parsed.Get("id").AsID().Value != "ARS-LIV" {
+	if mustAsID(t, parsed.Get("id")).Value != "ARS-LIV" {
 		t.Errorf("id mismatch")
 	}
-	if parsed.Get("ft_h").AsInt() != 2 {
+	if mustAsInt(t, parsed.Get("ft_h")) != 2 {
 		t.Errorf("ft_h mismatch: expected 2, got %v", parsed.Get("ft_h"))
 	}
 
@@ -297,7 +297,7 @@ func TestV2TokenComparison(t *testing.T) {
 
 	// For comparison, emit each hike as packed
 	var packedTotal int
-	for _, hike := range hikes.AsList() {
+	for _, hike := range mustAsList(t, hikes) {
 		packed, _ := EmitPacked(hike, schema)
 		packedTotal += len(strings.Fields(packed))
 	}
@@ -364,18 +364,18 @@ func TestV2PatchIntegration(t *testing.T) {
 	}
 
 	// Verify changes
-	if updated.Get("status").AsStr() != "live" {
+	if mustAsStr(t, updated.Get("status")) != "live" {
 		t.Errorf("status should be 'live'")
 	}
 	if updated.Get("events").Len() != 1 {
 		t.Errorf("events should have 1 element")
 	}
-	if updated.Get("minute").AsInt() != 0 {
+	if mustAsInt(t, updated.Get("minute")) != 0 {
 		t.Errorf("minute should be 0")
 	}
 
 	// Original unchanged
-	if match.Get("status").AsStr() != "scheduled" {
+	if mustAsStr(t, match.Get("status")) != "scheduled" {
 		t.Errorf("original should be unchanged")
 	}
 }
@@ -403,13 +403,13 @@ func TestV2DiffIntegration(t *testing.T) {
 	}
 
 	// Verify result matches after
-	if result.Get("status").AsStr() != "finished" {
+	if mustAsStr(t, result.Get("status")) != "finished" {
 		t.Errorf("status mismatch")
 	}
-	if result.Get("minute").AsInt() != 90 {
+	if mustAsInt(t, result.Get("minute")) != 90 {
 		t.Errorf("minute mismatch")
 	}
-	if result.Get("result").AsStr() != "home" {
+	if mustAsStr(t, result.Get("result")) != "home" {
 		t.Errorf("result mismatch")
 	}
 }
@@ -455,10 +455,10 @@ func TestV2NestedPackedParsing(t *testing.T) {
 	}
 
 	inner := parsed.Get("inner")
-	if inner.Get("x").AsInt() != 10 {
+	if mustAsInt(t, inner.Get("x")) != 10 {
 		t.Errorf("inner.x mismatch")
 	}
-	if inner.Get("y").AsInt() != 20 {
+	if mustAsInt(t, inner.Get("y")) != 20 {
 		t.Errorf("inner.y mismatch")
 	}
 }

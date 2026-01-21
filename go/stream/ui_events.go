@@ -171,22 +171,45 @@ func ParseUIEvent(payload []byte) (typeName string, fields map[string]interface{
 		return "", nil, fmt.Errorf("ui event must be a struct, got %s", v.Type())
 	}
 
-	sv := v.AsStruct()
+	sv, err := v.AsStruct()
+	if err != nil {
+		return "", nil, fmt.Errorf("parse ui event struct: %w", err)
+	}
 	typeName = sv.TypeName
 	fields = make(map[string]interface{})
 
 	for _, f := range sv.Fields {
 		switch f.Value.Type() {
 		case glyph.TypeStr:
-			fields[f.Key] = f.Value.AsStr()
+			s, err := f.Value.AsStr()
+			if err != nil {
+				return "", nil, fmt.Errorf("parse field %s: %w", f.Key, err)
+			}
+			fields[f.Key] = s
 		case glyph.TypeInt:
-			fields[f.Key] = f.Value.AsInt()
+			i, err := f.Value.AsInt()
+			if err != nil {
+				return "", nil, fmt.Errorf("parse field %s: %w", f.Key, err)
+			}
+			fields[f.Key] = i
 		case glyph.TypeFloat:
-			fields[f.Key] = f.Value.AsFloat()
+			fl, err := f.Value.AsFloat()
+			if err != nil {
+				return "", nil, fmt.Errorf("parse field %s: %w", f.Key, err)
+			}
+			fields[f.Key] = fl
 		case glyph.TypeBool:
-			fields[f.Key] = f.Value.AsBool()
+			b, err := f.Value.AsBool()
+			if err != nil {
+				return "", nil, fmt.Errorf("parse field %s: %w", f.Key, err)
+			}
+			fields[f.Key] = b
 		case glyph.TypeTime:
-			fields[f.Key] = f.Value.AsTime()
+			t, err := f.Value.AsTime()
+			if err != nil {
+				return "", nil, fmt.Errorf("parse field %s: %w", f.Key, err)
+			}
+			fields[f.Key] = t
 		default:
 			fields[f.Key] = f.Value
 		}

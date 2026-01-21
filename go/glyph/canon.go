@@ -1,6 +1,7 @@
 package glyph
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"unicode"
@@ -36,20 +37,28 @@ func canonInt(n int64) string {
 // canonFloat returns the canonical float representation.
 // Uses shortest-roundtrip format, E→e, -0→0.
 func canonFloat(f float64) string {
-	// Handle special cases
+	// Handle -0 using bit representation (more reliable)
+	if math.Float64bits(f) == 0x8000000000000000 {
+		return "0"
+	}
 	if f == 0 {
 		return "0"
 	}
 
+	// Small integers use integer format for clarity
+	// Limit to 10^6 to avoid very long digit strings like "10000000000"
+	if f == math.Trunc(f) && math.Abs(f) < 1e6 {
+		return strconv.FormatInt(int64(f), 10)
+	}
+
 	// Use 'g' format for shortest representation
 	s := strconv.FormatFloat(f, 'g', -1, 64)
-
-	// Normalize: E → e
 	s = strings.ReplaceAll(s, "E", "e")
 
-	// Normalize: -0 → 0
-	if s == "-0" {
-		return "0"
+	// Verify round-trip to catch precision loss
+	if parsed, _ := strconv.ParseFloat(s, 64); parsed != f {
+		s = strconv.FormatFloat(f, 'e', 17, 64)
+		s = strings.ReplaceAll(s, "E", "e")
 	}
 
 	return s

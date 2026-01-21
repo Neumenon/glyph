@@ -503,7 +503,11 @@ func (p *packedParser) parseRef() (*GValue, error) {
 		if err != nil {
 			return nil, err
 		}
-		ref := parseRefIDFromTarget(s.AsStr())
+		str, err := s.AsStr()
+		if err != nil {
+			return nil, err
+		}
+		ref := parseRefIDFromTarget(str)
 		return IDFromRef(ref), nil
 	}
 
@@ -573,7 +577,11 @@ func (p *packedParser) parseMap() (*GValue, error) {
 			return nil, err
 		}
 
-		entries = append(entries, MapEntry{Key: key.AsStr(), Value: val})
+		keyStr, err := key.AsStr()
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, MapEntry{Key: keyStr, Value: val})
 	}
 }
 

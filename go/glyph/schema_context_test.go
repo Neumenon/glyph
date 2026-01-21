@@ -350,12 +350,12 @@ func TestSchemaRoundTrip(t *testing.T) {
 	}
 
 	roleVal := parsed.Get("role")
-	if roleVal == nil || roleVal.AsStr() != "user" {
+	if roleVal == nil || mustAsStr(t, roleVal) != "user" {
 		t.Errorf("role = %v, want 'user'", roleVal)
 	}
 
 	contentVal := parsed.Get("content")
-	if contentVal == nil || contentVal.AsStr() != "Hello, world!" {
+	if contentVal == nil || mustAsStr(t, contentVal) != "Hello, world!" {
 		t.Errorf("content = %v, want 'Hello, world!'", contentVal)
 	}
 }
@@ -391,13 +391,13 @@ func TestSchemaRoundTrip_MixedKeys(t *testing.T) {
 	}
 
 	// Verify all values
-	if parsed.Get("role").AsStr() != "user" {
+	if mustAsStr(t, parsed.Get("role")) != "user" {
 		t.Error("role mismatch")
 	}
-	if parsed.Get("content").AsStr() != "Hello" {
+	if mustAsStr(t, parsed.Get("content")) != "Hello" {
 		t.Error("content mismatch")
 	}
-	if parsed.Get("extra_field").AsInt() != 42 {
+	if mustAsInt(t, parsed.Get("extra_field")) != 42 {
 		t.Error("extra_field mismatch")
 	}
 }
@@ -432,7 +432,7 @@ func TestSchemaRoundTrip_NestedObjects(t *testing.T) {
 	}
 
 	item1 := items.listVal[0]
-	if item1.Get("name").AsStr() != "item1" {
+	if mustAsStr(t, item1.Get("name")) != "item1" {
 		t.Error("item1 name mismatch")
 	}
 }
@@ -455,7 +455,7 @@ func TestSchemaReference(t *testing.T) {
 		t.Error("Expected schema context with ID abc123")
 	}
 
-	if parsed.Get("role").AsStr() != "user" {
+	if mustAsStr(t, parsed.Get("role")) != "user" {
 		t.Error("role should be 'user'")
 	}
 }
@@ -484,7 +484,7 @@ func TestSchemaClear(t *testing.T) {
 	}
 
 	// Value should still parse correctly with string keys
-	if parsed.Get("a").AsInt() != 1 {
+	if mustAsInt(t, parsed.Get("a")) != 1 {
 		t.Error("a should be 1")
 	}
 }

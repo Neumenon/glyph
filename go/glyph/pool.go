@@ -1,9 +1,16 @@
 package glyph
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+)
+
+// Pool resolution errors
+var (
+	ErrPoolNotFound = errors.New("pool not found")
+	ErrPoolIndex    = errors.New("pool index out of bounds")
 )
 
 // ============================================================
@@ -88,12 +95,12 @@ type Pool struct {
 	Entries []*GValue // Pool entries
 }
 
-// Get returns the value at the given index, or nil if out of range.
-func (p *Pool) Get(index int) *GValue {
+// Get returns the value at the given index.
+func (p *Pool) Get(index int) (*GValue, error) {
 	if index < 0 || index >= len(p.Entries) {
-		return nil
+		return nil, fmt.Errorf("%w: %s[%d] (len=%d)", ErrPoolIndex, p.ID, index, len(p.Entries))
 	}
-	return p.Entries[index]
+	return p.Entries[index], nil
 }
 
 // Add appends a value to the pool and returns its index.
@@ -158,13 +165,13 @@ func (r *PoolRegistry) Get(id string) *Pool {
 }
 
 // Resolve resolves a pool reference to its value.
-func (r *PoolRegistry) Resolve(ref PoolRef) *GValue {
+func (r *PoolRegistry) Resolve(ref PoolRef) (*GValue, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	pool := r.pools[ref.PoolID]
-	if pool == nil {
-		return nil
+	pool, ok := r.pools[ref.PoolID]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrPoolNotFound, ref.PoolID)
 	}
 	return pool.Get(ref.Index)
 }
@@ -198,15 +205,18 @@ func PoolRefValue(poolID string, index int) *GValue {
 	}
 }
 
-// AsPoolRef returns the pool reference. Panics if not a pool ref.
-func (v *GValue) AsPoolRef() PoolRef {
+// AsPoolRef returns the pool reference.
+func (v *GValue) AsPoolRef() (PoolRef, error) {
+	if v == nil {
+		return PoolRef{}, fmt.Errorf("glyph: nil value")
+	}
 	if v.typ != TypePoolRef {
-		panic("glyph: not a pool ref")
+		return PoolRef{}, fmt.Errorf("glyph: expected poolref, got %s", v.typ)
 	}
 	if v.poolRef == nil {
-		return PoolRef{}
+		return PoolRef{}, nil
 	}
-	return *v.poolRef
+	return *v.poolRef, nil
 }
 
 // IsPoolRef returns true if this is a pool reference.
@@ -405,9 +415,11 @@ func DefaultAutoInternOpts() AutoInternOpts {
 }
 
 // AutoInterner tracks value occurrences and automatically interns repeated values.
+// Thread-safe for concurrent use.
 type AutoInterner struct {
 	opts     AutoInternOpts
 	registry *PoolRegistry
+	mu       sync.RWMutex
 	counts   map[string]int     // value -> occurrence count
 	interned map[string]PoolRef // value -> pool reference
 	nextPool int                // Next pool ID suffix
@@ -425,13 +437,26 @@ func NewAutoInterner(registry *PoolRegistry, opts AutoInternOpts) *AutoInterner 
 }
 
 // Process checks if a string should be interned and returns the appropriate value.
+// Thread-safe for concurrent calls.
 func (a *AutoInterner) Process(s string) *GValue {
-	// Too short to consider
+	// Too short to consider - no locking needed
 	if len(s) < a.opts.MinLength {
 		return Str(s)
 	}
 
-	// Already interned?
+	// Fast path: check if already interned (read lock)
+	a.mu.RLock()
+	if ref, ok := a.interned[s]; ok {
+		a.mu.RUnlock()
+		return PoolRefValue(ref.PoolID, ref.Index)
+	}
+	a.mu.RUnlock()
+
+	// Slow path: need write lock
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Double-check after acquiring write lock
 	if ref, ok := a.interned[s]; ok {
 		return PoolRefValue(ref.PoolID, ref.Index)
 	}
