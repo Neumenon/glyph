@@ -30,7 +30,7 @@ JSON requires quotes around keys, colons, commas. This adds up:
 
 **Problem 2: Late Validation**
 Traditional flow: LLM generates → you parse → validate → discover error
-GLYPH flow: LLM generates token 3 → validate → cancel if bad
+GLYPH flow: LLM generates → validate as tokens stream → cancel immediately if bad
 
 **Problem 3: State Conflicts**
 Two agents update the same state → conflicts → data loss
@@ -134,10 +134,10 @@ GLYPH (98 tokens):
 5. **Wasted**: All those tokens, all that latency
 
 **GLYPH approach:**
-1. Token 1: `{`
-2. Token 2: `tool`
-3. Token 3: `=unknown` ← **Cancel here**
-4. **Saved**: 95% of tokens and latency
+1. Tokens stream: `{tool=unknown...`
+2. Error detected as soon as "unknown" appears
+3. **Cancel immediately**
+4. **Saved**: Tokens, time, reduced failures
 
 ### How It Works
 
@@ -158,38 +158,38 @@ for token in llm_stream:
     result = validator.push(token)
 
     if result.tool_name and not result.tool_allowed:
-        # Cancel at token 3-5
+        # Cancel immediately
         cancel_generation()
         break
 
     if result.has_errors():
-        # Constraint violation
+        # Constraint violation - cancel immediately
         cancel_generation()
         break
 ```
 
 ### What Gets Validated
 
-**Early (token 3-10):**
+**Early in stream:**
 - Tool name exists in registry
 - Required fields present
 - Field names are valid
 
-**Mid-stream (token 10-30):**
+**Mid-stream:**
 - Type constraints (int, str, bool)
 - Range constraints (min, max)
 - Enum values
 
-**Late (near completion):**
+**Late in stream:**
 - Complete structure
 - All required fields have values
 
 ### Real-World Impact
 
 **Example: Bad tool call**
-- Traditional: 150 tokens, 2 seconds
-- GLYPH streaming: 5 tokens, 0.1 seconds
-- **Savings: 97% latency, 97% tokens**
+- Traditional: Wait for full generation (150 tokens, 2 seconds), then discover error
+- GLYPH streaming: Detect error as it appears, cancel immediately
+- **Savings: Tokens, time, reduced failure rate**
 
 ---
 

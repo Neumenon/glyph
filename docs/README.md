@@ -23,7 +23,7 @@
 | Capability | What it means |
 |------------|---------------|
 | **Token efficiency** | 30-50% smaller than JSON for structured data |
-| **Streaming validation** | Detect invalid tool calls at token 3, not token 50 |
+| **Streaming validation** | Detect errors as they stream, cancel immediately—not after full generation |
 | **State-verified patches** | Cryptographic proof you're updating what you think you're updating |
 | **Human-readable** | Debug without tools — it's just text |
 | **Schema-optional** | Works without coordination; add schemas when you need them |
@@ -169,7 +169,7 @@ if result.complete and result.valid:
     execute_tool(result.tool_name, result.fields)
 ```
 
-**Why this matters:** If the model hallucinates a tool name, you find out at token 3-5, not token 50+. Save latency and cost.
+**Why this matters:** If the model hallucinates a tool name or violates constraints, you detect it as it streams and cancel immediately. Saves tokens, time, and reduces failures.
 
 ---
 
@@ -629,7 +629,7 @@ GLYPH:  {action=search query="weather NYC" max_results=10}
 | Capability | What it means |
 |------------|---------------|
 | **Token efficiency** | 30-50% smaller than JSON for structured data |
-| **Streaming validation** | Detect invalid tool calls at token 3, not token 50 |
+| **Streaming validation** | Detect errors as they stream, cancel immediately—not after full generation |
 | **State-verified patches** | Cryptographic proof you're updating what you think you're updating |
 | **Human-readable** | Debug without tools — it's just text |
 | **Schema-optional** | Works without coordination; add schemas when you need them |

@@ -4,7 +4,7 @@ Quick patterns for using GLYPH in agent systems.
 
 **TL;DR:**
 1. Define tools in GLYPH (40% fewer tokens in system prompt)
-2. Validate tool calls as tokens stream (reject bad calls at token 3, not 50)
+2. Validate tool calls as tokens stream (detect errors and cancel immediately—not after full generation)
 3. Sync state with verified patches (cryptographic proof of consistency)
 
 ---

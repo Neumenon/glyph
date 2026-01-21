@@ -37,7 +37,7 @@
 - Streaming validation performance
 - Token-by-token error detection
 - Latency savings measurements
-- **Key finding**: Cancel invalid requests at token 3-5, saving 95% latency
+- **Key finding**: Detect errors as they stream and cancel immediately, saving tokens and time
 
 **[TOOL_CALL_REPORT.md](TOOL_CALL_REPORT.md)**
 - Tool calling patterns

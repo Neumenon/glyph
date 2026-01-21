@@ -6,7 +6,7 @@
 
 ## What is GLYPH?
 
-Token-efficient serialization for AI agents. **30-56% fewer tokens** than JSON with **streaming validation** at token 3.
+Token-efficient serialization for AI agents. **30-56% fewer tokens** than JSON with **immediate streaming validation**.
 
 ```json
 JSON:  {"action": "search", "query": "weather in NYC", "max_results": 10}
@@ -23,7 +23,7 @@ GLYPH: {action=search query="weather in NYC" max_results=10}
 ## Why Use It?
 
 **Token Reduction**: No quotes on keys, no colons, no commas
-**Streaming Validation**: Catch tool call errors at token 3, not token 150
+**Streaming Validation**: Detect errors as they stream, cancel immediately. Saves tokens, time, and reduces failures
 **Human-Readable**: Text format, easy to debug
 
 ---
@@ -122,10 +122,10 @@ for token in tokens:
     result = validator.feed(token)
     if result.error:
         print(f"Invalid at token {result.token_count}: {result.error}")
-        break  # Cancel generation at token 3-5!
+        break  # Cancel immediately!
 ```
 
-**Result**: Catch bad tool names, missing params, constraint violations **immediately**. Save tokens and latency.
+**Result**: Catch bad tool names, missing params, constraint violations **as they appear**. Saves tokens, time, and reduces failures.
 
 ---
 

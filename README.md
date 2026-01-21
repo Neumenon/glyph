@@ -19,7 +19,7 @@ GLYPH: {action=search query="weather in NYC" max_results=10}
 JSON wastes tokens on redundant syntax and validates too late. GLYPH fixes both:
 
 **1. 30-56% Token Reduction**: No quotes, no colons, no commas - just data
-**2. Streaming Validation**: Catch errors at token 3, not after full generation
+**2. Streaming Validation**: Detect errors as they stream, cancel immediately—not after full generation. Saves tokens, time, and reduces failures
 **3. Human-Readable**: Still debuggable, unlike binary formats
 
 ---
@@ -39,13 +39,13 @@ JSON wastes tokens on redundant syntax and validates too late. GLYPH fixes both:
 | Tabular data (20 rows) | 500 | 220 | **56%** |
 
 ### ⚡ **Streaming Validation**
-Validate tool calls at **token 3** instead of waiting for full generation.
+Detect errors as they stream, cancel immediately—not after full generation.
 
 ```glyph
-{tool=unknown...  ← Cancel at token 3, not token 150
+{tool=unknown...  ← Cancel mid-stream, not after 150 tokens
 ```
 
-**Why it matters**: Catch bad tool names, missing params, constraint violations immediately. Save tokens and latency.
+**Why it matters**: Catch bad tool names, missing params, constraint violations as they appear. Saves tokens, time, and reduces failures.
 
 ### 📊 **Auto-Tabular Mode**
 Homogeneous lists compress to tables automatically:
@@ -177,7 +177,7 @@ Bytes:   b64"SGVsbG8="   Time:    2025-01-13T12:00:00Z
 
 ## Use Cases
 
-**Tool Calling**: Define tools in GLYPH (40% smaller system prompts), validate at token 3-5 during streaming.
+**Tool Calling**: Define tools in GLYPH (40% smaller system prompts), validate during streaming and cancel bad requests immediately.
 
 **Agent State**: Store conversation history 40% more efficiently, patch with base hashes for concurrent safety.
 
