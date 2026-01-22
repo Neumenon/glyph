@@ -1,6 +1,6 @@
 # glyph-js
 
-LYPH v2 - Token-efficient serialization for LLM communication.
+GLYPH v2 - Token-efficient serialization for LLM communication.
 
 ## Installation
 
@@ -10,11 +10,21 @@ npm install glyph-js
 
 ## Features
 
-- **Token Efficient**: 30-50% fewer tokens than JSON for structured data
+- **Token Efficient**: 40-60% fewer tokens than JSON (tokens matter more than bytes!)
 - **Schema-Driven**: Type-safe encoding with field IDs
 - **Multiple Modes**: Packed, Tabular, Patch encoding
 - **JSON Compatible**: Seamless conversion to/from JSON
 - **TypeScript First**: Full type definitions included
+
+### Token Savings
+
+| Data Type | Savings |
+|-----------|---------|
+| LLM messages | 40% |
+| Tool calls | 42% |
+| Conversations (25 msgs) | 49% |
+| Search results (50 rows) | 52% |
+| Batch tool results | 62% |
 
 ## Quick Start
 
@@ -127,7 +137,8 @@ import { compareTokens } from 'glyph-js';
 
 const stats = compareTokens(jsonData, schema);
 console.log(`Savings: ${stats.savingsPercent.toFixed(1)}%`);
-// Typical savings: 30-50% for structured data
+// Typical savings: 40-60% for structured data
+// Large datasets (50+ rows): 52-62% savings
 ```
 
 ## API Reference

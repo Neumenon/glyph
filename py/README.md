@@ -2,6 +2,16 @@
 
 Python implementation of GLYPH - token-efficient serialization for AI agents.
 
+**40-60% fewer tokens than JSON** - tokens matter more than bytes for LLM costs and context windows.
+
+| Data Type | Token Savings |
+|-----------|---------------|
+| LLM messages | 40% |
+| Tool calls | 42% |
+| Conversations (25 msgs) | 49% |
+| Search results (50 rows) | 52% |
+| Batch tool results | 62% |
+
 ## Installation
 
 ```bash

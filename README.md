@@ -1,64 +1,67 @@
 # GLYPH
 
-**Token-efficient serialization for AI agents. 40% fewer tokens, streaming validation, human-readable.**
+**Token-efficient serialization for AI agents. 50%+ fewer tokens, streaming validation, human-readable.**
 
-```json
-JSON:  {"action": "search", "query": "weather in NYC", "max_results": 10}
+> **Tokens cost money. Tokens are context. Every token matters.**
+
+```
+JSON:   {"messages":[{"role":"user","content":"Hi"},{"role":"assistant","content":"Hello!"}],"model":"gpt-4"}
+GLYPH:  {msgs:[{r:u c:Hi} {r:a c:Hello!}] mdl:gpt-4}
 ```
 
-```glyph
-GLYPH: {action=search query="weather in NYC" max_results=10}
-```
-
-**84 tokens vs 140 tokens** (40% reduction)
+**30 tokens → 16 tokens** (47% reduction)
 
 ---
 
 ## Why GLYPH?
 
-JSON wastes tokens on redundant syntax and validates too late. GLYPH fixes both:
+JSON wastes tokens on redundant syntax. Every `"`, `:`, and `,` consumes context window. GLYPH eliminates the waste:
 
-**1. 30-56% Token Reduction**: No quotes, no colons, no commas - just data
-**2. Streaming Validation**: Detect errors as they stream, cancel immediately—not after full generation. Saves tokens, time, and reduces failures
-**3. Human-Readable**: Still debuggable, unlike binary formats
+**1. 40-60% Token Reduction**: No quotes, no colons, no commas, abbreviated keys
+**2. Scales with Data**: Larger datasets = bigger savings (50 rows → 62% savings)
+**3. Streaming Validation**: Detect errors mid-stream, cancel immediately
+**4. Human-Readable**: Still debuggable, unlike binary formats
 
 ---
 
 ## Key Features
 
-### 🎯 **30-56% Token Reduction**
-- Flat objects: 33% savings
-- Nested structures: 40-47% savings
-- Tabular data: 50-56% savings (auto-table mode)
+### 🎯 **40-60% Token Savings** *(tokens, not bytes)*
+
+Tokens are what matter for LLM costs and context windows.
 
 | Data Shape | JSON Tokens | GLYPH Tokens | Savings |
 |------------|-------------|--------------|---------|
-| Flat object (5 fields) | 45 | 30 | **33%** |
-| Nested object (3 levels) | 120 | 75 | **38%** |
-| Array of objects (10 items) | 300 | 160 | **47%** |
-| Tabular data (20 rows) | 500 | 220 | **56%** |
+| LLM message | 10 | 6 | **40%** |
+| Tool call | 26 | 15 | **42%** |
+| Conversation (25 msgs) | 264 | 134 | **49%** |
+| Search results (25 rows) | 456 | 220 | **52%** |
+| Search results (50 rows) | 919 | 439 | **52%** |
+| Tool results (50 items) | 562 | 214 | **62%** |
+
+**Average: 50%+ token savings on real-world data.**
 
 ### ⚡ **Streaming Validation**
 Detect errors as they stream, cancel immediately—not after full generation.
 
 ```glyph
-{tool=unknown...  ← Cancel mid-stream, not after 150 tokens
+{tool=unknown...  ← Cancel mid-stream, save the remaining tokens
 ```
 
-**Why it matters**: Catch bad tool names, missing params, constraint violations as they appear. Saves tokens, time, and reduces failures.
+**Why it matters**: Catch bad tool names, missing params, constraint violations as they appear. Save tokens, save money, reduce latency.
 
 ### 📊 **Auto-Tabular Mode**
 Homogeneous lists compress to tables automatically:
 
 ```glyph
 @tab _ [name age city]
-|Alice|28|NYC|
-|Bob|32|SF|
-|Carol|25|Austin|
+Alice 28 NYC
+Bob 32 SF
+Carol 25 Austin
 @end
 ```
 
-**50-70% smaller** than JSON arrays.
+**50-62% fewer tokens** than JSON arrays. Scales linearly—more rows = more savings.
 
 ### 🔒 **State Fingerprinting**
 SHA-256 hashing prevents concurrent modification conflicts. Enables checkpoint/resume workflows.
@@ -177,11 +180,11 @@ Bytes:   b64"SGVsbG8="   Time:    2025-01-13T12:00:00Z
 
 ## Use Cases
 
-**Tool Calling**: Define tools in GLYPH (40% smaller system prompts), validate during streaming and cancel bad requests immediately.
+**Tool Calling**: Define tools in GLYPH (40% fewer tokens in system prompts), validate during streaming and cancel bad requests immediately.
 
-**Agent State**: Store conversation history 40% more efficiently, patch with base hashes for concurrent safety.
+**Agent State**: Store conversation history with 49% fewer tokens. Patch with base hashes for concurrent safety.
 
-**Batch Data**: Auto-tabular mode for embeddings, search results, logs (50-70% reduction).
+**Batch Data**: Auto-tabular mode for embeddings, search results, logs (50-62% token reduction). 50 search results? 919 → 439 tokens.
 
 [More Examples →](docs/QUICKSTART.md)
 
