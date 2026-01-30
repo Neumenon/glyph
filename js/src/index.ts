@@ -152,6 +152,52 @@ export {
 // GS1 Stream (streaming transport)
 export * as stream from './stream/index';
 
+// Decimal128 - High-precision decimal type
+export {
+  Decimal128,
+  DecimalError,
+  decimal,
+  isDecimalLiteral,
+  parseDecimalLiteral,
+} from './decimal128';
+
+// Schema Evolution - Safe API versioning
+export {
+  VersionedSchema,
+  VersionSchema,
+  EvolvingField,
+  EvolvingFieldConfig,
+  EvolutionMode,
+  FieldType,
+  FieldValue as EvolutionFieldValue,
+  ParseResult as EvolutionParseResult,
+  EmitResult as EvolutionEmitResult,
+  ChangelogEntry,
+  compareVersions,
+  parseVersionHeader,
+  formatVersionHeader,
+  versionedSchema,
+} from './schema_evolution';
+
+// Streaming Validator - Incremental validation
+export {
+  StreamingValidator,
+  ToolRegistry,
+  ToolSchema,
+  ArgSchema,
+  ValidationResult,
+  ValidationError,
+  ValidatorState,
+  ErrorCode,
+  TimelineEvent,
+  FieldValue as ValidatorFieldValue,
+  ValidatorLimits,
+  DEFAULT_MAX_BUFFER,
+  DEFAULT_MAX_FIELDS,
+  DEFAULT_MAX_ERRORS,
+  defaultToolRegistry,
+} from './stream_validator';
+
 // ============================================================
 // Convenience: Convert JSON directly to LYPH
 // ============================================================
