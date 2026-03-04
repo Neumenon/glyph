@@ -1,5 +1,5 @@
 {
-  "name": "glyph-codec",
+  "name": "cowrie-glyph",
   "version": "0.3.0",
   "description": "GLYPH v2.6 - Token-efficient serialization for LLM communication",
   "main": "dist/index.js",
@@ -50,6 +50,9 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "overrides": {
+    "minimatch": ">=3.1.3"
   },
   "engines": {
     "node": ">=18.0.0"
