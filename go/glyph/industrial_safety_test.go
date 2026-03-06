@@ -1,6 +1,7 @@
 package glyph
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -17,15 +18,25 @@ import (
 // Race: go test -race -run TestIndustrial ./go/glyph/
 // =============================================================================
 
+// mustNotPanic runs fn and fails the test if it panics.
+func mustNotPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("PANIC: %v", r)
+		}
+	}()
+	fn()
+}
+
 // ---------------------------------------------------------------------------
 // 1. Parser bombs — recursion depth
 // ---------------------------------------------------------------------------
 
 func TestIndustrial_DeepNesting_Map(t *testing.T) {
-	// Build deeply nested map: {a: {a: {a: ... }}}
 	depths := []int{100, 500, 1000, 5000}
 	for _, depth := range depths {
-		t.Run(strings.Repeat("_", 1), func(t *testing.T) {
+		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
 			var b strings.Builder
 			for i := 0; i < depth; i++ {
 				b.WriteString("{a: ")
@@ -34,17 +45,9 @@ func TestIndustrial_DeepNesting_Map(t *testing.T) {
 			for i := 0; i < depth; i++ {
 				b.WriteString("}")
 			}
-
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						t.Errorf("PANIC at depth %d: %v (need recursion limit)", depth, r)
-					}
-				}()
-				_, err := Parse(b.String())
-				// Either parse succeeds or returns error — both acceptable. Panic is not.
-				_ = err
-			}()
+			mustNotPanic(t, func() {
+				_, _ = Parse(b.String())
+			})
 		})
 	}
 }
@@ -52,66 +55,49 @@ func TestIndustrial_DeepNesting_Map(t *testing.T) {
 func TestIndustrial_DeepNesting_List(t *testing.T) {
 	depths := []int{100, 500, 1000, 5000}
 	for _, depth := range depths {
-		var b strings.Builder
-		for i := 0; i < depth; i++ {
-			b.WriteString("[")
-		}
-		b.WriteString("1")
-		for i := 0; i < depth; i++ {
-			b.WriteString("]")
-		}
-
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					t.Errorf("PANIC at depth %d: %v (need recursion limit)", depth, r)
-				}
-			}()
-			_, err := Parse(b.String())
-			_ = err
-		}()
+		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
+			var b strings.Builder
+			for i := 0; i < depth; i++ {
+				b.WriteString("[")
+			}
+			b.WriteString("1")
+			for i := 0; i < depth; i++ {
+				b.WriteString("]")
+			}
+			mustNotPanic(t, func() {
+				_, _ = Parse(b.String())
+			})
+		})
 	}
 }
 
 func TestIndustrial_DeepNesting_Struct(t *testing.T) {
 	depths := []int{100, 500, 1000}
 	for _, depth := range depths {
-		var b strings.Builder
-		for i := 0; i < depth; i++ {
-			b.WriteString("Outer{inner: ")
-		}
-		b.WriteString("1")
-		for i := 0; i < depth; i++ {
-			b.WriteString("}")
-		}
-
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					t.Errorf("PANIC at depth %d: %v (need recursion limit)", depth, r)
-				}
-			}()
-			_, err := Parse(b.String())
-			_ = err
-		}()
+		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
+			var b strings.Builder
+			for i := 0; i < depth; i++ {
+				b.WriteString("Outer{inner: ")
+			}
+			b.WriteString("1")
+			for i := 0; i < depth; i++ {
+				b.WriteString("}")
+			}
+			mustNotPanic(t, func() {
+				_, _ = Parse(b.String())
+			})
+		})
 	}
 }
 
 func TestIndustrial_DeepNesting_Emit(t *testing.T) {
-	// Build deeply nested GValue programmatically
 	var v *GValue = Int(42)
 	for i := 0; i < 1000; i++ {
 		v = Map(MapEntry{Key: "n", Value: v})
 	}
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("PANIC in Emit with deep nesting: %v", r)
-			}
-		}()
+	mustNotPanic(t, func() {
 		_ = Emit(v)
-	}()
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +105,6 @@ func TestIndustrial_DeepNesting_Emit(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIndustrial_NullByteInString(t *testing.T) {
-	// Embedded null byte in quoted string (escaped)
 	input := `"hello\u0000world"`
 	result, err := Parse(input)
 	if err != nil {
@@ -129,7 +114,6 @@ func TestIndustrial_NullByteInString(t *testing.T) {
 	if sErr != nil {
 		t.Skipf("AsStr error (acceptable): %v", sErr)
 	}
-	// If null byte passes through, flag it
 	for i := 0; i < len(s); i++ {
 		if s[i] == 0 {
 			t.Logf("WARNING: null byte at position %d survives parsing (may cause C interop issues)", i)
@@ -139,58 +123,43 @@ func TestIndustrial_NullByteInString(t *testing.T) {
 }
 
 func TestIndustrial_ControlCharsInString(t *testing.T) {
-	// Control characters 0x01-0x1F in strings
 	for c := byte(1); c < 0x20; c++ {
 		input := `"` + string([]byte{c}) + `"`
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					t.Errorf("PANIC on control char 0x%02X: %v", c, r)
-				}
-			}()
+		mustNotPanic(t, func() {
 			_, _ = Parse(input)
-		}()
+		})
 	}
 }
 
 func TestIndustrial_UnterminatedString(t *testing.T) {
 	inputs := []string{
-		`"hello`,       // no closing quote
-		`"hello\`,      // trailing backslash
-		`"hello\"`,     // escaped quote at end (still no close)
-		`{key: "value`, // in map context
-		`[1 "partial`,  // in list context
+		`"hello`,
+		`"hello\`,
+		`"hello\"`,
+		`{key: "value`,
+		`[1 "partial`,
 	}
-	for _, input := range inputs {
-		t.Run("", func(t *testing.T) {
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						t.Errorf("PANIC on unterminated string %q: %v", input[:min(len(input), 20)], r)
-					}
-				}()
-				// Tolerant mode should handle gracefully
+	for i, input := range inputs {
+		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
+			mustNotPanic(t, func() {
 				result, err := Parse(input)
 				if err != nil {
-					return // Error is fine
+					return
 				}
 				if result != nil && len(result.Warnings) > 0 {
 					t.Logf("warnings: %v", result.Warnings[0].Message)
 				}
-			}()
+			})
 		})
 	}
 }
 
 func TestIndustrial_HugeString(t *testing.T) {
-	// 10MB string — should not crash, but may be slow
+	if testing.Short() {
+		t.Skip("skipping large input test in short mode")
+	}
 	big := `"` + strings.Repeat("x", 10*1024*1024) + `"`
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("PANIC on 10MB string: %v", r)
-			}
-		}()
+	mustNotPanic(t, func() {
 		result, err := Parse(big)
 		if err != nil {
 			return
@@ -202,7 +171,7 @@ func TestIndustrial_HugeString(t *testing.T) {
 		if s == "" {
 			t.Error("parsed empty from 10MB string")
 		}
-	}()
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -210,21 +179,14 @@ func TestIndustrial_HugeString(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIndustrial_JSONBridge_HugeKey(t *testing.T) {
-	// 1MB key in JSON → GLYPH
 	bigKey := strings.Repeat("k", 1024*1024)
-	json := []byte(`{"` + bigKey + `": 1}`)
+	jsonData := []byte(`{"` + bigKey + `": 1}`)
 
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("PANIC on 1MB JSON key: %v", r)
-			}
-		}()
-		gv, err := FromJSONLoose(json)
+	mustNotPanic(t, func() {
+		gv, err := FromJSONLoose(jsonData)
 		if err != nil {
-			return // rejection is fine
+			return
 		}
-		// Round-trip back to JSON
 		out, err := ToJSONLoose(gv)
 		if err != nil {
 			t.Logf("round-trip error (acceptable): %v", err)
@@ -233,27 +195,25 @@ func TestIndustrial_JSONBridge_HugeKey(t *testing.T) {
 		if len(out) < 1024*1024 {
 			t.Error("key was silently truncated")
 		}
-	}()
+	})
 }
 
 func TestIndustrial_JSONBridge_SpecialChars(t *testing.T) {
-	// Keys with special characters that could cause injection
 	keys := []string{
-		`"`,           // quote in key
-		`\`,           // backslash
-		`</script>`,   // HTML injection
-		"\n\r\t",      // whitespace
-		"null",        // keyword
-		"true",        // keyword
+		`"`,
+		`\`,
+		`</script>`,
+		"\n\r\t",
+		"null",
+		"true",
 	}
-	for _, key := range keys {
-		t.Run(key[:min(len(key), 8)], func(t *testing.T) {
+	for i, key := range keys {
+		t.Run(fmt.Sprintf("key_%d", i), func(t *testing.T) {
 			gv := Map(MapEntry{Key: key, Value: Int(1)})
 			out, err := ToJSONLoose(gv)
 			if err != nil {
-				return // rejection acceptable
+				return
 			}
-			// Verify JSON is well-formed by round-tripping
 			_, err = FromJSONLoose(out)
 			if err != nil {
 				t.Errorf("GLYPH→JSON→GLYPH round-trip broken for key %q: %v", key, err)
@@ -263,7 +223,6 @@ func TestIndustrial_JSONBridge_SpecialChars(t *testing.T) {
 }
 
 func TestIndustrial_JSONBridge_DeepNesting(t *testing.T) {
-	// Build deeply nested JSON
 	depth := 500
 	var b strings.Builder
 	for i := 0; i < depth; i++ {
@@ -273,16 +232,9 @@ func TestIndustrial_JSONBridge_DeepNesting(t *testing.T) {
 	for i := 0; i < depth; i++ {
 		b.WriteString("}")
 	}
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("PANIC on deep JSON→GLYPH: %v", r)
-			}
-		}()
-		_, err := FromJSONLoose([]byte(b.String()))
-		_ = err
-	}()
+	mustNotPanic(t, func() {
+		_, _ = FromJSONLoose([]byte(b.String()))
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -290,35 +242,16 @@ func TestIndustrial_JSONBridge_DeepNesting(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIndustrial_TolerantAutoClose_DataIntegrity(t *testing.T) {
-	// Truncated input should not silently produce wrong data
 	tests := []struct {
 		name     string
 		input    string
 		wantKey  string
 		wantVal  string
-		wantWarn bool // expect warnings about auto-close
+		wantWarn bool
 	}{
-		{
-			name:     "truncated_map",
-			input:    `{id: "123" secret: "hidden"`,
-			wantKey:  "id",
-			wantVal:  "123",
-			wantWarn: true,
-		},
-		{
-			name:     "truncated_list",
-			input:    `[1 2 3`,
-			wantKey:  "",
-			wantVal:  "",
-			wantWarn: true,
-		},
-		{
-			name:     "truncated_struct",
-			input:    `User{name: "alice" role: "admin"`,
-			wantKey:  "name",
-			wantVal:  "alice",
-			wantWarn: true,
-		},
+		{"truncated_map", `{id: "123" secret: "hidden"`, "id", "123", true},
+		{"truncated_list", `[1 2 3`, "", "", true},
+		{"truncated_struct", `User{name: "alice" role: "admin"`, "name", "alice", true},
 	}
 
 	for _, tt := range tests {
@@ -327,11 +260,9 @@ func TestIndustrial_TolerantAutoClose_DataIntegrity(t *testing.T) {
 			if err != nil {
 				t.Skipf("parse error (strict mode): %v", err)
 			}
-
 			if tt.wantWarn && len(result.Warnings) == 0 {
 				t.Error("expected warnings about auto-close, got none — truncation is SILENT")
 			}
-
 			if tt.wantKey != "" {
 				v := result.Value.Get(tt.wantKey)
 				if v == nil {
@@ -350,14 +281,9 @@ func TestIndustrial_TolerantAutoClose_DataIntegrity(t *testing.T) {
 }
 
 func TestIndustrial_StrictMode_RejectsTruncated(t *testing.T) {
-	// In strict mode, truncated input MUST error
-	inputs := []string{
-		`{a: 1`,
-		`[1 2`,
-		`Foo{x: 1`,
-	}
-	for _, input := range inputs {
-		t.Run("", func(t *testing.T) {
+	inputs := []string{`{a: 1`, `[1 2`, `Foo{x: 1`}
+	for i, input := range inputs {
+		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
 			result, err := ParseWithOptions(input, ParseOptions{Tolerant: false})
 			if err == nil && (result == nil || !result.HasErrors()) {
 				t.Errorf("strict mode accepted truncated input %q without error", input)
@@ -371,15 +297,14 @@ func TestIndustrial_StrictMode_RejectsTruncated(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIndustrial_Int64PrecisionLoss_JSONBridge(t *testing.T) {
-	// Integers beyond 2^53 lose precision in JSON (float64)
 	values := []int64{
-		9007199254740992, // 2^53 — exact boundary
-		9007199254740993, // 2^53 + 1 — CANNOT be represented in float64
+		9007199254740992, // 2^53
+		9007199254740993, // 2^53 + 1
 		math.MaxInt64,
 		math.MinInt64,
 	}
 	for _, val := range values {
-		t.Run("", func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d", val), func(t *testing.T) {
 			gv := Int(val)
 			jsonBytes, err := ToJSONLoose(gv)
 			if err != nil {
@@ -389,8 +314,6 @@ func TestIndustrial_Int64PrecisionLoss_JSONBridge(t *testing.T) {
 			if err != nil {
 				t.Skipf("FromJSONLoose error: %v", err)
 			}
-
-			// After JSON round-trip, large ints may come back as float
 			if gv2.Type() != TypeInt {
 				t.Logf("FINDING: int64 %d became %s after JSON round-trip (precision loss)", val, gv2.Type())
 				return
@@ -400,15 +323,13 @@ func TestIndustrial_Int64PrecisionLoss_JSONBridge(t *testing.T) {
 				t.Skipf("AsInt error: %v", rtErr)
 			}
 			if rt != val {
-				t.Errorf("int64 precision lost: %d → %d (delta=%d)",
-					val, rt, val-rt)
+				t.Errorf("int64 precision lost: %d → %d (delta=%d)", val, rt, val-rt)
 			}
 		})
 	}
 }
 
 func TestIndustrial_FloatSpecialValues(t *testing.T) {
-	// NaN, Inf, -Inf should round-trip or be explicitly rejected
 	specials := []struct {
 		name string
 		val  float64
@@ -423,8 +344,6 @@ func TestIndustrial_FloatSpecialValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gv := Float(tt.val)
 			emitted := Emit(gv)
-
-			// Parse back
 			result, err := Parse(emitted)
 			if err != nil {
 				t.Logf("parse error for %s (may be expected): %v", tt.name, err)
@@ -434,8 +353,6 @@ func TestIndustrial_FloatSpecialValues(t *testing.T) {
 				t.Errorf("parsed nil for %s", tt.name)
 				return
 			}
-
-			// After round-trip, special values may change type (NaN→str "NaN")
 			if result.Value.Type() != TypeFloat {
 				t.Logf("FINDING: float %s became %s after round-trip (type changed)", tt.name, result.Value.Type())
 				return
@@ -457,21 +374,15 @@ func TestIndustrial_FloatSpecialValues(t *testing.T) {
 }
 
 func TestIndustrial_FloatSpecialValues_JSONBridge(t *testing.T) {
-	// NaN/Inf in GLYPH→JSON should be handled, not crash
 	specials := []float64{math.NaN(), math.Inf(1), math.Inf(-1)}
 	for _, val := range specials {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					t.Errorf("PANIC on float special value %v in JSON bridge: %v", val, r)
-				}
-			}()
+		mustNotPanic(t, func() {
 			gv := Float(val)
 			_, err := ToJSONLoose(gv)
 			if err != nil {
 				t.Logf("JSON bridge rejects %v (expected): %v", val, err)
 			}
-		}()
+		})
 	}
 }
 
@@ -493,15 +404,10 @@ func TestIndustrial_InvalidUTF8(t *testing.T) {
 	}
 	for _, tt := range invalid {
 		t.Run(tt.name, func(t *testing.T) {
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						t.Errorf("PANIC on invalid UTF-8 %q: %v", tt.name, r)
-					}
-				}()
+			mustNotPanic(t, func() {
 				result, err := Parse(tt.bytes)
 				if err != nil {
-					return // rejection is fine
+					return
 				}
 				if result.Value != nil {
 					s, sErr := result.Value.AsStr()
@@ -509,33 +415,26 @@ func TestIndustrial_InvalidUTF8(t *testing.T) {
 						return
 					}
 					if !utf8.ValidString(s) {
-						t.Logf("FINDING: invalid UTF-8 survived parsing in %q — needs sanitization for C interop/JSON", tt.name)
+						t.Logf("FINDING: invalid UTF-8 survived parsing in %q", tt.name)
 					}
 				}
-			}()
+			})
 		})
 	}
 }
 
 func TestIndustrial_InvalidUTF8_JSONBridge(t *testing.T) {
-	// GValue with invalid UTF-8 → JSON should not produce invalid JSON
-	badStr := "hello\xED\xA0\x80world" // lone surrogate
+	badStr := "hello\xED\xA0\x80world"
 	gv := Str(badStr)
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("PANIC on invalid UTF-8 in JSON bridge: %v", r)
-			}
-		}()
+	mustNotPanic(t, func() {
 		out, err := ToJSONLoose(gv)
 		if err != nil {
-			return // rejection fine
+			return
 		}
 		if !utf8.Valid(out) {
 			t.Error("JSON output contains invalid UTF-8")
 		}
-	}()
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -546,46 +445,36 @@ func TestIndustrial_LargeInput_NoOOM(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping large input test in short mode")
 	}
-	// 50MB of trivial GLYPH — should not OOM
 	size := 50 * 1024 * 1024
-	input := "[" + strings.Repeat("1 ", size/2) + "]"
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("PANIC on %dMB input: %v", size/(1024*1024), r)
-			}
-		}()
-		_, err := Parse(input)
-		_ = err
-	}()
+	var b strings.Builder
+	b.Grow(size + 2)
+	b.WriteByte('[')
+	for i := 0; i < size/2; i++ {
+		b.WriteString("1 ")
+	}
+	b.WriteByte(']')
+	mustNotPanic(t, func() {
+		_, _ = Parse(b.String())
+	})
 }
 
 func TestIndustrial_ManyKeys_NoOOM(t *testing.T) {
-	// Map with 100k keys — should not OOM or be extremely slow
+	if testing.Short() {
+		t.Skip("skipping large input test in short mode")
+	}
+	pad := strings.Repeat("x", 10)
 	var b strings.Builder
 	b.WriteString("{")
 	for i := 0; i < 100000; i++ {
 		if i > 0 {
 			b.WriteString(" ")
 		}
-		b.WriteString("k")
-		b.WriteString(strings.Repeat("x", 10))
-		b.WriteString(string(rune('0' + i%10)))
-		b.WriteString(": ")
-		b.WriteString("1")
+		fmt.Fprintf(&b, "k%s%d: 1", pad, i)
 	}
 	b.WriteString("}")
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("PANIC on 100k-key map: %v", r)
-			}
-		}()
-		_, err := Parse(b.String())
-		_ = err
-	}()
+	mustNotPanic(t, func() {
+		_, _ = Parse(b.String())
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -593,7 +482,6 @@ func TestIndustrial_ManyKeys_NoOOM(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIndustrial_RoundTrip_AllTypes(t *testing.T) {
-	// Every GLYPH type must survive Parse → Emit → Parse
 	values := map[string]*GValue{
 		"null":       Null(),
 		"true":       Bool(true),
@@ -609,7 +497,6 @@ func TestIndustrial_RoundTrip_AllTypes(t *testing.T) {
 		"struct":     Struct("Point", MapEntry{"x", Float(1.0)}, MapEntry{"y", Float(2.0)}),
 		"nested":     Map(MapEntry{"inner", List(Map(MapEntry{"deep", Int(99)}))}),
 	}
-
 	for name, original := range values {
 		t.Run(name, func(t *testing.T) {
 			emitted := Emit(original)
@@ -626,7 +513,6 @@ func TestIndustrial_RoundTrip_AllTypes(t *testing.T) {
 }
 
 func TestIndustrial_RoundTrip_JSONBridge(t *testing.T) {
-	// GLYPH → JSON → GLYPH must preserve data (within JSON's type limits)
 	values := map[string]*GValue{
 		"null":   Null(),
 		"bool":   Bool(true),
@@ -636,7 +522,6 @@ func TestIndustrial_RoundTrip_JSONBridge(t *testing.T) {
 		"list":   List(Int(1), Str("two"), Bool(false)),
 		"map":    Map(MapEntry{"key", Str("value")}),
 	}
-
 	for name, original := range values {
 		t.Run(name, func(t *testing.T) {
 			jsonBytes, err := ToJSONLoose(original)
@@ -647,7 +532,6 @@ func TestIndustrial_RoundTrip_JSONBridge(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSONLoose: %v", err)
 			}
-			// Re-emit both and compare
 			origStr := Emit(original)
 			rtStr := Emit(roundTripped)
 			if origStr != rtStr {
@@ -662,7 +546,6 @@ func TestIndustrial_RoundTrip_JSONBridge(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func FuzzParse(f *testing.F) {
-	// Seed corpus
 	f.Add(`{a: 1 b: "hello"}`)
 	f.Add(`[1 2 3]`)
 	f.Add(`User{name: "alice" age: 30}`)
@@ -678,21 +561,15 @@ func FuzzParse(f *testing.F) {
 	f.Add(`[1 2 3`)
 
 	f.Fuzz(func(t *testing.T, input string) {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					t.Errorf("PANIC on input %q: %v", input[:min(len(input), 100)], r)
-				}
-			}()
+		mustNotPanic(t, func() {
 			result, err := Parse(input)
 			if err != nil {
 				return
 			}
-			// If parse succeeds, emit should not panic
 			if result.Value != nil {
 				_ = Emit(result.Value)
 			}
-		}()
+		})
 	})
 }
 
@@ -705,18 +582,12 @@ func FuzzFromJSONLoose(f *testing.F) {
 	f.Add([]byte(`{"nested": {"deep": [1, {"x": true}]}}`))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					t.Errorf("PANIC on JSON input: %v", r)
-				}
-			}()
+		mustNotPanic(t, func() {
 			gv, err := FromJSONLoose(data)
 			if err != nil {
 				return
 			}
-			// Round-trip: GLYPH→JSON should not panic
 			_, _ = ToJSONLoose(gv)
-		}()
+		})
 	})
 }

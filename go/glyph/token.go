@@ -322,8 +322,9 @@ func (l *Lexer) scanNumber() Token {
 	if l.peek() == '-' {
 		l.advance()
 
-		// Check for -Inf
-		if l.pos+2 < len(l.input) && l.input[l.pos:l.pos+3] == "Inf" {
+		// Check for -Inf (with word boundary: next char must not be ident-continue)
+		if l.pos+2 < len(l.input) && l.input[l.pos:l.pos+3] == "Inf" &&
+			(l.pos+3 >= len(l.input) || !isIdentContinue(l.input[l.pos+3])) {
 			l.pos += 3
 			l.col += 3
 			return Token{Type: TokenFloat, Value: l.input[start:l.pos], Pos: startPos}

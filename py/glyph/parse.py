@@ -217,8 +217,9 @@ class Lexer:
         # Could be negative number or identifier starting with -
         if self.peek_char() == '-':
             result.append(self.next_char())
-            # Check for -Inf
-            if self.pos + 2 < self.length and self.input[self.pos:self.pos+3] == "Inf":
+            # Check for -Inf (with word boundary: next char must not be alphanumeric/underscore)
+            if (self.pos + 2 < self.length and self.text[self.pos:self.pos+3] == "Inf"
+                    and (self.pos + 3 >= self.length or (not self.text[self.pos+3].isalnum() and self.text[self.pos+3] != '_'))):
                 self.pos += 3
                 return Token(TokenType.FLOAT, float("-inf"), start)
 
