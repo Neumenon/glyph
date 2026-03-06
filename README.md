@@ -77,10 +77,10 @@ Drop-in replacement. Bidirectional conversion. One-line change.
 
 | Language | Installation | Documentation |
 |----------|--------------|---------------|
-| **Python** | `pip install glyph-serial` | [Python Guide →](py/README.md) |
+| **Python** | `pip install glyph-py` | [Python Guide →](py/README.md) |
 | **Go** | `go get github.com/Neumenon/glyph` | [Go Guide →](go/README.md) |
-| **JavaScript** | `npm install glyph-js` | [JS Guide →](js/README.md) |
-| **Rust** | `cargo add glyph-codec` | [Rust Guide →](rust/README.md) |
+| **JavaScript** | `npm install cowrie-glyph` | [JS Guide →](js/README.md) |
+| **Rust** | `cargo add glyph-rs` | [Rust Guide →](rust/README.md) |
 | **C** | `make` | [C Guide →](c/README.md) |
 
 ### Example: Python
@@ -146,7 +146,7 @@ const text = emit(fromJSON({ name: 'Alice', scores: [95, 87, 92] }));
 ## Format Reference
 
 ```
-Null:    ∅ or _          List:    [1 2 3]
+Null:    _ (default) or ∅  List:    [1 2 3]
 Bool:    t / f           Map:     {a=1 b=2}
 Int:     42, -7          Struct:  Team{name=Arsenal}
 Float:   3.14, 1e-10     Sum:     Some(42) / None()
@@ -154,7 +154,7 @@ String:  hello           Ref:     ^user:abc123
 Bytes:   b64"SGVsbG8="   Time:    2025-01-13T12:00:00Z
 ```
 
-**vs JSON**: No commas · `=` not `:` · bare strings · `t`/`f` bools · `∅` null
+**vs JSON**: No commas · `=` not `:` · bare strings · `t`/`f` bools · `_` null (∅ also accepted)
 
 ---
 
@@ -184,7 +184,7 @@ Bytes:   b64"SGVsbG8="   Time:    2025-01-13T12:00:00Z
 
 **Agent State**: Store conversation history with 49% fewer tokens. Patch with base hashes for concurrent safety.
 
-**Batch Data**: Auto-tabular mode for embeddings, search results, logs (50-62% token reduction). 50 search results? 919 → 439 tokens.
+**Batch Data**: Auto-tabular mode for embeddings, search results, logs (50-62% token reduction). Eligible when rows are homogeneous and share ≥50% keys. 50 search results? 919 → 439 tokens.
 
 [More Examples →](docs/QUICKSTART.md)
 

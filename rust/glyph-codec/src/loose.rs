@@ -4,7 +4,6 @@
 //! in schema-optional mode. Used for hashing, comparison, and deduplication.
 
 use crate::types::*;
-use crate::error::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use sha2::{Sha256, Digest};
 use std::collections::HashSet;
@@ -138,8 +137,11 @@ fn canon_int(n: i64) -> String {
 }
 
 fn canon_float(f: f64) -> String {
-    if f.is_nan() || f.is_infinite() {
-        panic!("Cannot canonicalize NaN or Infinity");
+    if f.is_nan() {
+        return "NaN".to_string();
+    }
+    if f.is_infinite() {
+        return if f > 0.0 { "Inf".to_string() } else { "-Inf".to_string() };
     }
 
     // Handle negative zero

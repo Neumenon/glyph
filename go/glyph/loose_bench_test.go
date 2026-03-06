@@ -12,14 +12,14 @@ import (
 // ============================================================
 //
 // Run with:
-//   go test -bench=BenchmarkCanonicalizeLoose -benchmem -count=5 ./sjson/glyph/
+//   go test -bench=BenchmarkCanonicalizeLoose -benchmem -count=5 ./go/glyph/
 //
 // For memory profiling:
-//   go test -bench=BenchmarkCanonicalizeLoose -benchmem -memprofile=mem.out ./sjson/glyph/
+//   go test -bench=BenchmarkCanonicalizeLoose -benchmem -memprofile=mem.out ./go/glyph/
 //   go tool pprof -top mem.out
 //
 // For CPU profiling:
-//   go test -bench=BenchmarkCanonicalizeLoose -cpuprofile=cpu.out ./sjson/glyph/
+//   go test -bench=BenchmarkCanonicalizeLoose -cpuprofile=cpu.out ./go/glyph/
 //   go tool pprof -top cpu.out
 
 // ============================================================

@@ -607,18 +607,24 @@ static void write_canon_value(strbuf_t *buf, const glyph_value_t *v,
 
         case GLYPH_FLOAT: {
             double f = v->float_val;
-            /* Handle negative zero */
-            if (f == 0.0) f = 0.0;
-
-            /* Check if whole number */
-            if (f == floor(f) && fabs(f) < 1e15) {
-                char num[32];
-                snprintf(num, sizeof(num), "%ld", (long)f);
-                strbuf_append(buf, num);
+            if (isnan(f)) {
+                strbuf_append(buf, "NaN");
+            } else if (isinf(f)) {
+                strbuf_append(buf, f > 0 ? "Inf" : "-Inf");
             } else {
-                char num[64];
-                snprintf(num, sizeof(num), "%.15g", f);
-                strbuf_append(buf, num);
+                /* Handle negative zero */
+                if (f == 0.0) f = 0.0;
+
+                /* Check if whole number */
+                if (f == floor(f) && fabs(f) < 1e15) {
+                    char num[32];
+                    snprintf(num, sizeof(num), "%ld", (long)f);
+                    strbuf_append(buf, num);
+                } else {
+                    char num[64];
+                    snprintf(num, sizeof(num), "%.15g", f);
+                    strbuf_append(buf, num);
+                }
             }
             break;
         }

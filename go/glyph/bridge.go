@@ -1,101 +1,103 @@
+//go:build agentgo
+
 package glyph
 
 import (
 	"time"
 
-	"github.com/phenomenon0/Agent-GO/sjson"
+	"github.com/phenomenon0/Agent-GO/cowrie"
 )
 
-// ToSJSON converts a GValue to an sjson.Value.
-func ToSJSON(v *GValue) *sjson.Value {
+// ToSJSON converts a GValue to a cowrie.Value.
+func ToSJSON(v *GValue) *cowrie.Value {
 	if v == nil {
-		return sjson.Null()
+		return cowrie.Null()
 	}
 
 	switch v.typ {
 	case TypeNull:
-		return sjson.Null()
+		return cowrie.Null()
 
 	case TypeBool:
-		return sjson.Bool(v.boolVal)
+		return cowrie.Bool(v.boolVal)
 
 	case TypeInt:
-		return sjson.Int64(v.intVal)
+		return cowrie.Int64(v.intVal)
 
 	case TypeFloat:
-		return sjson.Float64(v.floatVal)
+		return cowrie.Float64(v.floatVal)
 
 	case TypeStr:
-		return sjson.String(v.strVal)
+		return cowrie.String(v.strVal)
 
 	case TypeBytes:
-		return sjson.Bytes(v.bytesVal)
+		return cowrie.Bytes(v.bytesVal)
 
 	case TypeTime:
-		return sjson.Datetime64(v.timeVal.UnixNano())
+		return cowrie.Datetime64(v.timeVal.UnixNano())
 
 	case TypeID:
 		// Represent as string with ^ prefix
-		return sjson.String(v.idVal.String())
+		return cowrie.String(v.idVal.String())
 
 	case TypeList:
-		items := make([]*sjson.Value, len(v.listVal))
+		items := make([]*cowrie.Value, len(v.listVal))
 		for i, elem := range v.listVal {
 			items[i] = ToSJSON(elem)
 		}
-		return sjson.Array(items...)
+		return cowrie.Array(items...)
 
 	case TypeMap:
-		members := make([]sjson.Member, len(v.mapVal))
+		members := make([]cowrie.Member, len(v.mapVal))
 		for i, entry := range v.mapVal {
-			members[i] = sjson.Member{Key: entry.Key, Value: ToSJSON(entry.Value)}
+			members[i] = cowrie.Member{Key: entry.Key, Value: ToSJSON(entry.Value)}
 		}
-		return sjson.Object(members...)
+		return cowrie.Object(members...)
 
 	case TypeStruct:
 		// Represent as object with _type field
-		members := make([]sjson.Member, 0, len(v.structVal.Fields)+1)
-		members = append(members, sjson.Member{Key: "_type", Value: sjson.String(v.structVal.TypeName)})
+		members := make([]cowrie.Member, 0, len(v.structVal.Fields)+1)
+		members = append(members, cowrie.Member{Key: "_type", Value: cowrie.String(v.structVal.TypeName)})
 		for _, field := range v.structVal.Fields {
-			members = append(members, sjson.Member{Key: field.Key, Value: ToSJSON(field.Value)})
+			members = append(members, cowrie.Member{Key: field.Key, Value: ToSJSON(field.Value)})
 		}
-		return sjson.Object(members...)
+		return cowrie.Object(members...)
 
 	case TypeSum:
 		// Represent as object with _tag and _value
-		return sjson.Object(
-			sjson.Member{Key: "_tag", Value: sjson.String(v.sumVal.Tag)},
-			sjson.Member{Key: "_value", Value: ToSJSON(v.sumVal.Value)},
+		return cowrie.Object(
+			cowrie.Member{Key: "_tag", Value: cowrie.String(v.sumVal.Tag)},
+			cowrie.Member{Key: "_value", Value: ToSJSON(v.sumVal.Value)},
 		)
 
 	default:
-		return sjson.Null()
+		return cowrie.Null()
 	}
 }
 
-// FromSJSON converts an sjson.Value to a GValue.
-func FromSJSON(v *sjson.Value) *GValue {
+// FromSJSON converts a cowrie.Value to a GValue.
+func FromSJSON(v *cowrie.Value) *GValue {
 	if v == nil || v.IsNull() {
 		return Null()
 	}
 
 	switch v.Type() {
-	case sjson.TypeNull:
+	case cowrie.TypeNull:
 		return Null()
 
-	case sjson.TypeBool:
+	case cowrie.TypeBool:
 		return Bool(v.Bool())
 
-	case sjson.TypeInt64:
+	case cowrie.TypeInt64:
 		return Int(v.Int64())
 
-	case sjson.TypeUint64:
+	case cowrie.TypeUint64:
 		return Int(int64(v.Uint64()))
 
-	case sjson.TypeFloat64:
+	case cowrie.TypeFloat64:
 		return Float(v.Float64())
 
-	case sjson.TypeString:
+	case cowrie.TypeString:
 		s := v.String()
 		// Check for ID reference
 		if len(s) > 0 && s[0] == '^' {
@@ -103,13 +105,13 @@ func FromSJSON(v *sjson.Value) *GValue {
 		}
 		return Str(s)
 
-	case sjson.TypeBytes:
+	case cowrie.TypeBytes:
 		return Bytes(v.Bytes())
 
-	case sjson.TypeDatetime64:
+	case cowrie.TypeDatetime64:
 		return Time(time.Unix(0, v.Datetime64()))
 
-	case sjson.TypeArray:
+	case cowrie.TypeArray:
 		items := v.Array()
 		elements := make([]*GValue, len(items))
 		for i, item := range items {
@@ -117,12 +119,12 @@ func FromSJSON(v *sjson.Value) *GValue {
 		}
 		return List(elements...)
 
-	case sjson.TypeObject:
+	case cowrie.TypeObject:
 		members := v.Members()
 
 		// Check for struct marker
 		typeVal := v.Get("_type")
-		if typeVal != nil && typeVal.Type() == sjson.TypeString {
+		if typeVal != nil && typeVal.Type() == cowrie.TypeString {
 			typeName := typeVal.String()
 			fields := make([]MapEntry, 0, len(members)-1)
 			for _, m := range members {
@@ -136,7 +138,7 @@ func FromSJSON(v *sjson.Value) *GValue {
 
 		// Check for sum marker
 		tagVal := v.Get("_tag")
-		if tagVal != nil && tagVal.Type() == sjson.TypeString {
+		if tagVal != nil && tagVal.Type() == cowrie.TypeString {
 			tag := tagVal.String()
 			valueVal := v.Get("_value")
 			return Sum(tag, FromSJSON(valueVal))
@@ -169,17 +171,17 @@ func parseRefFromString(s string) *GValue {
 // Batch Conversion
 // ============================================================
 
-// ToSJSONList converts a list of GValues to sjson.Values.
-func ToSJSONList(values []*GValue) []*sjson.Value {
-	result := make([]*sjson.Value, len(values))
+// ToSJSONList converts a list of GValues to cowrie.Values.
+func ToSJSONList(values []*GValue) []*cowrie.Value {
+	result := make([]*cowrie.Value, len(values))
 	for i, v := range values {
 		result[i] = ToSJSON(v)
 	}
 	return result
 }
 
-// FromSJSONList converts a list of sjson.Values to GValues.
-func FromSJSONList(values []*sjson.Value) []*GValue {
+// FromSJSONList converts a list of cowrie.Values to GValues.
+func FromSJSONList(values []*cowrie.Value) []*GValue {
 	result := make([]*GValue, len(values))
 	for i, v := range values {
 		result[i] = FromSJSON(v)
@@ -191,15 +193,15 @@ func FromSJSONList(values []*sjson.Value) []*GValue {
 // JSON Interop
 // ============================================================
 
-// ToJSON converts a GValue to JSON bytes via sjson.
+// ToJSON converts a GValue to JSON bytes via cowrie.
 func ToJSON(v *GValue) ([]byte, error) {
 	sv := ToSJSON(v)
-	return sjson.ToJSON(sv)
+	return cowrie.ToJSON(sv)
 }
 
 // FromJSON parses JSON bytes into a GValue.
 func FromJSON(data []byte) (*GValue, error) {
-	sv, err := sjson.FromJSON(data)
+	sv, err := cowrie.FromJSON(data)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +228,7 @@ func ToJSONString(v *GValue) (string, error) {
 //	data, _ := gen1.Encode(glyph.ToAny(gv))  // GLYPH → Gen1
 //	jsonBytes, _ := json.Marshal(glyph.ToAny(gv))  // GLYPH → JSON
 func ToAny(v *GValue) any {
-	return sjson.ToAny(ToSJSON(v))
+	return cowrie.ToAny(ToSJSON(v))
 }
 
 // FromAny converts a Go any value to a GValue.
@@ -240,22 +242,22 @@ func ToAny(v *GValue) any {
 //	json.Unmarshal(jsonBytes, &obj)
 //	gv := glyph.FromAny(obj)  // JSON → GLYPH
 func FromAny(v any) *GValue {
-	return FromSJSON(sjson.FromAny(v))
+	return FromSJSON(cowrie.FromAny(v))
 }
 
 // ============================================================
-// Binary Interop (via SJSON)
+// Binary Interop (via Cowrie)
 // ============================================================
 
-// EncodeBinary encodes a GValue to SJSON binary format.
+// EncodeBinary encodes a GValue to Cowrie binary format.
 func EncodeBinary(v *GValue) ([]byte, error) {
 	sv := ToSJSON(v)
-	return sjson.Encode(sv)
+	return cowrie.Encode(sv)
 }
 
-// DecodeBinary decodes SJSON binary format to a GValue.
+// DecodeBinary decodes Cowrie binary format to a GValue.
 func DecodeBinary(data []byte) (*GValue, error) {
-	sv, err := sjson.Decode(data)
+	sv, err := cowrie.Decode(data)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +268,7 @@ func DecodeBinary(data []byte) (*GValue, error) {
 // Round-Trip Verification
 // ============================================================
 
-// RoundTrips checks if a GValue survives round-trip through SJSON.
+// RoundTrips checks if a GValue survives round-trip through Cowrie.
 func RoundTrips(v *GValue) bool {
 	sv := ToSJSON(v)
 	roundTripped := FromSJSON(sv)
@@ -282,8 +284,8 @@ func RoundTrips(v *GValue) bool {
 // Type-Aware Conversion
 // ============================================================
 
-// FromSJSONWithSchema converts an sjson.Value using schema hints.
-func FromSJSONWithSchema(v *sjson.Value, schema *Schema, typeName string) *GValue {
+// FromSJSONWithSchema converts a cowrie.Value using schema hints.
+func FromSJSONWithSchema(v *cowrie.Value, schema *Schema, typeName string) *GValue {
 	if v == nil || v.IsNull() {
 		return Null()
 	}
@@ -293,14 +295,14 @@ func FromSJSONWithSchema(v *sjson.Value, schema *Schema, typeName string) *GValu
 		return FromSJSON(v)
 	}
 
-	if td.Kind == TypeDefStruct && v.Type() == sjson.TypeObject {
+	if td.Kind == TypeDefStruct && v.Type() == cowrie.TypeObject {
 		return fromSJSONStruct(v, schema, td)
 	}
 
 	return FromSJSON(v)
 }
 
-func fromSJSONStruct(v *sjson.Value, schema *Schema, td *TypeDef) *GValue {
+func fromSJSONStruct(v *cowrie.Value, schema *Schema, td *TypeDef) *GValue {
 	members := v.Members()
 	fields := make([]MapEntry, 0, len(members))
 

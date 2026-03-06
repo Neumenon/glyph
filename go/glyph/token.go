@@ -39,6 +39,8 @@ const (
 	// Schema-related
 	TokenAt   // @
 	TokenHash // #
+	TokenLT   // <
+	TokenGT   // >
 
 	// Identifiers (for type names, field names)
 	TokenIdent // Match, Team, fieldName
@@ -91,6 +93,10 @@ func (t TokenType) String() string {
 		return "@"
 	case TokenHash:
 		return "#"
+	case TokenLT:
+		return "<"
+	case TokenGT:
+		return ">"
 	case TokenIdent:
 		return "IDENT"
 	default:
@@ -197,6 +203,12 @@ func (l *Lexer) nextToken() Token {
 	case '#':
 		l.advance()
 		return Token{Type: TokenHash, Value: "#", Pos: startPos}
+	case '<':
+		l.advance()
+		return Token{Type: TokenLT, Value: "<", Pos: startPos}
+	case '>':
+		l.advance()
+		return Token{Type: TokenGT, Value: ">", Pos: startPos}
 	case '"':
 		return l.scanString()
 	case '^':
@@ -272,7 +284,14 @@ func (l *Lexer) scanString() Token {
 		}
 	}
 
-	return Token{Type: TokenString, Value: sb.String(), Pos: startPos}
+	str := sb.String()
+	// Sanitize invalid UTF-8 sequences (lone surrogates, overlong encodings,
+	// truncated multi-byte, invalid continuation bytes). Replace with U+FFFD
+	// so downstream consumers (json.Marshal, C interop) never see broken bytes.
+	if !utf8.ValidString(str) {
+		str = strings.ToValidUTF8(str, "\uFFFD")
+	}
+	return Token{Type: TokenString, Value: str, Pos: startPos}
 }
 
 // scanRef scans a reference (^prefix:value).
@@ -302,6 +321,13 @@ func (l *Lexer) scanNumber() Token {
 	// Optional negative sign
 	if l.peek() == '-' {
 		l.advance()
+
+		// Check for -Inf
+		if l.pos+2 < len(l.input) && l.input[l.pos:l.pos+3] == "Inf" {
+			l.pos += 3
+			l.col += 3
+			return Token{Type: TokenFloat, Value: l.input[start:l.pos], Pos: startPos}
+		}
 	}
 
 	// Integer part
@@ -383,6 +409,8 @@ func (l *Lexer) scanIdentOrKeyword() Token {
 		return Token{Type: TokenTrue, Value: value, Pos: startPos}
 	case "false", "f":
 		return Token{Type: TokenFalse, Value: value, Pos: startPos}
+	case "NaN", "Inf":
+		return Token{Type: TokenFloat, Value: value, Pos: startPos}
 	}
 
 	return Token{Type: TokenIdent, Value: value, Pos: startPos}
@@ -493,7 +521,8 @@ func isValidBareString(s string) bool {
 
 	// Check it's not a keyword
 	switch s {
-	case "null", "none", "nil", "true", "false", "t", "f", "struct", "sum", "list", "map":
+	case "null", "none", "nil", "true", "false", "t", "f", "struct", "sum", "list", "map",
+		"NaN", "Inf":
 		return false
 	}
 

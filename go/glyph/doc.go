@@ -13,7 +13,7 @@
 //
 // GLYPH has two equivalent encodings:
 //   - GLYPH-T (text): What the LLM reads/writes (token-optimized)
-//   - GLYPH-B (binary): What systems store/transport (via SJSON)
+//   - GLYPH-B (binary): What systems store/transport (via Cowrie)
 //
 // Both share the same abstract data model and schema language.
 //

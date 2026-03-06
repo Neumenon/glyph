@@ -21,7 +21,7 @@ import (
 //   - Incremental validation: Check constraints as tokens arrive
 //   - Latency savings: Reject bad payloads without waiting for completion
 //
-// Reference: sjson/benchmark/comparison/js/streaming_validation_test.mjs
+// Reference: js/src/stream_validator.ts
 
 // ============================================================
 // Tool Registry

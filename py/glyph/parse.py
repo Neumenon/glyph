@@ -217,6 +217,10 @@ class Lexer:
         # Could be negative number or identifier starting with -
         if self.peek_char() == '-':
             result.append(self.next_char())
+            # Check for -Inf
+            if self.pos + 2 < self.length and self.input[self.pos:self.pos+3] == "Inf":
+                self.pos += 3
+                return Token(TokenType.FLOAT, float("-inf"), start)
 
         # Read digits and decimal point
         has_dot = False
@@ -273,6 +277,10 @@ class Lexer:
             return Token(TokenType.BOOL, False, start)
         if s == "null" or s == "nil":
             return Token(TokenType.NULL, None, start)
+        if s == "NaN":
+            return Token(TokenType.FLOAT, float("nan"), start)
+        if s == "Inf":
+            return Token(TokenType.FLOAT, float("inf"), start)
 
         return Token(TokenType.IDENT, s, start)
 
