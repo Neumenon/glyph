@@ -55,3 +55,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cd c/glyph-codec && make clean && make test
+
+  publish-gate:
+    name: Publish Gate
+    needs: [go, python, js, rust, c]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all language tests passed
+        run: |
+          if [[ "${{ needs.go.result }}" != "success" || \
+                "${{ needs.python.result }}" != "success" || \
+                "${{ needs.js.result }}" != "success" || \
+                "${{ needs.rust.result }}" != "success" || \
+                "${{ needs.c.result }}" != "success" ]]; then
+            echo "One or more language test suites failed:"
+            echo "  Go:         ${{ needs.go.result }}"
+            echo "  Python:     ${{ needs.python.result }}"
+            echo "  JS:         ${{ needs.js.result }}"
+            echo "  Rust:       ${{ needs.rust.result }}"
+            echo "  C:          ${{ needs.c.result }}"
+            exit 1
+          fi
+          echo "All 5 language test suites passed. Safe to publish."
