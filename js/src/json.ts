@@ -7,6 +7,16 @@
 import { GValue, RefID, MapEntry } from './types';
 import { Schema, TypeDef } from './schema';
 
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function hasOwn(obj: object, key: string): boolean {
+  return hasOwnProperty.call(obj, key);
+}
+
+function createJsonObject(): Record<string, unknown> {
+  return Object.create(null) as Record<string, unknown>;
+}
+
 // ============================================================
 // JSON to GValue Conversion
 // ============================================================
@@ -88,11 +98,16 @@ function convertValue(
   // Object
   if (typeof v === 'object') {
     const obj = v as Record<string, unknown>;
+    const typeMarker = hasOwn(obj, '$type') ? obj.$type : undefined;
+    const refMarker = hasOwn(obj, '$ref') ? obj.$ref : undefined;
+    const timeMarker = hasOwn(obj, '$time') ? obj.$time : undefined;
+    const bytesMarker = hasOwn(obj, '$bytes') ? obj.$bytes : undefined;
+    const tagMarker = hasOwn(obj, '$tag') ? obj.$tag : undefined;
     
     // Check for special type markers
-    if ('$type' in obj && typeof obj.$type === 'string') {
+    if (typeof typeMarker === 'string') {
       // Typed struct: { $type: "TypeName", field1: ..., field2: ... }
-      const structTypeName = obj.$type;
+      const structTypeName = typeMarker;
       const td = schema?.getType(structTypeName);
       const fields: MapEntry[] = [];
       
@@ -113,8 +128,8 @@ function convertValue(
     }
 
     // Check for ref marker
-    if ('$ref' in obj && typeof obj.$ref === 'string') {
-      const ref = obj.$ref;
+    if (typeof refMarker === 'string') {
+      const ref = refMarker;
       const colonIdx = ref.indexOf(':');
       if (colonIdx > 0) {
         return GValue.id(ref.slice(0, colonIdx), ref.slice(colonIdx + 1));
@@ -123,21 +138,21 @@ function convertValue(
     }
 
     // Check for time marker
-    if ('$time' in obj && typeof obj.$time === 'string') {
-      return GValue.time(new Date(obj.$time));
+    if (typeof timeMarker === 'string') {
+      return GValue.time(new Date(timeMarker));
     }
 
     // Check for bytes marker
-    if ('$bytes' in obj && typeof obj.$bytes === 'string') {
-      return GValue.bytes(base64ToBytes(obj.$bytes));
+    if (typeof bytesMarker === 'string') {
+      return GValue.bytes(base64ToBytes(bytesMarker));
     }
 
     // Check for sum type marker
-    if ('$tag' in obj && typeof obj.$tag === 'string') {
-      const value = '$value' in obj 
+    if (typeof tagMarker === 'string') {
+      const value = hasOwn(obj, '$value')
         ? convertValue(obj.$value, schema, undefined, parseDates, parseRefs)
         : null;
-      return GValue.sum(obj.$tag, value);
+      return GValue.sum(tagMarker, value);
     }
 
     // Regular object -> struct with typeName or map
@@ -249,7 +264,9 @@ function convertToJson(
     case 'bytes': {
       const bytes = gv.asBytes();
       const b64 = bytesToBase64(bytes);
-      return { $bytes: b64 };
+      const result = createJsonObject();
+      result.$bytes = b64;
+      return result;
     }
 
     case 'time': {
@@ -257,7 +274,9 @@ function convertToJson(
       if (formatDates) {
         return date.toISOString();
       }
-      return { $time: date.toISOString() };
+      const result = createJsonObject();
+      result.$time = date.toISOString();
+      return result;
     }
 
     case 'id': {
@@ -266,7 +285,9 @@ function convertToJson(
       if (compactRefs) {
         return `^${refStr}`;
       }
-      return { $ref: refStr };
+      const result = createJsonObject();
+      result.$ref = refStr;
+      return result;
     }
 
     case 'list': {
@@ -276,7 +297,7 @@ function convertToJson(
     }
 
     case 'map': {
-      const result: Record<string, unknown> = {};
+      const result = createJsonObject();
       for (const entry of gv.asMap()) {
         result[entry.key] = convertToJson(
           entry.value, includeTypeMarkers, compactRefs, formatDates, useWireKeys, schema
@@ -287,7 +308,7 @@ function convertToJson(
 
     case 'struct': {
       const sv = gv.asStruct();
-      const result: Record<string, unknown> = {};
+      const result = createJsonObject();
       
       if (includeTypeMarkers) {
         result.$type = sv.typeName;
@@ -315,15 +336,15 @@ function convertToJson(
 
     case 'sum': {
       const sum = gv.asSum();
+      const result = createJsonObject();
+      result.$tag = sum.tag;
       if (sum.value === null) {
-        return { $tag: sum.tag };
+        return result;
       }
-      return {
-        $tag: sum.tag,
-        $value: convertToJson(
-          sum.value, includeTypeMarkers, compactRefs, formatDates, useWireKeys, schema
-        ),
-      };
+      result.$value = convertToJson(
+        sum.value, includeTypeMarkers, compactRefs, formatDates, useWireKeys, schema
+      );
+      return result;
     }
   }
 }

@@ -306,6 +306,22 @@ describe('StreamingValidator - Constraint Validation', () => {
     expect(result.errors.some(e => e.code === ErrorCode.ConstraintPattern)).toBe(true);
   });
 
+  test('reject invalid int argument types', () => {
+    const validator = new StreamingValidator(registry);
+    validator.pushToken('{action=test count=oops}');
+
+    const result = validator.getResult();
+    expect(result.errors.some(e => e.code === ErrorCode.InvalidType)).toBe(true);
+  });
+
+  test('reject invalid string argument types', () => {
+    const validator = new StreamingValidator(registry);
+    validator.pushToken('{action=test name=42}');
+
+    const result = validator.getResult();
+    expect(result.errors.some(e => e.code === ErrorCode.InvalidType)).toBe(true);
+  });
+
   test('valid constraints pass', () => {
     const validator = new StreamingValidator(registry);
     validator.pushToken('{action=test count=50 name=valid status=active url="https://example.com"}');
@@ -363,6 +379,22 @@ describe('StreamingValidator - Required Fields', () => {
 
     const result = validator.getResult();
     expect(result.errors.some(e => e.code === ErrorCode.MissingTool)).toBe(true);
+  });
+
+  test('required inherited prototype keys do not count as present', () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'test',
+      args: {
+        ['toString']: { type: 'string', required: true },
+      },
+    });
+
+    const validator = new StreamingValidator(registry);
+    validator.pushToken('{action=test}');
+
+    const result = validator.getResult();
+    expect(result.errors.some(e => e.code === ErrorCode.MissingRequired && e.field === 'toString')).toBe(true);
   });
 });
 
@@ -646,6 +678,24 @@ describe('StreamingValidator - Edge Cases', () => {
     const result = validator.getResult();
     expect(result.toolName).toBe('search');
     expect(result.fields.query).toBe('test');
+  });
+
+  test('stores __proto__ fields without mutating the result prototype', () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'danger',
+      args: {
+        ['__proto__']: { type: 'string' },
+      },
+    });
+
+    const validator = new StreamingValidator(registry);
+    validator.pushToken('{action=danger __proto__=safe}');
+
+    const result = validator.getResult();
+    expect(result.valid).toBe(true);
+    expect(Object.getPrototypeOf(result.fields)).toBeNull();
+    expect((result.fields as Record<string, unknown>)['__proto__']).toBe('safe');
   });
 });
 

@@ -31,6 +31,24 @@ export interface ToolSchema {
   args: Record<string, ArgSchema>;
 }
 
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function hasOwn(obj: object, key: string): boolean {
+  return hasOwnProperty.call(obj, key);
+}
+
+function createArgRecord(): Record<string, ArgSchema> {
+  return Object.create(null) as Record<string, ArgSchema>;
+}
+
+function createFieldRecord(): Record<string, FieldValue> {
+  return Object.create(null) as Record<string, FieldValue>;
+}
+
+function cloneFieldRecord(fields: Record<string, FieldValue>): Record<string, FieldValue> {
+  return Object.assign(createFieldRecord(), fields);
+}
+
 export class ToolRegistry {
   private tools: Map<string, ToolSchema> = new Map();
 
@@ -38,7 +56,11 @@ export class ToolRegistry {
    * Register a tool.
    */
   register(tool: ToolSchema): void {
-    this.tools.set(tool.name, tool);
+    const args = createArgRecord();
+    for (const [name, schema] of Object.entries(tool.args)) {
+      args[name] = schema;
+    }
+    this.tools.set(tool.name, { ...tool, args });
   }
 
   /**
@@ -150,7 +172,8 @@ export class StreamingValidator {
 
   // Parsed data
   private toolName: string | null = null;
-  private fields: Record<string, FieldValue> = {};
+  private fields: Record<string, FieldValue> = createFieldRecord();
+  private fieldCount: number = 0;
   private errors: ValidationError[] = [];
 
   // Timing
@@ -219,7 +242,8 @@ export class StreamingValidator {
     this.currentVal = '';
     this.hasKey = false;
     this.toolName = null;
-    this.fields = {};
+    this.fields = createFieldRecord();
+    this.fieldCount = 0;
     this.errors = [];
     this.tokenCount = 0;
     this.charCount = 0;
@@ -306,19 +330,14 @@ export class StreamingValidator {
   }
 
   private processChar(c: string): void {
-    // Check hard limits before processing
-    if (this.buffer.length >= this.maxBufferSize) {
-      if (this.state !== ValidatorState.Error) {
-        this.state = ValidatorState.Error;
-        this.addError(ErrorCode.LimitExceeded, 'Buffer size limit exceeded');
-      }
+    if (this.state === ValidatorState.Error) {
       return;
     }
-    if (Object.keys(this.fields).length >= this.maxFieldCount) {
-      if (this.state !== ValidatorState.Error) {
-        this.state = ValidatorState.Error;
-        this.addError(ErrorCode.LimitExceeded, 'Field count limit exceeded');
-      }
+
+    // Check hard limits before processing
+    if (this.buffer.length >= this.maxBufferSize) {
+      this.state = ValidatorState.Error;
+      this.addError(ErrorCode.LimitExceeded, 'Buffer size limit exceeded');
       return;
     }
 
@@ -451,6 +470,14 @@ export class StreamingValidator {
       this.validateField(key, value);
     }
 
+    if (!hasOwn(this.fields, key)) {
+      if (this.fieldCount >= this.maxFieldCount) {
+        this.state = ValidatorState.Error;
+        this.addError(ErrorCode.LimitExceeded, 'Field count limit exceeded');
+        return;
+      }
+      this.fieldCount++;
+    }
     this.fields[key] = value;
   }
 
@@ -495,8 +522,13 @@ export class StreamingValidator {
       return;
     }
 
-    const argSchema = schema.args[key];
+    const argSchema = hasOwn(schema.args, key) ? schema.args[key] : undefined;
     if (!argSchema) {
+      return;
+    }
+
+    if (!this.isValidType(argSchema.type, value)) {
+      this.addError(ErrorCode.InvalidType, `${key} expected ${argSchema.type}`, key);
       return;
     }
 
@@ -527,6 +559,31 @@ export class StreamingValidator {
     }
   }
 
+  private isValidType(type: string, value: FieldValue): boolean {
+    if (value === null) {
+      return true;
+    }
+
+    switch (type) {
+      case 'string':
+        return typeof value === 'string';
+      case 'int':
+        return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value);
+      case 'float':
+      case 'number':
+        return typeof value === 'number' && Number.isFinite(value);
+      case 'bool':
+      case 'boolean':
+        return typeof value === 'boolean';
+      case 'null':
+        return value === null;
+      case 'any':
+        return true;
+      default:
+        return true;
+    }
+  }
+
   private validateComplete(): void {
     if (!this.toolName) {
       this.addError(ErrorCode.MissingTool, 'No action field found');
@@ -540,7 +597,7 @@ export class StreamingValidator {
 
     // Check required fields
     for (const [argName, argSchema] of Object.entries(schema.args)) {
-      if (argSchema.required && !(argName in this.fields)) {
+      if (argSchema.required && !hasOwn(this.fields, argName)) {
         this.addError(ErrorCode.MissingRequired, `Missing required field: ${argName}`, argName);
       }
     }
@@ -559,7 +616,7 @@ export class StreamingValidator {
       toolName: this.toolName,
       toolAllowed,
       errors: [...this.errors],
-      fields: { ...this.fields },
+      fields: cloneFieldRecord(this.fields),
       tokenCount: this.tokenCount,
       charCount: this.charCount,
       timeline: [...this.timeline],
@@ -597,7 +654,7 @@ export class StreamingValidator {
    */
   getParsed(): Record<string, FieldValue> | null {
     if (this.state === ValidatorState.Complete && this.errors.length === 0) {
-      return { ...this.fields };
+      return cloneFieldRecord(this.fields);
     }
     return null;
   }

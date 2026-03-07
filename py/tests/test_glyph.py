@@ -253,6 +253,65 @@ class TestJSONBridge:
         v = parse(text)
         assert v.get("action").as_str() == "search"
 
+    def test_rejects_non_finite_json_numbers(self):
+        with pytest.raises(ValueError, match="non-finite"):
+            from_json(float("inf"))
+
+        with pytest.raises(ValueError, match="non-finite"):
+            to_json(GValue.float_(float("nan")))
+
+
+class TestParserHardening:
+    """Regression tests for malformed input handling."""
+
+    def test_rejects_trailing_garbage(self):
+        with pytest.raises(ValueError, match="trailing garbage"):
+            parse("1 2")
+
+        with pytest.raises(ValueError, match="trailing garbage"):
+            parse("{a=1} junk")
+
+    def test_requires_map_value_separator(self):
+        with pytest.raises(ValueError, match="expected '=' or ':' after key"):
+            parse("{a b}")
+
+    def test_requires_struct_field_separator(self):
+        with pytest.raises(ValueError, match="expected '=' or ':' after field"):
+            parse("Team{name Arsenal}")
+
+    def test_rejects_invalid_base64(self):
+        with pytest.raises(ValueError, match="invalid base64"):
+            parse('b64"@@@"')
+
+    @pytest.mark.parametrize("text", ["NaN", "Inf", "-Inf", "1e309"])
+    def test_rejects_non_finite_and_overflow_float_literals(self, text):
+        with pytest.raises(ValueError, match="float"):
+            parse(text)
+
+    def test_limits_nesting_depth(self):
+        deeply_nested = "[" * 101 + "0" + "]" * 101
+        with pytest.raises(ValueError, match="maximum nesting depth"):
+            parse(deeply_nested)
+
+
+class TestDuplicateKeySemantics:
+    """Duplicate-key access should match JSON conversion semantics."""
+
+    def test_map_get_and_json_use_last_duplicate(self):
+        v = parse("{a=1 a=2}")
+        assert v.get("a").as_int() == 2
+        assert to_json(v) == {"a": 2}
+
+    def test_set_collapses_duplicate_keys(self):
+        v = GValue.map_(
+            MapEntry("a", GValue.int_(1)),
+            MapEntry("a", GValue.int_(2)),
+        )
+        v.set("a", GValue.int_(3))
+
+        assert len(v.as_map()) == 1
+        assert v.get("a").as_int() == 3
+
 
 class TestFingerprint:
     """Tests for fingerprinting."""
@@ -301,6 +360,11 @@ class TestAutoTabular:
         text = emit(rows)
         v = parse(text)
         assert len(v) == 3
+
+    def test_quotes_numeric_keyword_strings(self):
+        assert emit(GValue.str_("Inf")) == '"Inf"'
+        assert emit(GValue.str_("NaN")) == '"NaN"'
+        assert parse(emit(GValue.str_("Inf"))).as_str() == "Inf"
 
 
 if __name__ == "__main__":

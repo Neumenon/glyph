@@ -20,6 +20,21 @@ static char *strdup_safe(const char *s) {
     return copy;
 }
 
+static void evolving_field_clear(evolving_field_t *f) {
+    if (!f) return;
+    free(f->name);
+    f->name = NULL;
+    field_value_free(&f->default_value);
+    free(f->added_in);
+    f->added_in = NULL;
+    free(f->deprecated_in);
+    f->deprecated_in = NULL;
+    free(f->renamed_from);
+    f->renamed_from = NULL;
+    free(f->validation);
+    f->validation = NULL;
+}
+
 /* ============================================================
  * Field Value Functions
  * ============================================================ */
@@ -78,17 +93,21 @@ evolving_field_t *evolving_field_new(const char *name, const evolving_field_conf
     f->renamed_from = strdup_safe(config->renamed_from);
     f->validation = strdup_safe(config->validation);
 
+    if (!f->name || !f->added_in ||
+        (config->default_value.type == FIELD_VALUE_STR && config->default_value.str_val && !f->default_value.str_val) ||
+        (config->deprecated_in && !f->deprecated_in) ||
+        (config->renamed_from && !f->renamed_from) ||
+        (config->validation && !f->validation)) {
+        evolving_field_free(f);
+        return NULL;
+    }
+
     return f;
 }
 
 void evolving_field_free(evolving_field_t *f) {
     if (!f) return;
-    free(f->name);
-    field_value_free(&f->default_value);
-    free(f->added_in);
-    free(f->deprecated_in);
-    free(f->renamed_from);
-    free(f->validation);
+    evolving_field_clear(f);
     free(f);
 }
 
@@ -175,6 +194,11 @@ version_schema_t *version_schema_new(const char *name, const char *version) {
     s->fields_count = 0;
     s->fields_capacity = 0;
 
+    if ((name && !s->name) || (version && !s->version)) {
+        version_schema_free(s);
+        return NULL;
+    }
+
     return s;
 }
 
@@ -186,7 +210,7 @@ void version_schema_free(version_schema_t *s) {
     free(s->description);
 
     for (size_t i = 0; i < s->fields_count; i++) {
-        evolving_field_free(&s->fields[i]);
+        evolving_field_clear(&s->fields[i]);
     }
     free(s->fields);
     free(s);
@@ -198,7 +222,10 @@ void version_schema_add_field(version_schema_t *s, evolving_field_t *field) {
     if (s->fields_count >= s->fields_capacity) {
         size_t new_cap = s->fields_capacity == 0 ? 8 : s->fields_capacity * 2;
         evolving_field_t *new_fields = realloc(s->fields, new_cap * sizeof(evolving_field_t));
-        if (!new_fields) return;
+        if (!new_fields) {
+            evolving_field_free(field);
+            return;
+        }
         s->fields = new_fields;
         s->fields_capacity = new_cap;
     }
@@ -269,6 +296,11 @@ versioned_schema_t *versioned_schema_new(const char *name) {
     s->latest_version = strdup_safe("1.0");
     s->mode = EVOLUTION_MODE_TOLERANT;
 
+    if ((name && !s->name) || !s->latest_version) {
+        versioned_schema_free(s);
+        return NULL;
+    }
+
     return s;
 }
 
@@ -283,12 +315,7 @@ void versioned_schema_free(versioned_schema_t *s) {
         free(s->versions[i].version);
         free(s->versions[i].description);
         for (size_t j = 0; j < s->versions[i].fields_count; j++) {
-            free(s->versions[i].fields[j].name);
-            field_value_free(&s->versions[i].fields[j].default_value);
-            free(s->versions[i].fields[j].added_in);
-            free(s->versions[i].fields[j].deprecated_in);
-            free(s->versions[i].fields[j].renamed_from);
-            free(s->versions[i].fields[j].validation);
+            evolving_field_clear(&s->versions[i].fields[j]);
         }
         free(s->versions[i].fields);
     }
@@ -330,7 +357,7 @@ void versioned_schema_add_version(versioned_schema_t *s,
         s->versions_capacity = new_cap;
     }
 
-    version_schema_t *vs = &s->versions[s->versions_count++];
+    version_schema_t *vs = &s->versions[s->versions_count];
     memset(vs, 0, sizeof(version_schema_t));
     vs->name = strdup_safe(s->name);
     vs->version = strdup_safe(version);
@@ -338,6 +365,12 @@ void versioned_schema_add_version(versioned_schema_t *s,
     vs->fields = NULL;
     vs->fields_count = 0;
     vs->fields_capacity = 0;
+
+    if ((s->name && !vs->name) || !vs->version) {
+        free(vs->name);
+        free(vs->version);
+        return;
+    }
 
     for (size_t i = 0; i < field_count; i++) {
         evolving_field_config_t config = fields[i];
@@ -351,6 +384,7 @@ void versioned_schema_add_version(versioned_schema_t *s,
         }
     }
 
+    s->versions_count++;
     update_latest_version(s);
 }
 
@@ -384,6 +418,11 @@ static evolution_parse_result_t migrate_step(const versioned_schema_t *s,
     result.data = calloc(max_count, sizeof(field_value_t));
     result.keys = calloc(max_count, sizeof(char *));
     result.data_count = 0;
+    if ((max_count > 0 && !result.data) || (max_count > 0 && !result.keys)) {
+        evolution_parse_result_free(&result);
+        result.error = strdup_safe("out of memory");
+        return result;
+    }
 
     /* Copy existing data, handling renames */
     for (size_t i = 0; i < count; i++) {
@@ -393,9 +432,11 @@ static evolution_parse_result_t migrate_step(const versioned_schema_t *s,
                 strcmp(to_schema->fields[j].renamed_from, keys[i]) == 0) {
                 /* Field was renamed */
                 result.keys[result.data_count] = strdup_safe(to_schema->fields[j].name);
+                if (to_schema->fields[j].name && !result.keys[result.data_count]) goto oom;
                 result.data[result.data_count] = data[i];
                 if (data[i].type == FIELD_VALUE_STR) {
                     result.data[result.data_count].str_val = strdup_safe(data[i].str_val);
+                    if (data[i].str_val && !result.data[result.data_count].str_val) goto oom;
                 }
                 result.data_count++;
                 renamed = true;
@@ -406,9 +447,11 @@ static evolution_parse_result_t migrate_step(const versioned_schema_t *s,
             /* Copy as-is if field exists in target schema or in tolerant mode */
             if (s->mode == EVOLUTION_MODE_TOLERANT || version_schema_get_field(to_schema, keys[i])) {
                 result.keys[result.data_count] = strdup_safe(keys[i]);
+                if (keys[i] && !result.keys[result.data_count]) goto oom;
                 result.data[result.data_count] = data[i];
                 if (data[i].type == FIELD_VALUE_STR) {
                     result.data[result.data_count].str_val = strdup_safe(data[i].str_val);
+                    if (data[i].str_val && !result.data[result.data_count].str_val) goto oom;
                 }
                 result.data_count++;
             }
@@ -427,10 +470,13 @@ static evolution_parse_result_t migrate_step(const versioned_schema_t *s,
         }
         if (!exists) {
             result.keys[result.data_count] = strdup_safe(field->name);
+            if (field->name && !result.keys[result.data_count]) goto oom;
             if (field->default_value.type != FIELD_VALUE_NULL) {
                 result.data[result.data_count] = field->default_value;
                 if (field->default_value.type == FIELD_VALUE_STR) {
                     result.data[result.data_count].str_val = strdup_safe(field->default_value.str_val);
+                    if (field->default_value.str_val &&
+                        !result.data[result.data_count].str_val) goto oom;
                 }
             } else if (!field->required) {
                 result.data[result.data_count] = field_value_null();
@@ -458,6 +504,11 @@ static evolution_parse_result_t migrate_step(const versioned_schema_t *s,
     }
 
     return result;
+
+oom:
+    evolution_parse_result_free(&result);
+    result.error = strdup_safe("out of memory");
+    return result;
 }
 
 evolution_parse_result_t versioned_schema_parse(const versioned_schema_t *s,
@@ -469,8 +520,15 @@ evolution_parse_result_t versioned_schema_parse(const versioned_schema_t *s,
 
     const version_schema_t *schema = versioned_schema_get_version(s, from_version);
     if (!schema) {
-        result.error = malloc(64);
-        snprintf(result.error, 64, "unknown version: %s", from_version);
+        result.error = strdup_safe("unknown version");
+        if (from_version) {
+            char *error = malloc(strlen(from_version) + 18);
+            if (error) {
+                snprintf(error, strlen(from_version) + 18, "unknown version: %s", from_version);
+                free(result.error);
+                result.error = error;
+            }
+        }
         return result;
     }
 
@@ -487,13 +545,28 @@ evolution_parse_result_t versioned_schema_parse(const versioned_schema_t *s,
     if (strcmp(from_version, s->latest_version) == 0) {
         result.data = calloc(count, sizeof(field_value_t));
         result.keys = calloc(count, sizeof(char *));
+        if ((count > 0 && !result.data) || (count > 0 && !result.keys)) {
+            evolution_parse_result_free(&result);
+            result.error = strdup_safe("out of memory");
+            return result;
+        }
         result.data_count = count;
         for (size_t i = 0; i < count; i++) {
             result.data[i] = data[i];
             if (data[i].type == FIELD_VALUE_STR) {
                 result.data[i].str_val = strdup_safe(data[i].str_val);
+                if (data[i].str_val && !result.data[i].str_val) {
+                    evolution_parse_result_free(&result);
+                    result.error = strdup_safe("out of memory");
+                    return result;
+                }
             }
             result.keys[i] = strdup_safe(keys[i]);
+            if (keys[i] && !result.keys[i]) {
+                evolution_parse_result_free(&result);
+                result.error = strdup_safe("out of memory");
+                return result;
+            }
         }
         return result;
     }
@@ -512,8 +585,15 @@ evolution_emit_result_t versioned_schema_emit(const versioned_schema_t *s,
     const char *target_version = version ? version : s->latest_version;
     const version_schema_t *schema = versioned_schema_get_version(s, target_version);
     if (!schema) {
-        result.error = malloc(64);
-        snprintf(result.error, 64, "unknown version: %s", target_version);
+        result.error = strdup_safe("unknown version");
+        if (target_version) {
+            char *error = malloc(strlen(target_version) + 18);
+            if (error) {
+                snprintf(error, strlen(target_version) + 18, "unknown version: %s", target_version);
+                free(result.error);
+                result.error = error;
+            }
+        }
         return result;
     }
 
@@ -540,6 +620,12 @@ changelog_entry_t *versioned_schema_get_changelog(const versioned_schema_t *s, s
         const version_schema_t *vs = &s->versions[i];
         entries[i].version = strdup_safe(vs->version);
         entries[i].description = strdup_safe(vs->description);
+        if ((vs->version && !entries[i].version) ||
+            (vs->description && !entries[i].description)) {
+            changelog_free(entries, i + 1);
+            *count = 0;
+            return NULL;
+        }
 
         /* Count fields for each category */
         size_t added = 0, deprecated = 0, renamed = 0;
@@ -559,18 +645,41 @@ changelog_entry_t *versioned_schema_get_changelog(const versioned_schema_t *s, s
         entries[i].deprecated_fields = deprecated ? calloc(deprecated + 1, sizeof(char *)) : NULL;
         entries[i].renamed_from = renamed ? calloc(renamed + 1, sizeof(char *)) : NULL;
         entries[i].renamed_to = renamed ? calloc(renamed + 1, sizeof(char *)) : NULL;
+        if ((added && !entries[i].added_fields) ||
+            (deprecated && !entries[i].deprecated_fields) ||
+            (renamed && (!entries[i].renamed_from || !entries[i].renamed_to))) {
+            changelog_free(entries, i + 1);
+            *count = 0;
+            return NULL;
+        }
 
         size_t ai = 0, di = 0, ri = 0;
         for (size_t j = 0; j < vs->fields_count; j++) {
             if (vs->fields[j].added_in && strcmp(vs->fields[j].added_in, vs->version) == 0) {
                 entries[i].added_fields[ai++] = strdup_safe(vs->fields[j].name);
+                if (vs->fields[j].name && !entries[i].added_fields[ai - 1]) {
+                    changelog_free(entries, i + 1);
+                    *count = 0;
+                    return NULL;
+                }
             }
             if (vs->fields[j].deprecated_in && strcmp(vs->fields[j].deprecated_in, vs->version) == 0) {
                 entries[i].deprecated_fields[di++] = strdup_safe(vs->fields[j].name);
+                if (vs->fields[j].name && !entries[i].deprecated_fields[di - 1]) {
+                    changelog_free(entries, i + 1);
+                    *count = 0;
+                    return NULL;
+                }
             }
             if (vs->fields[j].renamed_from) {
                 entries[i].renamed_from[ri] = strdup_safe(vs->fields[j].renamed_from);
                 entries[i].renamed_to[ri++] = strdup_safe(vs->fields[j].name);
+                if ((vs->fields[j].renamed_from && !entries[i].renamed_from[ri - 1]) ||
+                    (vs->fields[j].name && !entries[i].renamed_to[ri - 1])) {
+                    changelog_free(entries, i + 1);
+                    *count = 0;
+                    return NULL;
+                }
             }
         }
 

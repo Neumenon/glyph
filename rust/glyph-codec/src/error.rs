@@ -22,6 +22,9 @@ pub enum GlyphError {
 
     #[error("Missing required field: {0}")]
     MissingField(String),
+
+    #[error("Recursion limit exceeded: {limit}")]
+    RecursionLimitExceeded { limit: usize },
 }
 
 pub type Result<T> = std::result::Result<T, GlyphError>;

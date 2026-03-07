@@ -28,6 +28,7 @@ Example:
     ...         return result.parsed()
 """
 
+import math
 import re
 import time
 from typing import Dict, List, Optional, Any, Pattern
@@ -105,6 +106,8 @@ class ArgSchema:
         elif self.type == ArgType.FLOAT:
             if not isinstance(value, (int, float)) or isinstance(value, bool):
                 return f"Argument {self.name} must be float"
+            if isinstance(value, float) and not math.isfinite(value):
+                return f"Argument {self.name} must be finite"
             
             if self.min is not None and value < self.min:
                 return f"Argument {self.name} < min {self.min}"
@@ -211,6 +214,14 @@ class ValidatorState(Enum):
     ERROR = "error"              # Unrecoverable error
 
 
+DEFAULT_MAX_BUFFER = 1024 * 1024
+DEFAULT_MAX_FIELDS = 1000
+DEFAULT_MAX_ERRORS = 100
+
+OPEN_CONTAINERS = {"{", "[", "("}
+CLOSE_CONTAINERS = {"}": "{", "]": "[", ")": "("}
+
+
 @dataclass
 class TimelineEvent:
     """A significant event during validation."""
@@ -246,6 +257,8 @@ class StreamValidationResult:
     
     # Timeline
     timeline: List[TimelineEvent] = dataclass_field(default_factory=list)
+    _tool_allowed: bool = True
+    _tool_finalized: bool = False
     
     @property
     def should_cancel(self) -> bool:
@@ -255,10 +268,9 @@ class StreamValidationResult:
     @property
     def tool_allowed(self) -> bool:
         """True if detected tool is registered."""
-        # Check if first error is UNKNOWN_TOOL
-        if self.errors:
-            return "unknown tool" not in self.errors[0].lower()
-        return True
+        if not self._tool_finalized:
+            return True
+        return self._tool_allowed
 
 
 class StreamingValidator:
@@ -276,21 +288,34 @@ class StreamingValidator:
                 return result.fields
     """
     
-    def __init__(self, registry: ToolRegistry):
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        max_buffer: int = DEFAULT_MAX_BUFFER,
+        max_fields: int = DEFAULT_MAX_FIELDS,
+        max_errors: int = DEFAULT_MAX_ERRORS,
+    ):
         self.registry = registry
+        self.max_buffer = max_buffer
+        self.max_fields = max_fields
+        self.max_errors = max_errors
         self.reset()
     
     def reset(self):
         """Reset validator state for reuse."""
         self.buffer = ""
+        self.buffer_size = 0
         self.state = ValidatorState.WAITING
         self.depth = 0
+        self.container_stack: List[str] = []
         self.in_string = False
         self.escape_next = False
         self.current_key = ""
         self.current_val = ""
         self.has_key = False
+        self.pending_key_separator = False
         self.tool_name = ""
+        self.tool_finalized = False
         self.fields: Dict[str, Any] = {}
         self.errors: List[str] = []
         
@@ -334,149 +359,265 @@ class StreamingValidator:
     
     def _process_char(self, char: str):
         """Process a single character."""
+        if self.state == ValidatorState.ERROR:
+            return
+
+        char_size = len(char.encode("utf-8"))
+        if self.buffer_size + char_size > self.max_buffer:
+            self._add_error(
+                f"Buffer exceeds max size of {self.max_buffer} bytes",
+                fatal=True,
+            )
+            return
+
         self.buffer += char
+        self.buffer_size += char_size
+
+        if self.state == ValidatorState.COMPLETE:
+            if char not in (" ", "\n", "\t", "\r"):
+                self._add_error("Trailing characters after complete tool call", fatal=True)
+            return
         
         # Handle escape sequences
         if self.escape_next:
             self.escape_next = False
-            self.current_val += char
+            self._append_current(char)
             return
         
         if char == '\\' and self.in_string:
             self.escape_next = True
-            self.current_val += char
+            self._append_current(char)
             return
         
         # Handle quotes
         if char == '"':
-            if self.in_string:
-                self.in_string = False
-            else:
-                self.in_string = True
-                self.current_val = ""
+            self._append_current(char)
+            self.in_string = not self.in_string
             return
         
         # Inside string - accumulate
         if self.in_string:
-            self.current_val += char
+            self._append_current(char)
             return
-        
-        # Handle structural characters
-        if char == '{':
-            if self.state == ValidatorState.WAITING:
-                # Capture tool name before entering object
-                if self.current_val.strip():
-                    self.tool_name = self.current_val.strip()
-                    self.current_val = ""
-                    # Check if tool is allowed
-                    if not self.registry.is_allowed(self.tool_name):
-                        self.errors.append(f"UNKNOWN_TOOL: {self.tool_name}")
+
+        if self.state == ValidatorState.WAITING:
+            if char == "{":
+                self._finalize_tool_name()
+                if self.state == ValidatorState.ERROR:
+                    return
                 self.state = ValidatorState.IN_OBJECT
-            self.depth += 1
-        
-        elif char == '}':
-            self.depth -= 1
-            if self.depth == 0:
-                self._finish_field()
-                self.state = ValidatorState.COMPLETE
-                self._validate_complete()
-        
-        elif char == '[':
-            self.depth += 1
-            self.current_val += char
-        
-        elif char == ']':
-            self.depth -= 1
-            self.current_val += char
-        
-        elif char == '=':
-            if self.depth == 1 and not self.has_key:
-                self.current_key = self.current_val.strip()
+                self.container_stack.append("{")
+                self.depth = len(self.container_stack)
+                return
+            self._append_current(char)
+            return
+
+        if self.state != ValidatorState.IN_OBJECT:
+            return
+
+        root_level = len(self.container_stack) == 1
+
+        if root_level and not self.has_key:
+            if char in (" ", "\n", "\t", "\r"):
+                if self.current_val.strip():
+                    self.pending_key_separator = True
+                return
+            if char == ",":
+                if self.current_val.strip():
+                    self._add_error("Expected '=' or ':' after field name", fatal=True)
+                return
+            if char in ("=", ":"):
+                key_text = self.current_val.strip()
+                if not key_text:
+                    self._add_error("Missing field name before separator", fatal=True)
+                    return
+                try:
+                    self.current_key = self._parse_key(key_text)
+                except ValueError as exc:
+                    self._add_error(f"Invalid field name: {exc}", fatal=True)
+                    return
                 self.current_val = ""
                 self.has_key = True
-            else:
-                self.current_val += char
-        
-        elif char in (' ', '\n', '\t', '\r'):
-            if self.depth == 1 and self.has_key and self.current_val:
+                self.pending_key_separator = False
+                return
+            if char == "}" and not self.current_val.strip():
+                self.container_stack.pop()
+                self.depth = len(self.container_stack)
+                self.state = ValidatorState.COMPLETE
+                self._validate_complete()
+                return
+            if self.pending_key_separator:
+                self._add_error("Expected '=' or ':' after field name", fatal=True)
+                return
+            self._append_current(char)
+            return
+
+        if root_level and self.has_key:
+            if char in (" ", "\n", "\t", "\r"):
+                if self.current_val.strip():
+                    self._finish_field()
+                return
+            if char == ",":
+                if not self.current_val.strip():
+                    self._add_error(f"Missing value for field: {self.current_key}", fatal=True)
+                    return
                 self._finish_field()
-        
+                return
+
+        if char in OPEN_CONTAINERS:
+            self.container_stack.append(char)
+            self.depth = len(self.container_stack)
+            if self.has_key:
+                self._append_current(char)
+            return
+
+        if char in CLOSE_CONTAINERS:
+            expected_open = CLOSE_CONTAINERS[char]
+            if not self.container_stack:
+                self._add_error(f"Unexpected closing delimiter: {char}", fatal=True)
+                self.depth = 0
+                return
+            if self.container_stack[-1] != expected_open:
+                self._add_error(
+                    f"Mismatched closing delimiter: expected {expected_open!r} before {char!r}",
+                    fatal=True,
+                )
+                return
+
+            self.container_stack.pop()
+            self.depth = len(self.container_stack)
+
+            if self.depth == 0:
+                if self.has_key:
+                    if self.current_val.strip():
+                        self._finish_field()
+                    else:
+                        self._add_error(f"Missing value for field: {self.current_key}", fatal=True)
+                elif self.current_val.strip():
+                    self._add_error("Expected '=' or ':' after field name", fatal=True)
+
+                if self.state != ValidatorState.ERROR:
+                    self.state = ValidatorState.COMPLETE
+                    self._validate_complete()
+                return
+
+            if self.has_key:
+                self._append_current(char)
+            return
+
+        if self.has_key:
+            self._append_current(char)
         else:
-            if self.state == ValidatorState.WAITING and self.depth == 0:
-                # Accumulating tool name
-                self.current_val += char
-            elif self.depth == 1:
-                self.current_val += char
-    
+            self._append_current(char)
+
+    def _append_current(self, char: str):
+        """Append raw input to the current token/value buffer."""
+        self.current_val += char
+
+    def _add_error(self, message: str, fatal: bool = False):
+        """Record an error without allowing unbounded growth."""
+        if message in self.errors:
+            if fatal:
+                self.state = ValidatorState.ERROR
+            return
+
+        if len(self.errors) >= self.max_errors:
+            self.state = ValidatorState.ERROR
+            return
+
+        self.errors.append(message)
+        if fatal or len(self.errors) >= self.max_errors:
+            self.state = ValidatorState.ERROR
+
+    def _finalize_tool_name(self):
+        """Freeze the tool name once the opening brace arrives."""
+        tool_name = self.current_val.strip()
+        self.current_val = ""
+        if not tool_name:
+            self._add_error("No tool name found", fatal=True)
+            return
+
+        self.tool_name = tool_name
+        self.tool_finalized = True
+        if not self.registry.is_allowed(self.tool_name):
+            self._add_error(f"UNKNOWN_TOOL: {self.tool_name}")
+
+    def _parse_key(self, key_str: str) -> str:
+        """Parse a field name using the GLYPH parser."""
+        from .parse import parse_loose
+        from .types import GType
+
+        key = parse_loose(key_str)
+        if key.type != GType.STR:
+            raise ValueError("field names must parse to strings")
+        return key.as_str()
+
     def _finish_field(self):
         """Finish parsing a field and add to fields dict."""
         if not self.has_key:
             return
 
-        # Parse field value
-        value = self._parse_value(self.current_val.strip())
-        if self.current_key:
-            self.fields[self.current_key] = value
+        try:
+            value_text = self.current_val.strip()
+            if not value_text:
+                self._add_error(f"Missing value for field: {self.current_key}", fatal=True)
+                return
 
-            # Validate against schema if available
-            if self.tool_name:
-                tool_schema = self.registry.get_tool(self.tool_name)
-                if tool_schema and self.current_key in tool_schema.args:
-                    arg_schema = tool_schema.args[self.current_key]
-                    error = arg_schema.validate(value)
-                    if error and error not in self.errors:
-                        self.errors.append(error)
+            value = self._parse_value(value_text)
 
-        self.current_key = ""
-        self.current_val = ""
-        self.has_key = False
+            if self.current_key:
+                if self.current_key not in self.fields and len(self.fields) >= self.max_fields:
+                    self._add_error(
+                        f"Field count exceeds max of {self.max_fields}",
+                        fatal=True,
+                    )
+                    return
+
+                self.fields[self.current_key] = value
+
+                # Validate against schema if available
+                if self.tool_name:
+                    tool_schema = self.registry.get_tool(self.tool_name)
+                    if tool_schema and self.current_key in tool_schema.args:
+                        arg_schema = tool_schema.args[self.current_key]
+                        error = arg_schema.validate(value)
+                        if error:
+                            self._add_error(error)
+        except ValueError as exc:
+            self._add_error(f"Invalid value for field {self.current_key}: {exc}", fatal=True)
+        finally:
+            self.current_key = ""
+            self.current_val = ""
+            self.has_key = False
+            self.pending_key_separator = False
     
     def _parse_value(self, val_str: str) -> Any:
-        """Parse a simple value string."""
+        """Parse a GLYPH value and project it to Python/JSON-friendly types."""
+        from .loose import to_json_loose
+        from .parse import parse_loose
+
         if not val_str:
             return None
-        
-        val_str = val_str.strip()
-        
-        # Null
-        if val_str in ('_', '∅', 'null'):
-            return None
-        
-        # Bool
-        if val_str in ('t', 'true'):
-            return True
-        if val_str in ('f', 'false'):
-            return False
-        
-        # Numbers
-        try:
-            if '.' in val_str or 'e' in val_str.lower():
-                return float(val_str)
-            return int(val_str)
-        except ValueError:
-            pass
-        
-        # String (quoted or bare)
-        return val_str
+
+        return to_json_loose(parse_loose(val_str))
     
     def _validate_complete(self):
         """Validate the complete tool call."""
         if not self.tool_name:
-            self.errors.append("No tool name found")
+            self._add_error("No tool name found")
             return
         
         # Check if tool is allowed
         if not self.registry.is_allowed(self.tool_name):
-            if "UNKNOWN_TOOL" not in self.errors:
-                self.errors.append(f"UNKNOWN_TOOL: {self.tool_name}")
+            self._add_error(f"UNKNOWN_TOOL: {self.tool_name}")
             return
         
         # Validate against schema
         tool_schema = self.registry.get_tool(self.tool_name)
         if tool_schema:
             error = tool_schema.validate(self.fields)
-            if error and error not in self.errors:
-                self.errors.append(error)
+            if error:
+                self._add_error(error)
     
     def _get_result(self) -> StreamValidationResult:
         """Get the current validation result."""
@@ -494,7 +635,9 @@ class StreamingValidator:
             self.tool_detected_at_token = self.token_count
             self.tool_detected_at_char = self.char_count
             self.tool_detected_at_time = elapsed
-            allowed = self.registry.is_allowed(effective_tool_name)
+            allowed = True
+            if self.tool_finalized:
+                allowed = self.registry.is_allowed(effective_tool_name)
             self.timeline.append(TimelineEvent(
                 event="TOOL_DETECTED",
                 token_count=self.token_count,
@@ -545,6 +688,8 @@ class StreamingValidator:
             complete_at_token=self.complete_at_token,
             complete_at_time=self.complete_at_time,
             timeline=self.timeline.copy(),
+            _tool_allowed=self.registry.is_allowed(effective_tool_name) if (self.tool_finalized and effective_tool_name) else True,
+            _tool_finalized=self.tool_finalized,
         )
     
     def get_result(self) -> StreamValidationResult:

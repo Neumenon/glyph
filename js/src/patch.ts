@@ -49,11 +49,65 @@ export function fieldSeg(name: string, fid?: number): PathSeg {
 }
 
 export function listIdxSeg(idx: number): PathSeg {
-  return { kind: 'listIdx', listIdx: idx };
+  return { kind: 'listIdx', listIdx: parseNonNegativeSafeInt(String(idx), 'list index') };
 }
 
 export function mapKeySeg(key: string): PathSeg {
   return { kind: 'mapKey', mapKey: key };
+}
+
+function parseNonNegativeSafeInt(raw: string, field: string): number {
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`invalid ${field}: ${raw}`);
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${field} out of range: ${raw}`);
+  }
+  return value;
+}
+
+function parseFiniteNumber(raw: string, field: string): number {
+  if (!/^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(raw)) {
+    throw new Error(`invalid ${field}: ${raw}`);
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`invalid ${field}: ${raw}`);
+  }
+  return value;
+}
+
+function parseQuotedPathString(path: string, start: number): { value: string; next: number } {
+  if (path[start] !== '"') {
+    throw new Error(`expected quoted string at pos ${start}`);
+  }
+
+  let value = '';
+  let escaped = false;
+  let i = start + 1;
+
+  while (i < path.length) {
+    const c = path[i];
+    if (escaped) {
+      value += c;
+      escaped = false;
+      i++;
+      continue;
+    }
+    if (c === '\\') {
+      escaped = true;
+      i++;
+      continue;
+    }
+    if (c === '"') {
+      return { value, next: i + 1 };
+    }
+    value += c;
+    i++;
+  }
+
+  throw new Error(`unterminated quoted path segment at pos ${start}`);
 }
 
 // ============================================================
@@ -65,77 +119,91 @@ export function mapKeySeg(key: string): PathSeg {
  * Supports: .fieldName, .#fid, [N], ["key"]
  */
 export function parsePathToSegs(path: string): PathSeg[] {
+  path = path.trim();
   if (!path) return [];
-  
+
   const segs: PathSeg[] = [];
-  let i = 0;
-  
+  let i = path.startsWith('.') ? 1 : 0;
+  if (i >= path.length) {
+    throw new Error('path cannot end with dot');
+  }
+
   while (i < path.length) {
-    // Skip leading dots
-    if (path[i] === '.') {
+    const c = path[i];
+
+    if (c === '[') {
       i++;
-      continue;
-    }
-    
-    // List index: [N] or map key: ["key"]
-    if (path[i] === '[') {
-      const end = path.indexOf(']', i);
-      if (end === -1) {
-        // Malformed, treat rest as field
-        segs.push(fieldSeg(path.slice(i)));
-        break;
+      if (i >= path.length) {
+        throw new Error(`unterminated path segment at pos ${i - 1}`);
       }
-      
-      const inner = path.slice(i + 1, end);
-      if (inner.startsWith('"')) {
-        // Map key
-        segs.push(mapKeySeg(inner.slice(1, -1)));
+
+      if (path[i] === '"') {
+        const parsed = parseQuotedPathString(path, i);
+        i = parsed.next;
+        if (path[i] !== ']') {
+          throw new Error(`unterminated map key segment at pos ${i}`);
+        }
+        segs.push(mapKeySeg(parsed.value));
+        i++;
       } else {
-        // List index
-        segs.push(listIdxSeg(parseInt(inner, 10)));
+        const end = path.indexOf(']', i);
+        if (end < 0) {
+          throw new Error(`unterminated list index at pos ${i - 1}`);
+        }
+        const inner = path.slice(i, end);
+        segs.push(listIdxSeg(parseNonNegativeSafeInt(inner, 'list index')));
+        i = end + 1;
       }
-      i = end + 1;
-      continue;
-    }
-    
-    // FID reference: #N
-    if (path[i] === '#') {
-      let j = i + 1;
+    } else if (c === '#') {
+      const start = i + 1;
+      let j = start;
       while (j < path.length && path[j] >= '0' && path[j] <= '9') {
         j++;
       }
-      if (j > i + 1) {
-        const fid = parseInt(path.slice(i + 1, j), 10);
-        segs.push({ kind: 'field', fid });
+      if (j === start) {
+        throw new Error(`missing field id at pos ${i}`);
       }
+      segs.push({ kind: 'field', fid: parseNonNegativeSafeInt(path.slice(start, j), 'field id') });
       i = j;
-      continue;
-    }
-    
-    // Field name: until . or [ or end
-    let j = i;
-    let inQuote = false;
-    while (j < path.length) {
-      const c = path[j];
+    } else {
+      let field: string;
       if (c === '"') {
-        inQuote = !inQuote;
-      } else if (!inQuote && (c === '.' || c === '[')) {
-        break;
+        const parsed = parseQuotedPathString(path, i);
+        field = parsed.value;
+        i = parsed.next;
+      } else {
+        let j = i;
+        while (j < path.length && path[j] !== '.' && path[j] !== '[' && path[j] !== ']') {
+          j++;
+        }
+        if (j === i) {
+          throw new Error(`empty path segment at pos ${i}`);
+        }
+        field = path.slice(i, j);
+        i = j;
       }
-      j++;
-    }
-    
-    if (j > i) {
-      let field = path.slice(i, j);
-      // Remove quotes if present
-      if (field.startsWith('"') && field.endsWith('"')) {
-        field = field.slice(1, -1);
+      if (!field) {
+        throw new Error(`empty field name at pos ${i}`);
       }
       segs.push(fieldSeg(field));
     }
-    i = j;
+
+    if (i >= path.length) {
+      break;
+    }
+    if (path[i] === '.') {
+      i++;
+      if (i >= path.length) {
+        throw new Error('path cannot end with dot');
+      }
+      continue;
+    }
+    if (path[i] === '[') {
+      continue;
+    }
+    throw new Error(`unexpected character '${path[i]}' in path`);
   }
-  
+
   return segs;
 }
 
@@ -241,7 +309,7 @@ export class PatchBuilder {
       op: '+',
       path: parsePathToSegs(path),
       value,
-      index,
+      index: parseNonNegativeSafeInt(String(index), 'patch index'),
     });
     return this;
   }
@@ -518,11 +586,12 @@ function parsePatchOp(line: string, schema?: Schema): PatchOp {
     case '=':
     case '+': {
       if (valueStr) {
-        // Check for @idx= suffix
-        const idxMatch = valueStr.match(/ @idx=(\d+)$/);
-        if (idxMatch) {
-          op.index = parseInt(idxMatch[1], 10);
-          valueStr = valueStr.slice(0, -idxMatch[0].length);
+        const tokens = tokenizeValues(valueStr);
+        const lastToken = tokens[tokens.length - 1];
+        if (opChar === '+' && tokens.length > 1 && lastToken?.startsWith('@idx=')) {
+          op.index = parseNonNegativeSafeInt(lastToken.slice(5), 'patch index');
+          tokens.pop();
+          valueStr = tokens.join(' ').trim();
         }
         op.value = parseInlineValue(valueStr, schema);
       }
@@ -532,7 +601,7 @@ function parsePatchOp(line: string, schema?: Schema): PatchOp {
       if (!valueStr) {
         throw new Error('delta operation requires a value');
       }
-      const num = parseFloat(valueStr);
+      const num = parseFiniteNumber(valueStr, 'delta');
       op.value = GValue.float(num);
       break;
     }
@@ -592,8 +661,9 @@ function parseInlineValue(s: string, schema?: Schema): GValue {
   
   // Number
   if (/^-?\d/.test(s)) {
+    const num = parseFiniteNumber(s, 'number');
     if (s.includes('.') || s.includes('e') || s.includes('E')) {
-      return GValue.float(parseFloat(s));
+      return GValue.float(num);
     }
     return GValue.int(parseInt(s, 10));
   }
@@ -613,6 +683,9 @@ function parseInlineValue(s: string, schema?: Schema): GValue {
 }
 
 function parseQuotedString(s: string): GValue {
+  if (s.length < 2 || !s.endsWith('"')) {
+    throw new Error('unterminated string literal');
+  }
   let result = '';
   for (let i = 1; i < s.length - 1; i++) {
     if (s[i] === '\\' && i + 1 < s.length - 1) {

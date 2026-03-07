@@ -228,6 +228,19 @@ update
     
     expect(() => reader.next()).toThrow(ParseError);
   });
+
+  test('header too large throws before newline', () => {
+    const reader = new Reader({ maxHeaderBytes: 32 });
+    reader.push(encoder.encode('@frame{' + 'x'.repeat(40)));
+
+    expect(() => reader.next()).toThrow(ParseError);
+  });
+
+  test('invalid len token throws', () => {
+    const input = '@frame{v=1 sid=0 seq=0 kind=doc len=1x}\nA\n';
+
+    expect(() => decodeFrame(encoder.encode(input))).toThrow(ParseError);
+  });
 });
 
 // ============================================================

@@ -5,13 +5,13 @@ Parses GLYPH-Loose text format into GValue objects.
 """
 
 from __future__ import annotations
-import re
 import base64
+import math
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import List, Optional, Tuple, Any
+from typing import List, Optional, Any
 
-from .types import GValue, GType, MapEntry, RefID
+from .types import GValue, MapEntry
 
 
 # ============================================================
@@ -47,6 +47,9 @@ class Token:
     type: str
     value: Any
     pos: int
+
+
+DEFAULT_MAX_DEPTH = 100
 
 
 class Lexer:
@@ -201,7 +204,7 @@ class Lexer:
                 self.pos += 1
                 b64_str = "".join(result)
                 try:
-                    data = base64.b64decode(b64_str)
+                    data = base64.b64decode(b64_str, validate=True)
                 except Exception as e:
                     raise ValueError(f"invalid base64: {e}")
                 return Token(TokenType.BYTES, data, start)
@@ -209,6 +212,19 @@ class Lexer:
             self.pos += 1
 
         raise ValueError("unterminated bytes literal")
+
+    def _parse_float_token(self, literal: str, start: int) -> Token:
+        try:
+            value = float(literal)
+        except OverflowError as e:
+            raise ValueError(f"float literal overflow at position {start}: {e}") from e
+        except ValueError as e:
+            raise ValueError(f"invalid float literal {literal!r} at position {start}") from e
+
+        if not math.isfinite(value):
+            raise ValueError(f"non-finite float literal {literal!r} at position {start}")
+
+        return Token(TokenType.FLOAT, value, start)
 
     def _read_number_or_ident(self) -> Token:
         start = self.pos
@@ -220,8 +236,7 @@ class Lexer:
             # Check for -Inf (with word boundary: next char must not be alphanumeric/underscore)
             if (self.pos + 2 < self.length and self.text[self.pos:self.pos+3] == "Inf"
                     and (self.pos + 3 >= self.length or (not self.text[self.pos+3].isalnum() and self.text[self.pos+3] != '_'))):
-                self.pos += 3
-                return Token(TokenType.FLOAT, float("-inf"), start)
+                raise ValueError(f"non-finite float literal '-Inf' at position {start}")
 
         # Read digits and decimal point
         has_dot = False
@@ -251,7 +266,7 @@ class Lexer:
 
         # Determine if it's int or float
         if has_dot or has_exp:
-            return Token(TokenType.FLOAT, float(s), start)
+            return self._parse_float_token(s, start)
         else:
             try:
                 return Token(TokenType.INT, int(s), start)
@@ -279,9 +294,9 @@ class Lexer:
         if s == "null" or s == "nil":
             return Token(TokenType.NULL, None, start)
         if s == "NaN":
-            return Token(TokenType.FLOAT, float("nan"), start)
+            raise ValueError(f"non-finite float literal 'NaN' at position {start}")
         if s == "Inf":
-            return Token(TokenType.FLOAT, float("inf"), start)
+            raise ValueError(f"non-finite float literal 'Inf' at position {start}")
 
         return Token(TokenType.IDENT, s, start)
 
@@ -293,10 +308,22 @@ class Lexer:
 class Parser:
     """Recursive descent parser for GLYPH text."""
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, max_depth: int = DEFAULT_MAX_DEPTH, nesting_depth: int = 0):
         self.lexer = Lexer(text)
         self.peeked: Optional[Token] = None
+        self.max_depth = max_depth
+        self.depth = nesting_depth
         # Don't read initial token here - let parse() do it
+
+    @contextmanager
+    def _container(self, kind: str):
+        if self.depth >= self.max_depth:
+            raise ValueError(f"maximum nesting depth exceeded while parsing {kind}")
+        self.depth += 1
+        try:
+            yield
+        finally:
+            self.depth -= 1
 
     def peek(self) -> Token:
         if self.peeked is None:
@@ -323,6 +350,10 @@ class Parser:
         self.lexer.skip_whitespace_and_newlines()
         self.current = self.lexer.next_token()
         v = self._parse_value()
+        while self.current.type == TokenType.NEWLINE:
+            self.advance()
+        if self.current.type != TokenType.EOF:
+            raise ValueError(f"trailing garbage at position {self.current.pos}")
         return v
 
     def _parse_value(self) -> GValue:
@@ -421,59 +452,60 @@ class Parser:
 
     def _parse_list(self) -> GValue:
         """Parse a list [...] """
-        self.expect(TokenType.LBRACKET)
-        items = []
+        with self._container("list"):
+            self.expect(TokenType.LBRACKET)
+            items = []
 
-        while self.current.type != TokenType.RBRACKET:
-            if self.current.type == TokenType.EOF:
-                raise ValueError("unterminated list")
-            if self.current.type == TokenType.COMMA:
-                self.advance()
-                continue
-            if self.current.type == TokenType.NEWLINE:
-                self.advance()
-                continue
+            while self.current.type != TokenType.RBRACKET:
+                if self.current.type == TokenType.EOF:
+                    raise ValueError("unterminated list")
+                if self.current.type == TokenType.COMMA:
+                    self.advance()
+                    continue
+                if self.current.type == TokenType.NEWLINE:
+                    self.advance()
+                    continue
 
-            items.append(self._parse_value())
+                items.append(self._parse_value())
 
-        self.expect(TokenType.RBRACKET)
-        return GValue.list_(*items)
+            self.expect(TokenType.RBRACKET)
+            return GValue.list_(*items)
 
     def _parse_map(self) -> GValue:
         """Parse a map {...}"""
-        self.expect(TokenType.LBRACE)
-        entries = []
+        with self._container("map"):
+            self.expect(TokenType.LBRACE)
+            entries = []
 
-        while self.current.type != TokenType.RBRACE:
-            if self.current.type == TokenType.EOF:
-                raise ValueError("unterminated map")
-            if self.current.type == TokenType.COMMA:
-                self.advance()
-                continue
-            if self.current.type == TokenType.NEWLINE:
-                self.advance()
-                continue
+            while self.current.type != TokenType.RBRACE:
+                if self.current.type == TokenType.EOF:
+                    raise ValueError("unterminated map")
+                if self.current.type == TokenType.COMMA:
+                    self.advance()
+                    continue
+                if self.current.type == TokenType.NEWLINE:
+                    self.advance()
+                    continue
 
-            # Parse key
-            if self.current.type == TokenType.IDENT:
-                key = self.current.value
-                self.advance()
-            elif self.current.type == TokenType.STRING:
-                key = self.current.value
-                self.advance()
-            else:
-                raise ValueError(f"expected key, got {self.current.type}")
+                # Parse key
+                if self.current.type == TokenType.IDENT:
+                    key = self.current.value
+                    self.advance()
+                elif self.current.type == TokenType.STRING:
+                    key = self.current.value
+                    self.advance()
+                else:
+                    raise ValueError(f"expected key, got {self.current.type}")
 
-            # Expect = or :
-            if self.current.type in (TokenType.EQUALS, TokenType.COLON):
+                if self.current.type not in (TokenType.EQUALS, TokenType.COLON):
+                    raise ValueError(f"expected '=' or ':' after key {key!r}")
                 self.advance()
 
-            # Parse value
-            value = self._parse_value()
-            entries.append(MapEntry(key, value))
+                value = self._parse_value()
+                entries.append(MapEntry(key, value))
 
-        self.expect(TokenType.RBRACE)
-        return GValue.map_(*entries)
+            self.expect(TokenType.RBRACE)
+            return GValue.map_(*entries)
 
     def _parse_ident_value(self) -> GValue:
         """Parse an identifier which could be a bare string, struct, or sum."""
@@ -482,49 +514,52 @@ class Parser:
 
         if self.current.type == TokenType.LBRACE:
             # Struct: Name{...}
-            self.advance()
-            fields = []
+            with self._container("struct"):
+                self.advance()
+                fields = []
 
-            while self.current.type != TokenType.RBRACE:
-                if self.current.type == TokenType.EOF:
-                    raise ValueError("unterminated struct")
-                if self.current.type == TokenType.COMMA:
-                    self.advance()
-                    continue
-                if self.current.type == TokenType.NEWLINE:
-                    self.advance()
-                    continue
+                while self.current.type != TokenType.RBRACE:
+                    if self.current.type == TokenType.EOF:
+                        raise ValueError("unterminated struct")
+                    if self.current.type == TokenType.COMMA:
+                        self.advance()
+                        continue
+                    if self.current.type == TokenType.NEWLINE:
+                        self.advance()
+                        continue
 
-                # Parse field
-                if self.current.type == TokenType.IDENT:
-                    key = self.current.value
-                    self.advance()
-                elif self.current.type == TokenType.STRING:
-                    key = self.current.value
-                    self.advance()
-                else:
-                    raise ValueError(f"expected field name, got {self.current.type}")
+                    # Parse field
+                    if self.current.type == TokenType.IDENT:
+                        key = self.current.value
+                        self.advance()
+                    elif self.current.type == TokenType.STRING:
+                        key = self.current.value
+                        self.advance()
+                    else:
+                        raise ValueError(f"expected field name, got {self.current.type}")
 
-                if self.current.type in (TokenType.EQUALS, TokenType.COLON):
+                    if self.current.type not in (TokenType.EQUALS, TokenType.COLON):
+                        raise ValueError(f"expected '=' or ':' after field {key!r}")
                     self.advance()
 
-                value = self._parse_value()
-                fields.append(MapEntry(key, value))
+                    value = self._parse_value()
+                    fields.append(MapEntry(key, value))
 
-            self.expect(TokenType.RBRACE)
-            return GValue.struct(name, *fields)
+                self.expect(TokenType.RBRACE)
+                return GValue.struct(name, *fields)
 
         if self.current.type == TokenType.LPAREN:
             # Sum: Tag(value) or Tag()
-            self.advance()
-
-            if self.current.type == TokenType.RPAREN:
+            with self._container("sum"):
                 self.advance()
-                return GValue.sum(name, None)
 
-            value = self._parse_value()
-            self.expect(TokenType.RPAREN)
-            return GValue.sum(name, value)
+                if self.current.type == TokenType.RPAREN:
+                    self.advance()
+                    return GValue.sum(name, None)
+
+                value = self._parse_value()
+                self.expect(TokenType.RPAREN)
+                return GValue.sum(name, value)
 
         # Bare string
         return GValue.str_(name)
@@ -546,57 +581,58 @@ class Parser:
 
     def _parse_tabular(self) -> GValue:
         """Parse tabular format: @tab _ [cols] |row|... @end"""
-        # Skip the _ placeholder
-        if self.current.type == TokenType.IDENT and self.current.value == "_":
+        with self._container("tabular directive"):
+            # Skip the _ placeholder
+            if self.current.type == TokenType.IDENT and self.current.value == "_":
+                self.advance()
+            elif self.current.type == TokenType.NULL:
+                self.advance()
+
+            # Parse column headers
+            if self.current.type != TokenType.LBRACKET:
+                raise ValueError("expected [ for column headers")
+
             self.advance()
-        elif self.current.type == TokenType.NULL:
-            self.advance()
-
-        # Parse column headers
-        if self.current.type != TokenType.LBRACKET:
-            raise ValueError("expected [ for column headers")
-
-        self.advance()
-        cols = []
-        while self.current.type != TokenType.RBRACKET:
-            if self.current.type == TokenType.IDENT:
-                cols.append(self.current.value)
-                self.advance()
-            elif self.current.type == TokenType.STRING:
-                cols.append(self.current.value)
-                self.advance()
-            elif self.current.type == TokenType.COMMA:
-                self.advance()
-            elif self.current.type == TokenType.NEWLINE:
-                self.advance()
-            else:
-                raise ValueError(f"expected column name, got {self.current.type}")
-
-        self.expect(TokenType.RBRACKET)
-
-        # Parse rows
-        rows = []
-        while True:
-            # Skip newlines
-            while self.current.type == TokenType.NEWLINE:
-                self.advance()
-
-            if self.current.type == TokenType.AT:
-                self.advance()
-                if self.current.type == TokenType.IDENT and self.current.value == "end":
+            cols = []
+            while self.current.type != TokenType.RBRACKET:
+                if self.current.type == TokenType.IDENT:
+                    cols.append(self.current.value)
                     self.advance()
+                elif self.current.type == TokenType.STRING:
+                    cols.append(self.current.value)
+                    self.advance()
+                elif self.current.type == TokenType.COMMA:
+                    self.advance()
+                elif self.current.type == TokenType.NEWLINE:
+                    self.advance()
+                else:
+                    raise ValueError(f"expected column name, got {self.current.type}")
+
+            self.expect(TokenType.RBRACKET)
+
+            # Parse rows
+            rows = []
+            while True:
+                # Skip newlines
+                while self.current.type == TokenType.NEWLINE:
+                    self.advance()
+
+                if self.current.type == TokenType.AT:
+                    self.advance()
+                    if self.current.type == TokenType.IDENT and self.current.value == "end":
+                        self.advance()
+                        break
+                    raise ValueError("expected @end")
+
+                if self.current.type == TokenType.PIPE:
+                    row = self._parse_tabular_row(cols)
+                    rows.append(row)
+                elif self.current.type == TokenType.EOF:
                     break
-                raise ValueError("expected @end")
+                else:
+                    raise ValueError(f"expected row or @end, got {self.current.type}")
 
-            if self.current.type == TokenType.PIPE:
-                row = self._parse_tabular_row(cols)
-                rows.append(row)
-            elif self.current.type == TokenType.EOF:
-                break
-            else:
-                raise ValueError(f"expected row or @end, got {self.current.type}")
-
-        return GValue.list_(*rows)
+            return GValue.list_(*rows)
 
     def _parse_tabular_row(self, cols: List[str]) -> GValue:
         """Parse a single tabular row: |val|val|val|"""
@@ -644,7 +680,11 @@ class Parser:
             if cell_text == "" or cell_text == "∅" or cell_text == "_":
                 value = GValue.null()
             else:
-                cell_parser = Parser(cell_text)
+                cell_parser = Parser(
+                    cell_text,
+                    max_depth=self.max_depth,
+                    nesting_depth=self.depth,
+                )
                 value = cell_parser.parse()
 
             entries.append(MapEntry(col, value))

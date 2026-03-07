@@ -80,7 +80,7 @@ NULL_SYMBOL = "∅"
 NULL_UNDERSCORE = "_"
 
 # Reserved words that must be quoted
-RESERVED_WORDS = {"t", "f", "true", "false", "null", "none", "nil", "_"}
+RESERVED_WORDS = {"t", "f", "true", "false", "null", "none", "nil", "_", "NaN", "Inf"}
 
 
 # ============================================================
@@ -113,11 +113,8 @@ def canon_float(f: float) -> str:
     if math.copysign(1.0, f) < 0 and f == 0:  # Negative zero
         return "0"
 
-    # Check for special values
-    if math.isnan(f):
-        return "NaN"
-    if math.isinf(f):
-        return "Inf" if f > 0 else "-Inf"
+    if not math.isfinite(f):
+        raise ValueError("non-finite floats are not supported")
 
     abs_f = abs(f)
 
@@ -477,6 +474,8 @@ def from_json_loose(data: Any) -> GValue:
     elif isinstance(data, int):
         return GValue.int_(data)
     elif isinstance(data, float):
+        if not math.isfinite(data):
+            raise ValueError("non-finite floats are not supported")
         return GValue.float_(data)
     elif isinstance(data, str):
         return GValue.str_(data)
@@ -504,7 +503,10 @@ def to_json_loose(v: GValue) -> Any:
     elif t == GType.INT:
         return v.as_int()
     elif t == GType.FLOAT:
-        return v.as_float()
+        value = v.as_float()
+        if not math.isfinite(value):
+            raise ValueError("non-finite floats are not JSON-safe")
+        return value
     elif t == GType.STR:
         return v.as_str()
     elif t == GType.BYTES:
@@ -519,7 +521,10 @@ def to_json_loose(v: GValue) -> Any:
     elif t == GType.LIST:
         return [to_json_loose(item) for item in v.as_list()]
     elif t == GType.MAP:
-        return {e.key: to_json_loose(e.value) for e in v.as_map()}
+        result = {}
+        for e in v.as_map():
+            result[e.key] = to_json_loose(e.value)
+        return result
     elif t == GType.STRUCT:
         sv = v.as_struct()
         result = {"$type": sv.type_name}

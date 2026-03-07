@@ -163,6 +163,15 @@ describe('JSON conversion', () => {
     expect(v.get('name')?.asStr()).toBe('Arsenal');
   });
 
+  test('fromJson ignores inherited special markers', () => {
+    const json = Object.create({ $type: 'Team' }) as Record<string, unknown>;
+    json.name = 'Arsenal';
+
+    const v = fromJson(json);
+    expect(v.type).toBe('map');
+    expect(v.get('name')?.asStr()).toBe('Arsenal');
+  });
+
   test('toJson primitives', () => {
     expect(toJson(g.null())).toBe(null);
     expect(toJson(g.bool(true))).toBe(true);
@@ -180,6 +189,13 @@ describe('JSON conversion', () => {
     const json = toJson(s, { includeTypeMarkers: true }) as Record<string, unknown>;
     expect(json.$type).toBe('Team');
     expect(json.name).toBe('Arsenal');
+  });
+
+  test('toJson preserves __proto__ as data on a null-prototype object', () => {
+    const json = toJson(g.map(field('__proto__', g.str('safe')))) as Record<string, unknown>;
+
+    expect(Object.getPrototypeOf(json)).toBeNull();
+    expect(json['__proto__']).toBe('safe');
   });
 
   test('roundtrip', () => {
@@ -326,6 +342,20 @@ describe('Parse', () => {
     expect(parsed.get('name')?.asStr()).toBe('Arsenal');
     expect(parsed.get('league')?.asStr()).toBe('EPL');
   });
+
+  test('reject trailing garbage after packed value', () => {
+    expect(() => parsePacked('Team@(^t:ARS Arsenal EPL) trailing', schema)).toThrow('trailing garbage');
+  });
+
+  test('reject malformed numeric tokens in packed values', () => {
+    const numericSchema = new SchemaBuilder()
+      .addPackedStruct('Score', 'v1')
+        .field('home', t.int(), { fid: 1 })
+        .field('away', t.str(), { fid: 2 })
+      .build();
+
+    expect(() => parsePacked('Score@(1e Arsenal)', numericSchema)).toThrow('invalid numeric token');
+  });
 });
 
 // ============================================================
@@ -450,6 +480,22 @@ describe('Patch', () => {
     
     expect(result.get('home')?.get('score')?.asInt()).toBe(3);
   });
+
+  test('reject malformed patch paths', () => {
+    const input = `@patch @keys=wire @target=m:ARS-LIV
+= events[abc] 1
+@end`;
+
+    expect(() => parsePatch(input)).toThrow('invalid list index');
+  });
+
+  test('reject NaN patch indexes', () => {
+    const input = `@patch @keys=wire @target=m:ARS-LIV
++ events "Goal!" @idx=NaN
+@end`;
+
+    expect(() => parsePatch(input)).toThrow('invalid patch index');
+  });
 });
 
 // ============================================================
@@ -550,6 +596,15 @@ describe('Loose Mode', () => {
       expect(obj.get('a')?.asInt()).toBe(1);
     });
 
+    test('ignores inherited extended markers', () => {
+      const json = Object.create({ $glyph: 'time', value: '2025-12-19T10:30:00Z' }) as Record<string, unknown>;
+      json.safe = 1;
+
+      const obj = fromJsonLoose(json, { extended: true });
+      expect(obj.type).toBe('map');
+      expect(obj.get('safe')?.asInt()).toBe(1);
+    });
+
     test('rejects NaN', () => {
       expect(() => fromJsonLoose(NaN)).toThrow('NaN/Infinity');
     });
@@ -586,6 +641,13 @@ describe('Loose Mode', () => {
       const idJson = toJsonLoose(id, { extended: true }) as { $glyph: string; value: string };
       expect(idJson.$glyph).toBe('id');
       expect(idJson.value).toBe('^user:123');
+    });
+
+    test('preserves __proto__ as data on null-prototype objects', () => {
+      const json = toJsonLoose(g.map(field('__proto__', g.str('safe')))) as Record<string, unknown>;
+
+      expect(Object.getPrototypeOf(json)).toBeNull();
+      expect(json['__proto__']).toBe('safe');
     });
   });
 

@@ -4,9 +4,25 @@ use crate::types::*;
 use crate::error::*;
 use serde_json::{Value as JsonValue, Number, Map};
 
+pub const MAX_JSON_DEPTH: usize = 128;
+
 /// Convert JSON value to GValue
 pub fn from_json(json: &JsonValue) -> GValue {
-    match json {
+    try_from_json(json).unwrap_or(GValue::Null)
+}
+
+pub fn try_from_json(json: &JsonValue) -> Result<GValue> {
+    from_json_with_depth(json, 0)
+}
+
+fn from_json_with_depth(json: &JsonValue, depth: usize) -> Result<GValue> {
+    if depth > MAX_JSON_DEPTH {
+        return Err(GlyphError::RecursionLimitExceeded {
+            limit: MAX_JSON_DEPTH,
+        });
+    }
+
+    Ok(match json {
         JsonValue::Null => GValue::Null,
         JsonValue::Bool(b) => GValue::Bool(*b),
         JsonValue::Number(n) => {
@@ -20,21 +36,39 @@ pub fn from_json(json: &JsonValue) -> GValue {
         }
         JsonValue::String(s) => GValue::Str(s.clone()),
         JsonValue::Array(arr) => {
-            GValue::List(arr.iter().map(from_json).collect())
+            let mut items = Vec::with_capacity(arr.len());
+            for item in arr {
+                items.push(from_json_with_depth(item, depth + 1)?);
+            }
+            GValue::List(items)
         }
         JsonValue::Object(obj) => {
-            let entries: Vec<MapEntry> = obj
-                .iter()
-                .map(|(k, v)| MapEntry::new(k.clone(), from_json(v)))
-                .collect();
+            let mut entries = Vec::with_capacity(obj.len());
+            for (k, v) in obj {
+                entries.push(MapEntry::new(k.clone(), from_json_with_depth(v, depth + 1)?));
+            }
             GValue::Map(entries)
         }
-    }
+    })
 }
 
 /// Convert GValue to JSON value
 pub fn to_json(gv: &GValue) -> JsonValue {
-    match gv {
+    try_to_json(gv).unwrap_or(JsonValue::Null)
+}
+
+pub fn try_to_json(gv: &GValue) -> Result<JsonValue> {
+    to_json_with_depth(gv, 0)
+}
+
+fn to_json_with_depth(gv: &GValue, depth: usize) -> Result<JsonValue> {
+    if depth > MAX_JSON_DEPTH {
+        return Err(GlyphError::RecursionLimitExceeded {
+            limit: MAX_JSON_DEPTH,
+        });
+    }
+
+    Ok(match gv {
         GValue::Null => JsonValue::Null,
         GValue::Bool(b) => JsonValue::Bool(*b),
         GValue::Int(n) => JsonValue::Number(Number::from(*n)),
@@ -57,19 +91,23 @@ pub fn to_json(gv: &GValue) -> JsonValue {
             }
         }
         GValue::List(items) => {
-            JsonValue::Array(items.iter().map(to_json).collect())
+            let mut json = Vec::with_capacity(items.len());
+            for item in items {
+                json.push(to_json_with_depth(item, depth + 1)?);
+            }
+            JsonValue::Array(json)
         }
         GValue::Map(entries) => {
             let mut map = Map::new();
             for entry in entries {
-                map.insert(entry.key.clone(), to_json(&entry.value));
+                map.insert(entry.key.clone(), to_json_with_depth(&entry.value, depth + 1)?);
             }
             JsonValue::Object(map)
         }
         GValue::Struct(s) => {
             let mut map = Map::new();
             for field in &s.fields {
-                map.insert(field.key.clone(), to_json(&field.value));
+                map.insert(field.key.clone(), to_json_with_depth(&field.value, depth + 1)?);
             }
             // Include type name as special field
             map.insert("_type".to_string(), JsonValue::String(s.type_name.clone()));
@@ -79,27 +117,33 @@ pub fn to_json(gv: &GValue) -> JsonValue {
             let mut map = Map::new();
             map.insert("_tag".to_string(), JsonValue::String(s.tag.clone()));
             if let Some(ref value) = s.value {
-                map.insert("_value".to_string(), to_json(value));
+                map.insert("_value".to_string(), to_json_with_depth(value, depth + 1)?);
             }
             JsonValue::Object(map)
         }
-    }
+    })
 }
 
 /// Parse JSON string to GValue
 pub fn parse_json(json_str: &str) -> Result<GValue> {
     let json: JsonValue = serde_json::from_str(json_str)?;
-    Ok(from_json(&json))
+    try_from_json(&json)
 }
 
 /// Stringify GValue to JSON string
 pub fn stringify_json(gv: &GValue) -> String {
-    serde_json::to_string(&to_json(gv)).unwrap_or_default()
+    try_to_json(gv)
+        .ok()
+        .and_then(|json| serde_json::to_string(&json).ok())
+        .unwrap_or_default()
 }
 
 /// Stringify GValue to pretty JSON string
 pub fn stringify_json_pretty(gv: &GValue) -> String {
-    serde_json::to_string_pretty(&to_json(gv)).unwrap_or_default()
+    try_to_json(gv)
+        .ok()
+        .and_then(|json| serde_json::to_string_pretty(&json).ok())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -165,5 +209,31 @@ mod tests {
         let restored = to_json(&gv);
 
         assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn test_try_from_json_recursion_guard() {
+        let mut json = json!(null);
+        for _ in 0..=MAX_JSON_DEPTH {
+            json = JsonValue::Array(vec![json]);
+        }
+
+        assert!(matches!(
+            try_from_json(&json),
+            Err(GlyphError::RecursionLimitExceeded { limit: MAX_JSON_DEPTH })
+        ));
+    }
+
+    #[test]
+    fn test_try_to_json_recursion_guard() {
+        let mut value = GValue::Null;
+        for _ in 0..=MAX_JSON_DEPTH {
+            value = GValue::List(vec![value]);
+        }
+
+        assert!(matches!(
+            try_to_json(&value),
+            Err(GlyphError::RecursionLimitExceeded { limit: MAX_JSON_DEPTH })
+        ));
     }
 }

@@ -24,6 +24,16 @@
 
 import { GValue, MapEntry } from './types';
 
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function hasOwn(obj: object, key: string): boolean {
+  return hasOwnProperty.call(obj, key);
+}
+
+function createJsonObject(): Record<string, unknown> {
+  return Object.create(null) as Record<string, unknown>;
+}
+
 // ============================================================
 // Loose Canonicalization Options
 // ============================================================
@@ -1255,8 +1265,9 @@ export function fromJsonLoose(json: unknown, opts: BridgeOpts = {}): GValue {
     const obj = json as Record<string, unknown>;
     
     // Check for extended markers
-    if (opts.extended && typeof obj.$glyph === 'string') {
-      return fromGlyphMarker(obj.$glyph, obj);
+    const glyphMarker = hasOwn(obj, '$glyph') ? obj.$glyph : undefined;
+    if (opts.extended && typeof glyphMarker === 'string') {
+      return fromGlyphMarker(glyphMarker, obj);
     }
     
     // Regular object/map
@@ -1343,14 +1354,20 @@ export function toJsonLoose(gv: GValue, opts: BridgeOpts = {}): unknown {
     case 'bytes': {
       const b64 = bytesToBase64(gv.asBytes());
       if (opts.extended) {
-        return { $glyph: 'bytes', base64: b64 };
+        const result = createJsonObject();
+        result.$glyph = 'bytes';
+        result.base64 = b64;
+        return result;
       }
       return b64;
     }
     case 'time': {
       const iso = gv.asTime().toISOString();
       if (opts.extended) {
-        return { $glyph: 'time', value: iso };
+        const result = createJsonObject();
+        result.$glyph = 'time';
+        result.value = iso;
+        return result;
       }
       return iso;
     }
@@ -1358,14 +1375,17 @@ export function toJsonLoose(gv: GValue, opts: BridgeOpts = {}): unknown {
       const ref = gv.asId();
       const refStr = `^${ref.prefix ? ref.prefix + ':' : ''}${ref.value}`;
       if (opts.extended) {
-        return { $glyph: 'id', value: refStr };
+        const result = createJsonObject();
+        result.$glyph = 'id';
+        result.value = refStr;
+        return result;
       }
       return refStr;
     }
     case 'list':
       return gv.asList().map(v => toJsonLoose(v, opts));
     case 'map': {
-      const result: Record<string, unknown> = {};
+      const result = createJsonObject();
       for (const entry of gv.asMap()) {
         result[entry.key] = toJsonLoose(entry.value, opts);
       }
@@ -1374,7 +1394,7 @@ export function toJsonLoose(gv: GValue, opts: BridgeOpts = {}): unknown {
     case 'struct': {
       // Structs become objects
       const sv = gv.asStruct();
-      const result: Record<string, unknown> = {};
+      const result = createJsonObject();
       for (const field of sv.fields) {
         result[field.key] = toJsonLoose(field.value, opts);
       }
@@ -1383,7 +1403,9 @@ export function toJsonLoose(gv: GValue, opts: BridgeOpts = {}): unknown {
     case 'sum': {
       // Sums become { tag: value }
       const sum = gv.asSum();
-      return { [sum.tag]: sum.value ? toJsonLoose(sum.value, opts) : null };
+      const result = createJsonObject();
+      result[sum.tag] = sum.value ? toJsonLoose(sum.value, opts) : null;
+      return result;
     }
   }
 }
@@ -1433,7 +1455,7 @@ function jsonValueEqual(a: unknown, b: unknown): boolean {
     const keysB = Object.keys(objB);
     if (keysA.length !== keysB.length) return false;
     for (const key of keysA) {
-      if (!(key in objB)) return false;
+      if (!hasOwn(objB, key)) return false;
       if (!jsonValueEqual(objA[key], objB[key])) return false;
     }
     return true;
