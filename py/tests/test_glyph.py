@@ -15,7 +15,6 @@ from glyph import (
     equal_loose,
     fingerprint_loose,
     LooseCanonOpts, NullStyle,
-    llm_loose_canon_opts,
 )
 
 
@@ -103,11 +102,11 @@ class TestCanonicalizeLoose:
     """Tests for loose canonicalization."""
 
     def test_null(self):
-        assert emit(GValue.null()) == "∅"
+        assert emit(GValue.null()) == "_"
 
-    def test_null_underscore(self):
-        opts = llm_loose_canon_opts()
-        assert canonicalize_loose(GValue.null(), opts) == "_"
+    def test_null_symbol(self):
+        opts = LooseCanonOpts(null_style=NullStyle.SYMBOL)
+        assert canonicalize_loose(GValue.null(), opts) == "∅"
 
     def test_bool(self):
         assert emit(GValue.bool_(True)) == "t"

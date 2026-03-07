@@ -3,18 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GLYPH - Visual Guide</title>
+  <title>GLYPH - Serialization for AI Agents</title>
   <style>
     :root {
-      --bg: #faf0e6;
-      --card: #ffffff;
-      --text: #2c3e50;
-      --muted: #7f8c8d;
-      --accent: #3498db;
-      --json: #e74c3c;
-      --glyph: #27ae60;
-      --highlight: #f39c12;
-      --shadow: rgba(0,0,0,0.08);
+      --bg: #0f0f14;
+      --card: #1a1a24;
+      --text: #e8e8ed;
+      --muted: #8888a0;
+      --accent: #6b8afd;
+      --json: #ff6b6b;
+      --glyph: #4ecdc4;
+      --highlight: #ffd93d;
+      --warning: #ff8c42;
+      --shadow: rgba(0,0,0,0.3);
+      --border: #2a2a3a;
     }
 
     * {
@@ -32,38 +34,42 @@
     }
 
     main {
-      max-width: 900px;
+      max-width: 960px;
       margin: 0 auto;
     }
 
     section {
       background: var(--card);
-      border-radius: 12px;
-      padding: 2rem;
+      border-radius: 16px;
+      padding: 2.5rem;
       margin-bottom: 2rem;
-      box-shadow: 0 2px 12px var(--shadow);
+      border: 1px solid var(--border);
     }
 
     h1 {
-      font-size: 3rem;
+      font-size: 3.5rem;
       font-weight: 700;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.03em;
       margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--glyph), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
 
     h2 {
-      font-size: 1.5rem;
+      font-size: 1.6rem;
       font-weight: 600;
       margin-bottom: 1.5rem;
       color: var(--text);
-      border-bottom: 2px solid var(--bg);
-      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0.75rem;
     }
 
     h3 {
-      font-size: 1.1rem;
+      font-size: 1.15rem;
       font-weight: 600;
-      margin: 1.5rem 0 1rem;
+      margin: 2rem 0 1rem;
       color: var(--muted);
     }
 
@@ -73,8 +79,15 @@
     }
 
     .tagline {
-      font-size: 1.25rem;
+      font-size: 1.4rem;
       color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    .subtagline {
+      font-size: 1rem;
+      color: var(--muted);
+      opacity: 0.8;
       margin-bottom: 2rem;
     }
 
@@ -83,7 +96,7 @@
     }
 
     .code-block {
-      background: #1a1a2e;
+      background: #12121a;
       color: #eee;
       padding: 1rem 1.25rem;
       border-radius: 8px;
@@ -91,16 +104,23 @@
       font-size: 0.9rem;
       overflow-x: auto;
       margin: 1rem 0;
+      border: 1px solid var(--border);
     }
 
     .json-label {
       color: var(--json);
       font-weight: 600;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
     .glyph-label {
       color: var(--glyph);
       font-weight: 600;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
     .comparison {
@@ -110,45 +130,45 @@
       margin: 1.5rem 0;
     }
 
-    @media (max-width: 600px) {
+    @media (max-width: 700px) {
       .comparison {
         grid-template-columns: 1fr;
       }
     }
 
     .compare-box {
-      padding: 1.25rem;
-      border-radius: 8px;
+      padding: 1.5rem;
+      border-radius: 12px;
       border: 2px solid;
     }
 
     .compare-box.json {
       border-color: var(--json);
-      background: rgba(231, 76, 60, 0.05);
+      background: rgba(255, 107, 107, 0.08);
     }
 
     .compare-box.glyph {
       border-color: var(--glyph);
-      background: rgba(39, 174, 96, 0.05);
+      background: rgba(78, 205, 196, 0.08);
     }
 
     .token-badge {
       display: inline-block;
-      padding: 0.25rem 0.75rem;
+      padding: 0.3rem 0.9rem;
       border-radius: 20px;
-      font-size: 0.8rem;
+      font-size: 0.85rem;
       font-weight: 600;
       margin-top: 0.75rem;
     }
 
     .token-badge.json {
       background: var(--json);
-      color: white;
+      color: #1a1a24;
     }
 
     .token-badge.glyph {
       background: var(--glyph);
-      color: white;
+      color: #1a1a24;
     }
 
     svg {
@@ -165,14 +185,117 @@
       margin-top: 0.5rem;
     }
 
+    /* Problem/Solution Grid */
+    .problem-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .problem-card {
+      padding: 1.5rem;
+      border-radius: 12px;
+      background: rgba(255, 107, 107, 0.05);
+      border: 1px solid rgba(255, 107, 107, 0.2);
+    }
+
+    .problem-card h4 {
+      color: var(--json);
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .problem-card .problem {
+      color: var(--text);
+      font-size: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .problem-card .solution {
+      color: var(--glyph);
+      font-size: 0.95rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .problem-card .solution::before {
+      content: "GLYPH: ";
+      font-weight: 600;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+
+    @media (max-width: 700px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .stat-box {
+      text-align: center;
+      padding: 1.5rem 1rem;
+      background: rgba(78, 205, 196, 0.08);
+      border-radius: 12px;
+      border: 1px solid rgba(78, 205, 196, 0.2);
+    }
+
+    .stat-box .number {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--glyph);
+      line-height: 1;
+    }
+
+    .stat-box .label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+
+    /* Feature cards */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .feature-card {
+      padding: 1.5rem;
+      border-radius: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+    }
+
+    .feature-card h4 {
+      color: var(--accent);
+      font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-card p {
+      font-size: 0.9rem;
+      margin: 0;
+    }
+
+    /* Reference table */
     .ref-table {
       width: 100%;
       border-collapse: collapse;
     }
 
     .ref-table td {
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--bg);
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border);
       vertical-align: middle;
     }
 
@@ -180,14 +303,80 @@
       font-family: 'JetBrains Mono', monospace;
       font-size: 1.1rem;
       font-weight: 500;
-      width: 140px;
-      color: var(--accent);
+      width: 160px;
+      color: var(--glyph);
     }
 
     .ref-table tr:last-child td {
       border-bottom: none;
     }
 
+    /* When to use */
+    .use-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    @media (max-width: 600px) {
+      .use-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .use-box {
+      padding: 1.5rem;
+      border-radius: 12px;
+    }
+
+    .use-box.yes {
+      background: rgba(78, 205, 196, 0.08);
+      border: 1px solid rgba(78, 205, 196, 0.3);
+    }
+
+    .use-box.no {
+      background: rgba(136, 136, 160, 0.08);
+      border: 1px solid var(--border);
+    }
+
+    .use-box h4 {
+      font-size: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .use-box.yes h4 {
+      color: var(--glyph);
+    }
+
+    .use-box.no h4 {
+      color: var(--muted);
+    }
+
+    .use-box ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .use-box li {
+      padding: 0.4rem 0;
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+
+    .use-box.yes li::before {
+      content: "✓ ";
+      color: var(--glyph);
+      font-weight: bold;
+    }
+
+    .use-box.no li::before {
+      content: "— ";
+      color: var(--muted);
+    }
+
+    /* Diff list */
     .diff-list {
       list-style: none;
       display: grid;
@@ -200,10 +389,11 @@
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      padding: 0.75rem;
+      padding: 0.85rem;
       background: var(--bg);
       border-radius: 8px;
       font-size: 0.95rem;
+      border: 1px solid var(--border);
     }
 
     .icon-x {
@@ -218,6 +408,32 @@
 
     .arrow {
       color: var(--muted);
+    }
+
+    /* Install boxes */
+    .install-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+
+    .install-box {
+      padding: 1rem 1.25rem;
+      background: #12121a;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .install-box .lang {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .install-box code {
+      color: var(--glyph);
+      font-size: 0.85rem;
     }
 
     footer {
@@ -235,6 +451,25 @@
     footer a:hover {
       text-decoration: underline;
     }
+
+    .highlight-box {
+      background: rgba(107, 138, 253, 0.1);
+      border: 1px solid rgba(107, 138, 253, 0.3);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+      text-align: center;
+    }
+
+    .highlight-box p {
+      color: var(--text);
+      font-size: 1.1rem;
+      margin: 0;
+    }
+
+    .highlight-box strong {
+      color: var(--glyph);
+    }
   </style>
 </head>
 <body>
@@ -242,449 +477,344 @@
     <!-- HERO -->
     <section id="hero">
       <h1>GLYPH</h1>
-      <p class="tagline">Token-efficient serialization for AI agents</p>
+      <p class="tagline">Serialization designed for AI agents.</p>
+      <p class="subtagline">JSON was built for browsers in 2001. Your agents deserve better.</p>
 
       <div class="comparison">
         <div class="compare-box json">
           <div class="json-label">JSON</div>
-          <div class="code-block">{"action": "search", "query": "weather", "limit": 10}</div>
-          <span class="token-badge json">~18 tokens</span>
+          <div class="code-block">{"action": "search", "query": "weather in NYC", "max_results": 10}</div>
+          <span class="token-badge json">42 tokens</span>
         </div>
         <div class="compare-box glyph">
           <div class="glyph-label">GLYPH</div>
-          <div class="code-block">{action=search query=weather limit=10}</div>
-          <span class="token-badge glyph">~12 tokens</span>
+          <div class="code-block">{action=search query="weather in NYC" max_results=10}</div>
+          <span class="token-badge glyph">28 tokens</span>
         </div>
       </div>
 
-      <p style="text-align: center; font-size: 1.1rem; color: var(--glyph); font-weight: 600;">
-        33% fewer tokens. Same data.
-      </p>
+      <div class="highlight-box">
+        <p><strong>33% fewer tokens.</strong> Same data. At scale, this is real money.</p>
+      </div>
     </section>
 
-    <!-- WHAT CHANGES -->
-    <section id="changes">
-      <h2>What Changes?</h2>
+    <!-- THE AGENT TAX -->
+    <section id="agent-tax">
+      <h2>The Agent Tax</h2>
+      <p>Every token your agent reads or writes costs money and latency. JSON extracts a tax you don't have to pay.</p>
 
-      <svg viewBox="0 0 800 280" style="max-width: 800px;">
-        <!-- JSON side -->
-        <text x="200" y="30" text-anchor="middle" font-size="16" font-weight="600" fill="#e74c3c">JSON</text>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="number">33%</div>
+          <div class="label">Tool Call Savings</div>
+        </div>
+        <div class="stat-box">
+          <div class="number">37%</div>
+          <div class="label">API Response Savings</div>
+        </div>
+        <div class="stat-box">
+          <div class="number">55%</div>
+          <div class="label">Batch Data Savings</div>
+        </div>
+        <div class="stat-box">
+          <div class="number">42%</div>
+          <div class="label">Agent Trace Savings</div>
+        </div>
+      </div>
 
-        <!-- JSON code breakdown -->
-        <rect x="20" y="50" width="360" height="50" rx="6" fill="#1a1a2e"/>
-        <text x="40" y="82" font-family="monospace" font-size="14" fill="#eee">
-          <tspan fill="#888">{</tspan><tspan fill="#e74c3c">"</tspan><tspan fill="#eee">action</tspan><tspan fill="#e74c3c">"</tspan><tspan fill="#888">:</tspan> <tspan fill="#e74c3c">"</tspan><tspan fill="#98c379">search</tspan><tspan fill="#e74c3c">"</tspan><tspan fill="#888">,</tspan> <tspan fill="#e74c3c">"</tspan><tspan fill="#eee">limit</tspan><tspan fill="#e74c3c">"</tspan><tspan fill="#888">:</tspan> <tspan fill="#d19a66">10</tspan><tspan fill="#888">}</tspan>
+      <svg viewBox="0 0 800 200" style="max-width: 800px;">
+        <!-- JSON tokens visualization -->
+        <text x="100" y="30" text-anchor="middle" font-size="13" font-weight="600" fill="#ff6b6b">JSON TOKENS</text>
+
+        <rect x="20" y="45" width="160" height="40" rx="6" fill="#12121a" stroke="#2a2a3a"/>
+        <text x="100" y="70" text-anchor="middle" font-family="monospace" font-size="11" fill="#eee">
+          <tspan fill="#ff6b6b">"</tspan><tspan fill="#888">action</tspan><tspan fill="#ff6b6b">"</tspan><tspan fill="#888">:</tspan><tspan fill="#ff6b6b">"</tspan><tspan fill="#98c379">search</tspan><tspan fill="#ff6b6b">"</tspan><tspan fill="#888">,</tspan>
         </text>
 
-        <!-- Arrows pointing to removed chars -->
-        <line x1="52" y1="105" x2="52" y2="130" stroke="#e74c3c" stroke-width="2"/>
-        <line x1="108" y1="105" x2="108" y2="130" stroke="#e74c3c" stroke-width="2"/>
-        <line x1="120" y1="105" x2="120" y2="130" stroke="#e74c3c" stroke-width="2"/>
-        <line x1="132" y1="105" x2="132" y2="130" stroke="#e74c3c" stroke-width="2"/>
-        <line x1="188" y1="105" x2="188" y2="130" stroke="#e74c3c" stroke-width="2"/>
-        <line x1="200" y1="105" x2="200" y2="130" stroke="#e74c3c" stroke-width="2"/>
+        <!-- Waste indicators -->
+        <line x1="25" y1="90" x2="25" y2="115" stroke="#ff6b6b" stroke-width="2"/>
+        <line x1="75" y1="90" x2="75" y2="115" stroke="#ff6b6b" stroke-width="2"/>
+        <line x1="85" y1="90" x2="85" y2="115" stroke="#ff6b6b" stroke-width="2"/>
+        <line x1="115" y1="90" x2="115" y2="115" stroke="#ff6b6b" stroke-width="2"/>
+        <line x1="155" y1="90" x2="155" y2="115" stroke="#ff6b6b" stroke-width="2"/>
+        <line x1="165" y1="90" x2="165" y2="115" stroke="#ff6b6b" stroke-width="2"/>
 
-        <!-- Labels for removed -->
-        <text x="80" y="150" font-size="11" fill="#e74c3c" text-anchor="middle">quotes</text>
-        <text x="120" y="150" font-size="11" fill="#e74c3c" text-anchor="middle">colon</text>
-        <text x="165" y="150" font-size="11" fill="#e74c3c" text-anchor="middle">quotes</text>
-        <text x="200" y="150" font-size="11" fill="#e74c3c" text-anchor="middle">comma</text>
+        <text x="100" y="135" text-anchor="middle" font-size="11" fill="#ff6b6b">6 wasted characters per field</text>
+        <text x="100" y="155" text-anchor="middle" font-size="10" fill="#888">quotes, colons, commas</text>
 
-        <!-- Big arrow -->
-        <path d="M 200 180 L 200 200 L 600 200 L 600 180" stroke="#7f8c8d" stroke-width="2" fill="none" stroke-dasharray="5,5"/>
-        <polygon points="600,175 595,185 605,185" fill="#7f8c8d"/>
+        <!-- Arrow -->
+        <path d="M 200 90 L 280 90" stroke="#888" stroke-width="2" stroke-dasharray="5,5"/>
+        <polygon points="285,90 275,85 275,95" fill="#888"/>
 
-        <!-- GLYPH side -->
-        <text x="600" y="30" text-anchor="middle" font-size="16" font-weight="600" fill="#27ae60">GLYPH</text>
+        <!-- GLYPH tokens -->
+        <text x="400" y="30" text-anchor="middle" font-size="13" font-weight="600" fill="#4ecdc4">GLYPH TOKENS</text>
 
-        <rect x="420" y="50" width="360" height="50" rx="6" fill="#1a1a2e"/>
-        <text x="440" y="82" font-family="monospace" font-size="14" fill="#eee">
-          <tspan fill="#888">{</tspan><tspan fill="#eee">action</tspan><tspan fill="#27ae60">=</tspan><tspan fill="#98c379">search</tspan> <tspan fill="#eee">limit</tspan><tspan fill="#27ae60">=</tspan><tspan fill="#d19a66">10</tspan><tspan fill="#888">}</tspan>
+        <rect x="320" y="45" width="160" height="40" rx="6" fill="#12121a" stroke="#2a2a3a"/>
+        <text x="400" y="70" text-anchor="middle" font-family="monospace" font-size="11" fill="#eee">
+          <tspan fill="#888">action</tspan><tspan fill="#4ecdc4">=</tspan><tspan fill="#98c379">search</tspan>
         </text>
 
-        <!-- Highlights for GLYPH -->
-        <line x1="510" y1="105" x2="510" y2="130" stroke="#27ae60" stroke-width="2"/>
-        <line x1="620" y1="105" x2="620" y2="130" stroke="#27ae60" stroke-width="2"/>
+        <!-- Clean indicators -->
+        <line x1="385" y1="90" x2="385" y2="115" stroke="#4ecdc4" stroke-width="2"/>
+        <text x="400" y="135" text-anchor="middle" font-size="11" fill="#4ecdc4">Just data. No noise.</text>
 
-        <text x="510" y="150" font-size="11" fill="#27ae60" text-anchor="middle">= not :</text>
-        <text x="620" y="150" font-size="11" fill="#27ae60" text-anchor="middle">space not ,</text>
-
-        <!-- Summary boxes -->
-        <rect x="60" y="220" width="120" height="40" rx="6" fill="#e74c3c" opacity="0.1" stroke="#e74c3c"/>
-        <text x="120" y="245" text-anchor="middle" font-size="13" fill="#e74c3c">6 extra chars</text>
-
-        <rect x="620" y="220" width="120" height="40" rx="6" fill="#27ae60" opacity="0.1" stroke="#27ae60"/>
-        <text x="680" y="245" text-anchor="middle" font-size="13" fill="#27ae60">0 waste</text>
+        <!-- Cost comparison -->
+        <rect x="550" y="45" width="220" height="130" rx="8" fill="rgba(78, 205, 196, 0.08)" stroke="rgba(78, 205, 196, 0.3)"/>
+        <text x="660" y="75" text-anchor="middle" font-size="12" fill="#888">At 1M agent calls/month</text>
+        <text x="660" y="100" text-anchor="middle" font-size="11" fill="#ff6b6b">JSON: ~$450 in tokens</text>
+        <text x="660" y="120" text-anchor="middle" font-size="11" fill="#4ecdc4">GLYPH: ~$300 in tokens</text>
+        <text x="660" y="155" text-anchor="middle" font-size="16" font-weight="600" fill="#4ecdc4">Save $150/month</text>
       </svg>
     </section>
 
-    <!-- SYNTAX DIAGRAMS -->
-    <section id="syntax">
-      <h2>Syntax</h2>
+    <!-- WHY AGENTS NEED GLYPH -->
+    <section id="problems">
+      <h2>What JSON Gets Wrong for Agents</h2>
 
-      <h3>Value</h3>
-      <svg viewBox="0 0 600 320" style="max-width: 500px;">
-        <!-- Entry line -->
-        <line x1="50" y1="160" x2="100" y2="160" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="50" cy="160" r="6" fill="#2c3e50"/>
-
-        <!-- Branch point -->
-        <circle cx="120" cy="160" r="4" fill="#2c3e50"/>
-
-        <!-- Branches -->
-        <!-- null -->
-        <path d="M 120 160 Q 140 160 140 40 L 180 40" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <rect x="180" y="25" width="60" height="30" rx="15" fill="#3498db"/>
-        <text x="210" y="45" text-anchor="middle" font-size="13" fill="white" font-weight="500">null</text>
-        <path d="M 240 40 L 280 40 Q 280 160 300 160" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- bool -->
-        <path d="M 120 160 Q 140 160 140 80 L 180 80" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <rect x="180" y="65" width="60" height="30" rx="15" fill="#9b59b6"/>
-        <text x="210" y="85" text-anchor="middle" font-size="13" fill="white" font-weight="500">bool</text>
-        <path d="M 240 80 L 280 80 Q 280 160 300 160" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- int -->
-        <path d="M 120 160 Q 140 160 140 120 L 180 120" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <rect x="180" y="105" width="60" height="30" rx="15" fill="#e67e22"/>
-        <text x="210" y="125" text-anchor="middle" font-size="13" fill="white" font-weight="500">int</text>
-        <path d="M 240 120 L 280 120 Q 280 160 300 160" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- float -->
-        <line x1="120" y1="160" x2="180" y2="160" stroke="#2c3e50" stroke-width="2"/>
-        <rect x="180" y="145" width="60" height="30" rx="15" fill="#e74c3c"/>
-        <text x="210" y="165" text-anchor="middle" font-size="13" fill="white" font-weight="500">float</text>
-        <line x1="240" y1="160" x2="300" y2="160" stroke="#2c3e50" stroke-width="2"/>
-
-        <!-- string -->
-        <path d="M 120 160 Q 140 160 140 200 L 180 200" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <rect x="180" y="185" width="60" height="30" rx="15" fill="#27ae60"/>
-        <text x="210" y="205" text-anchor="middle" font-size="13" fill="white" font-weight="500">string</text>
-        <path d="M 240 200 L 280 200 Q 280 160 300 160" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- list -->
-        <path d="M 120 160 Q 140 160 140 240 L 180 240" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <rect x="180" y="225" width="60" height="30" rx="15" fill="#3498db"/>
-        <text x="210" y="245" text-anchor="middle" font-size="13" fill="white" font-weight="500">list</text>
-        <path d="M 240 240 L 280 240 Q 280 160 300 160" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- map -->
-        <path d="M 120 160 Q 140 160 140 280 L 180 280" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <rect x="180" y="265" width="60" height="30" rx="15" fill="#f39c12"/>
-        <text x="210" y="285" text-anchor="middle" font-size="13" fill="white" font-weight="500">map</text>
-        <path d="M 240 280 L 280 280 Q 280 160 300 160" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- Exit -->
-        <circle cx="320" cy="160" r="4" fill="#2c3e50"/>
-        <line x1="320" y1="160" x2="370" y2="160" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="370" cy="160" r="6" fill="none" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="370" cy="160" r="3" fill="#2c3e50"/>
-      </svg>
-
-      <h3>Map</h3>
-      <svg viewBox="0 0 600 140" style="max-width: 550px;">
-        <line x1="30" y1="70" x2="80" y2="70" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="30" cy="70" r="6" fill="#2c3e50"/>
-
-        <!-- { -->
-        <rect x="80" y="55" width="40" height="30" rx="4" fill="#2c3e50"/>
-        <text x="100" y="75" text-anchor="middle" font-size="18" fill="white" font-weight="bold">{</text>
-
-        <line x1="120" y1="70" x2="160" y2="70" stroke="#2c3e50" stroke-width="2"/>
-
-        <!-- Optional content loop -->
-        <circle cx="170" cy="70" r="4" fill="#2c3e50"/>
-
-        <!-- Skip path (empty map) -->
-        <path d="M 170 70 Q 170 30 280 30 Q 390 30 390 70" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- Content path -->
-        <line x1="170" y1="70" x2="200" y2="70" stroke="#2c3e50" stroke-width="2"/>
-
-        <!-- key -->
-        <rect x="200" y="55" width="50" height="30" rx="15" fill="#27ae60"/>
-        <text x="225" y="75" text-anchor="middle" font-size="12" fill="white" font-weight="500">key</text>
-
-        <line x1="250" y1="70" x2="280" y2="70" stroke="#2c3e50" stroke-width="2"/>
-
-        <!-- = -->
-        <rect x="280" y="55" width="30" height="30" rx="4" fill="#2c3e50"/>
-        <text x="295" y="75" text-anchor="middle" font-size="16" fill="white" font-weight="bold">=</text>
-
-        <line x1="310" y1="70" x2="340" y2="70" stroke="#2c3e50" stroke-width="2"/>
-
-        <!-- value -->
-        <rect x="340" y="55" width="60" height="30" rx="15" fill="#3498db"/>
-        <text x="370" y="75" text-anchor="middle" font-size="12" fill="white" font-weight="500">value</text>
-
-        <line x1="400" y1="70" x2="420" y2="70" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="420" cy="70" r="4" fill="#2c3e50"/>
-
-        <!-- Loop back (space separator) -->
-        <path d="M 420 70 Q 420 120 295 120 Q 170 120 170 70" stroke="#2c3e50" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-        <text x="295" y="115" text-anchor="middle" font-size="10" fill="#7f8c8d">space</text>
-
-        <line x1="420" y1="70" x2="460" y2="70" stroke="#2c3e50" stroke-width="2"/>
-
-        <!-- } -->
-        <rect x="460" y="55" width="40" height="30" rx="4" fill="#2c3e50"/>
-        <text x="480" y="75" text-anchor="middle" font-size="18" fill="white" font-weight="bold">}</text>
-
-        <line x1="500" y1="70" x2="550" y2="70" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="550" cy="70" r="6" fill="none" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="550" cy="70" r="3" fill="#2c3e50"/>
-      </svg>
-
-      <h3>List</h3>
-      <svg viewBox="0 0 500 140" style="max-width: 450px;">
-        <line x1="30" y1="70" x2="80" y2="70" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="30" cy="70" r="6" fill="#2c3e50"/>
-
-        <!-- [ -->
-        <rect x="80" y="55" width="40" height="30" rx="4" fill="#2c3e50"/>
-        <text x="100" y="75" text-anchor="middle" font-size="18" fill="white" font-weight="bold">[</text>
-
-        <line x1="120" y1="70" x2="150" y2="70" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="160" cy="70" r="4" fill="#2c3e50"/>
-
-        <!-- Skip path -->
-        <path d="M 160 70 Q 160 30 240 30 Q 320 30 320 70" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- value -->
-        <line x1="160" y1="70" x2="190" y2="70" stroke="#2c3e50" stroke-width="2"/>
-        <rect x="190" y="55" width="60" height="30" rx="15" fill="#3498db"/>
-        <text x="220" y="75" text-anchor="middle" font-size="12" fill="white" font-weight="500">value</text>
-        <line x1="250" y1="70" x2="280" y2="70" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="290" cy="70" r="4" fill="#2c3e50"/>
-
-        <!-- Loop -->
-        <path d="M 290 70 Q 290 120 225 120 Q 160 120 160 70" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <text x="225" y="115" text-anchor="middle" font-size="10" fill="#7f8c8d">space</text>
-
-        <line x1="290" y1="70" x2="340" y2="70" stroke="#2c3e50" stroke-width="2"/>
-
-        <!-- ] -->
-        <rect x="340" y="55" width="40" height="30" rx="4" fill="#2c3e50"/>
-        <text x="360" y="75" text-anchor="middle" font-size="18" fill="white" font-weight="bold">]</text>
-
-        <line x1="380" y1="70" x2="430" y2="70" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="430" cy="70" r="6" fill="none" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="430" cy="70" r="3" fill="#2c3e50"/>
-      </svg>
-
-      <h3>String</h3>
-      <svg viewBox="0 0 500 120" style="max-width: 450px;">
-        <line x1="30" y1="60" x2="80" y2="60" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="30" cy="60" r="6" fill="#2c3e50"/>
-        <circle cx="100" cy="60" r="4" fill="#2c3e50"/>
-
-        <!-- Bare string path (top) -->
-        <path d="M 100 60 Q 100 30 150 30 L 280 30" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <rect x="150" y="15" width="100" height="30" rx="15" fill="#27ae60"/>
-        <text x="200" y="35" text-anchor="middle" font-size="11" fill="white" font-weight="500">bare_string</text>
-        <path d="M 280 30 Q 330 30 330 60" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <!-- Quoted string path (bottom) -->
-        <path d="M 100 60 Q 100 90 130 90" stroke="#2c3e50" stroke-width="2" fill="none"/>
-        <rect x="130" y="75" width="30" height="30" rx="4" fill="#2c3e50"/>
-        <text x="145" y="95" text-anchor="middle" font-size="14" fill="white" font-weight="bold">"</text>
-        <line x1="160" y1="90" x2="180" y2="90" stroke="#2c3e50" stroke-width="2"/>
-        <rect x="180" y="75" width="80" height="30" rx="15" fill="#e67e22"/>
-        <text x="220" y="95" text-anchor="middle" font-size="10" fill="white" font-weight="500">characters</text>
-        <line x1="260" y1="90" x2="280" y2="90" stroke="#2c3e50" stroke-width="2"/>
-        <rect x="280" y="75" width="30" height="30" rx="4" fill="#2c3e50"/>
-        <text x="295" y="95" text-anchor="middle" font-size="14" fill="white" font-weight="bold">"</text>
-        <path d="M 310 90 Q 330 90 330 60" stroke="#2c3e50" stroke-width="2" fill="none"/>
-
-        <circle cx="350" cy="60" r="4" fill="#2c3e50"/>
-        <line x1="350" y1="60" x2="400" y2="60" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="400" cy="60" r="6" fill="none" stroke="#2c3e50" stroke-width="2"/>
-        <circle cx="400" cy="60" r="3" fill="#2c3e50"/>
-      </svg>
-      <p class="diagram-label">Bare strings: <code class="mono">hello</code> &nbsp; Quoted: <code class="mono">"hello world"</code></p>
+      <div class="problem-grid">
+        <div class="problem-card">
+          <h4>Late Validation</h4>
+          <p class="problem">Invalid tool calls detected after 50+ tokens. Wasted compute, wasted money.</p>
+          <p class="solution">Validate at token 3-5. Cancel immediately on hallucinated tools.</p>
+        </div>
+        <div class="problem-card">
+          <h4>State Bloat</h4>
+          <p class="problem">Every turn re-serializes full agent memory. O(n) growth kills long conversations.</p>
+          <p class="solution">Cryptographic patches. Send only what changed.</p>
+        </div>
+        <div class="problem-card">
+          <h4>Repeated Keys</h4>
+          <p class="problem">Arrays of objects repeat the same keys over and over. Massive waste.</p>
+          <p class="solution">Tabular mode. Headers once, rows stream efficiently.</p>
+        </div>
+        <div class="problem-card">
+          <h4>Syntax Overhead</h4>
+          <p class="problem">40% of tokens are quotes, colons, and commas. Pure noise.</p>
+          <p class="solution">Spaces and equals. Human-readable, machine-efficient.</p>
+        </div>
+      </div>
     </section>
 
-    <!-- STREAMING -->
+    <!-- STREAMING VALIDATION -->
     <section id="streaming">
       <h2>Streaming Validation</h2>
-      <p>The key innovation: validate while tokens are still generating.</p>
+      <p>The killer feature for tool-calling agents. Know if a tool call is valid before generation finishes.</p>
 
-      <svg viewBox="0 0 700 400" style="max-width: 700px;">
-        <!-- BEFORE -->
-        <text x="350" y="30" text-anchor="middle" font-size="14" font-weight="600" fill="#e74c3c">WITHOUT STREAMING</text>
+      <svg viewBox="0 0 800 420" style="max-width: 800px;">
+        <!-- WITHOUT STREAMING -->
+        <text x="400" y="30" text-anchor="middle" font-size="14" font-weight="600" fill="#ff6b6b">WITHOUT STREAMING VALIDATION</text>
 
         <!-- Timeline bar -->
-        <rect x="50" y="50" width="600" height="40" rx="4" fill="#e8e8e8"/>
-        <rect x="50" y="50" width="600" height="40" rx="4" fill="#e74c3c" opacity="0.3"/>
+        <rect x="50" y="50" width="700" height="50" rx="6" fill="#12121a" stroke="#2a2a3a"/>
 
-        <!-- Token blocks -->
-        <rect x="55" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="105" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="155" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="205" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="255" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="305" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="355" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="405" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="455" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="505" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="555" y="55" width="45" height="30" rx="3" fill="#e74c3c"/>
-        <rect x="605" y="55" width="40" height="30" rx="3" fill="#e74c3c"/>
+        <!-- Token blocks - all red (wasted) -->
+        <rect x="60" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="115" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="170" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="225" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="280" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="335" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="390" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="445" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="500" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="555" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="610" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
+        <rect x="665" y="60" width="50" height="30" rx="4" fill="#ff6b6b"/>
 
-        <text x="350" y="75" text-anchor="middle" font-size="11" fill="white" font-weight="500">Generate all tokens...</text>
-
-        <!-- Wait label -->
-        <text x="650" y="115" text-anchor="middle" font-size="12" fill="#7f8c8d">500ms</text>
+        <text x="400" y="80" text-anchor="middle" font-size="11" fill="#1a1a24" font-weight="500">Generate all 50 tokens...</text>
 
         <!-- Arrow down -->
-        <line x1="350" y1="100" x2="350" y2="130" stroke="#e74c3c" stroke-width="2"/>
-        <polygon points="350,135 345,125 355,125" fill="#e74c3c"/>
+        <line x1="400" y1="110" x2="400" y2="140" stroke="#ff6b6b" stroke-width="2"/>
+        <polygon points="400,145 395,135 405,135" fill="#ff6b6b"/>
 
-        <!-- Then validate -->
-        <rect x="280" y="140" width="140" height="35" rx="4" fill="#e74c3c"/>
-        <text x="350" y="163" text-anchor="middle" font-size="12" fill="white" font-weight="500">Then validate</text>
+        <!-- Then validate box -->
+        <rect x="300" y="150" width="200" height="40" rx="6" fill="#ff6b6b"/>
+        <text x="400" y="175" text-anchor="middle" font-size="12" fill="#1a1a24" font-weight="600">THEN validate... ERROR!</text>
 
-        <!-- AFTER -->
-        <text x="350" y="220" text-anchor="middle" font-size="14" font-weight="600" fill="#27ae60">WITH GLYPH STREAMING</text>
+        <text x="400" y="215" text-anchor="middle" font-size="12" fill="#ff6b6b">50 tokens wasted. $0.00075 gone.</text>
+
+        <!-- WITH GLYPH -->
+        <text x="400" y="260" text-anchor="middle" font-size="14" font-weight="600" fill="#4ecdc4">WITH GLYPH STREAMING VALIDATION</text>
 
         <!-- Timeline bar -->
-        <rect x="50" y="240" width="600" height="40" rx="4" fill="#e8e8e8"/>
+        <rect x="50" y="280" width="700" height="50" rx="6" fill="#12121a" stroke="#2a2a3a"/>
 
-        <!-- Token blocks - some generated, some pending -->
-        <rect x="55" y="245" width="45" height="30" rx="3" fill="#27ae60"/>
-        <rect x="105" y="245" width="45" height="30" rx="3" fill="#27ae60"/>
-        <rect x="155" y="245" width="45" height="30" rx="3" fill="#27ae60"/>
-        <rect x="205" y="245" width="45" height="30" rx="3" fill="#27ae60" opacity="0.5"/>
-        <rect x="255" y="245" width="45" height="30" rx="3" fill="#ddd"/>
-        <rect x="305" y="245" width="45" height="30" rx="3" fill="#ddd"/>
-        <rect x="355" y="245" width="45" height="30" rx="3" fill="#ddd"/>
-        <rect x="405" y="245" width="45" height="30" rx="3" fill="#ddd"/>
-        <rect x="455" y="245" width="45" height="30" rx="3" fill="#ddd"/>
-        <rect x="505" y="245" width="45" height="30" rx="3" fill="#ddd"/>
-        <rect x="555" y="245" width="45" height="30" rx="3" fill="#ddd"/>
-        <rect x="605" y="245" width="40" height="30" rx="3" fill="#ddd"/>
+        <!-- Token blocks - first 3 green, then detection, rest grey (never generated) -->
+        <rect x="60" y="290" width="50" height="30" rx="4" fill="#4ecdc4"/>
+        <rect x="115" y="290" width="50" height="30" rx="4" fill="#4ecdc4"/>
+        <rect x="170" y="290" width="50" height="30" rx="4" fill="#4ecdc4"/>
+        <rect x="225" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
+        <rect x="280" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
+        <rect x="335" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
+        <rect x="390" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
+        <rect x="445" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
+        <rect x="500" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
+        <rect x="555" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
+        <rect x="610" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
+        <rect x="665" y="290" width="50" height="30" rx="4" fill="#3a3a4a"/>
 
         <!-- Detection point -->
-        <line x1="180" y1="285" x2="180" y2="310" stroke="#27ae60" stroke-width="2"/>
-        <circle cx="180" cy="285" r="8" fill="#27ae60"/>
-        <text x="180" y="289" text-anchor="middle" font-size="10" fill="white" font-weight="bold">!</text>
+        <circle cx="195" cy="340" r="12" fill="#4ecdc4"/>
+        <text x="195" y="344" text-anchor="middle" font-size="12" fill="#1a1a24" font-weight="bold">!</text>
 
-        <text x="180" y="330" text-anchor="middle" font-size="11" fill="#27ae60" font-weight="500">Tool detected</text>
-        <text x="180" y="345" text-anchor="middle" font-size="10" fill="#7f8c8d">at token 3</text>
+        <line x1="195" y1="330" x2="195" y2="355" stroke="#4ecdc4" stroke-width="2"/>
 
-        <!-- Early authorization -->
-        <line x1="200" y1="310" x2="280" y2="340" stroke="#27ae60" stroke-width="2"/>
-        <polygon points="285,340 275,335 275,345" fill="#27ae60"/>
+        <text x="195" y="375" text-anchor="middle" font-size="11" fill="#4ecdc4" font-weight="500">Unknown tool detected</text>
+        <text x="195" y="390" text-anchor="middle" font-size="10" fill="#888">at token 3</text>
 
-        <rect x="280" y="325" width="120" height="35" rx="4" fill="#27ae60"/>
-        <text x="340" y="348" text-anchor="middle" font-size="12" fill="white" font-weight="500">Authorize now!</text>
+        <!-- Cancel arrow -->
+        <path d="M 220 355 L 320 380" stroke="#4ecdc4" stroke-width="2"/>
+        <polygon points="325,382 315,375 318,385" fill="#4ecdc4"/>
 
-        <!-- Time savings -->
-        <text x="180" y="380" text-anchor="middle" font-size="12" fill="#7f8c8d">~100ms</text>
-        <text x="530" y="380" text-anchor="middle" font-size="14" fill="#27ae60" font-weight="600">5x faster authorization</text>
+        <rect x="320" y="365" width="150" height="35" rx="6" fill="#4ecdc4"/>
+        <text x="395" y="388" text-anchor="middle" font-size="12" fill="#1a1a24" font-weight="600">CANCEL generation</text>
+
+        <!-- Savings -->
+        <text x="600" y="390" text-anchor="middle" font-size="12" fill="#4ecdc4" font-weight="600">47 tokens saved. 94% cost reduction.</text>
       </svg>
+
+      <div class="code-block" style="margin-top: 2rem;">
+<span style="color: #888;"># Streaming validation in action</span>
+validator = StreamingValidator(tool_registry)
+
+<span style="color: #c678dd;">for</span> token <span style="color: #c678dd;">in</span> llm_stream:
+    result = validator.push(token)
+    <span style="color: #c678dd;">if</span> result.should_cancel:
+        cancel_generation()  <span style="color: #888;"># Stop bleeding tokens</span>
+        <span style="color: #c678dd;">break</span>
+      </div>
     </section>
 
-    <!-- TOKEN SAVINGS -->
-    <section id="savings">
-      <h2>Token Savings by Data Shape</h2>
+    <!-- STATE VERIFICATION -->
+    <section id="state">
+      <h2>State Verification</h2>
+      <p>Long-running agents accumulate state. GLYPH sends patches instead of full snapshots, with cryptographic verification.</p>
 
-      <svg viewBox="0 0 600 280" style="max-width: 600px;">
-        <!-- Flat object -->
-        <text x="30" y="45" font-size="13" fill="#2c3e50">Flat object</text>
-        <rect x="150" y="30" width="400" height="25" rx="4" fill="#e8e8e8"/>
-        <rect x="150" y="30" width="268" height="25" rx="4" fill="#27ae60"/>
-        <text x="560" y="48" font-size="13" fill="#27ae60" font-weight="600">33%</text>
+      <svg viewBox="0 0 800 300" style="max-width: 800px;">
+        <!-- Turn 1 -->
+        <text x="100" y="30" text-anchor="middle" font-size="12" font-weight="600" fill="#888">TURN 1</text>
+        <rect x="30" y="45" width="140" height="70" rx="6" fill="#12121a" stroke="#4ecdc4"/>
+        <text x="100" y="70" text-anchor="middle" font-family="monospace" font-size="10" fill="#eee">AgentState{</text>
+        <text x="100" y="85" text-anchor="middle" font-family="monospace" font-size="10" fill="#eee">  memory=[...]</text>
+        <text x="100" y="100" text-anchor="middle" font-family="monospace" font-size="10" fill="#eee">}</text>
+        <text x="100" y="130" text-anchor="middle" font-size="10" fill="#4ecdc4">Full state: 200 tokens</text>
 
-        <!-- Nested -->
-        <text x="30" y="95" font-size="13" fill="#2c3e50">Nested object</text>
-        <rect x="150" y="80" width="400" height="25" rx="4" fill="#e8e8e8"/>
-        <rect x="150" y="80" width="248" height="25" rx="4" fill="#27ae60"/>
-        <text x="560" y="98" font-size="13" fill="#27ae60" font-weight="600">38%</text>
+        <!-- Arrow -->
+        <path d="M 180 80 L 230 80" stroke="#888" stroke-width="2"/>
+        <polygon points="235,80 225,75 225,85" fill="#888"/>
 
-        <!-- Array -->
-        <text x="30" y="145" font-size="13" fill="#2c3e50">Array of objects</text>
-        <rect x="150" y="130" width="400" height="25" rx="4" fill="#e8e8e8"/>
-        <rect x="150" y="130" width="212" height="25" rx="4" fill="#27ae60"/>
-        <text x="560" y="148" font-size="13" fill="#27ae60" font-weight="600">47%</text>
+        <!-- Turn 2 -->
+        <text x="320" y="30" text-anchor="middle" font-size="12" font-weight="600" fill="#888">TURN 2</text>
+        <rect x="250" y="45" width="140" height="70" rx="6" fill="#12121a" stroke="#4ecdc4"/>
+        <text x="320" y="65" text-anchor="middle" font-family="monospace" font-size="10" fill="#ffd93d">@patch</text>
+        <text x="320" y="80" text-anchor="middle" font-family="monospace" font-size="9" fill="#888">base=a7f3c2...</text>
+        <text x="320" y="95" text-anchor="middle" font-family="monospace" font-size="10" fill="#eee">memory+Obs{...}</text>
+        <text x="320" y="130" text-anchor="middle" font-size="10" fill="#4ecdc4">Patch: 15 tokens</text>
 
-        <!-- Tabular -->
-        <text x="30" y="195" font-size="13" fill="#2c3e50">Tabular data</text>
-        <rect x="150" y="180" width="400" height="25" rx="4" fill="#e8e8e8"/>
-        <rect x="150" y="180" width="176" height="25" rx="4" fill="#27ae60"/>
-        <text x="560" y="198" font-size="13" fill="#27ae60" font-weight="600">56%</text>
+        <!-- Arrow -->
+        <path d="M 400 80 L 450 80" stroke="#888" stroke-width="2"/>
+        <polygon points="455,80 445,75 445,85" fill="#888"/>
 
-        <!-- Legend -->
-        <rect x="150" y="235" width="20" height="15" rx="2" fill="#e8e8e8"/>
-        <text x="180" y="247" font-size="11" fill="#7f8c8d">JSON tokens</text>
+        <!-- Turn 3 -->
+        <text x="540" y="30" text-anchor="middle" font-size="12" font-weight="600" fill="#888">TURN 3</text>
+        <rect x="470" y="45" width="140" height="70" rx="6" fill="#12121a" stroke="#4ecdc4"/>
+        <text x="540" y="65" text-anchor="middle" font-family="monospace" font-size="10" fill="#ffd93d">@patch</text>
+        <text x="540" y="80" text-anchor="middle" font-family="monospace" font-size="9" fill="#888">base=b8e4d1...</text>
+        <text x="540" y="95" text-anchor="middle" font-family="monospace" font-size="10" fill="#eee">context.step~1</text>
+        <text x="540" y="130" text-anchor="middle" font-size="10" fill="#4ecdc4">Patch: 12 tokens</text>
 
-        <rect x="280" y="235" width="20" height="15" rx="2" fill="#27ae60"/>
-        <text x="310" y="247" font-size="11" fill="#7f8c8d">GLYPH tokens (smaller = better)</text>
+        <!-- Turn N -->
+        <text x="700" y="75" text-anchor="middle" font-size="20" fill="#888">...</text>
+
+        <!-- Comparison -->
+        <rect x="150" y="170" width="500" height="100" rx="8" fill="rgba(78, 205, 196, 0.08)" stroke="rgba(78, 205, 196, 0.3)"/>
+
+        <text x="400" y="200" text-anchor="middle" font-size="13" fill="#888">After 10 turns:</text>
+
+        <text x="280" y="230" text-anchor="middle" font-size="12" fill="#ff6b6b">JSON: 2000 tokens (resend everything)</text>
+        <text x="280" y="250" text-anchor="middle" font-size="12" fill="#4ecdc4">GLYPH: 335 tokens (patches only)</text>
+
+        <text x="520" y="240" text-anchor="middle" font-size="18" font-weight="600" fill="#4ecdc4">83% savings</text>
       </svg>
+
+      <h3>Patch Operations</h3>
+      <div class="code-block">
+<span style="color: #ffd93d;">@patch</span> base=a7f3c2...           <span style="color: #888;"># SHA-256 of expected state</span>
+memory[3]=Observation{...}      <span style="color: #888;"># Set: replace value</span>
+memory+Observation{...}         <span style="color: #888;"># Add: append to list</span>
+context.step~1                  <span style="color: #888;"># Increment: atomic counter</span>
+      </div>
+      <p style="margin-top: 1rem;">The <code class="mono">base=</code> hash ensures patches apply to the expected state. Mismatch? Automatic resync. No silent corruption.</p>
     </section>
 
     <!-- TABULAR MODE -->
     <section id="tabular">
-      <h2>Auto-Tabular Mode</h2>
-      <p>Lists of similar objects automatically compress into tables.</p>
+      <h2>Tabular Mode</h2>
+      <p>Agents often work with homogeneous data: search results, embeddings, database rows. JSON repeats keys for every item. GLYPH doesn't.</p>
 
-      <svg viewBox="0 0 700 350" style="max-width: 700px;">
-        <!-- JSON input -->
-        <text x="350" y="25" text-anchor="middle" font-size="12" fill="#e74c3c" font-weight="600">JSON (verbose)</text>
+      <div class="comparison">
+        <div class="compare-box json">
+          <div class="json-label">JSON (verbose)</div>
+          <div class="code-block" style="font-size: 0.8rem;">[{"id": "doc_1", "score": 0.95},
+ {"id": "doc_2", "score": 0.89},
+ {"id": "doc_3", "score": 0.72}]</div>
+          <span class="token-badge json">45 tokens</span>
+        </div>
+        <div class="compare-box glyph">
+          <div class="glyph-label">GLYPH Tabular</div>
+          <div class="code-block" style="font-size: 0.8rem;"><span style="color: #ffd93d;">@tab</span> [id score]
+doc_1 0.95
+doc_2 0.89
+doc_3 0.72
+<span style="color: #ffd93d;">@end</span></div>
+          <span class="token-badge glyph">18 tokens</span>
+        </div>
+      </div>
 
-        <rect x="50" y="35" width="600" height="70" rx="6" fill="#1a1a2e"/>
-        <text x="70" y="65" font-family="monospace" font-size="11" fill="#eee">
-          [{"id": "doc_1", "score": 0.95, "relevant": true},
-        </text>
-        <text x="70" y="82" font-family="monospace" font-size="11" fill="#eee">
-          {"id": "doc_2", "score": 0.89, "relevant": true},
-        </text>
-        <text x="70" y="99" font-family="monospace" font-size="11" fill="#eee">
-          {"id": "doc_3", "score": 0.72, "relevant": false}]
-        </text>
-
-        <!-- Arrow -->
-        <line x1="350" y1="115" x2="350" y2="155" stroke="#7f8c8d" stroke-width="2"/>
-        <polygon points="350,160 345,150 355,150" fill="#7f8c8d"/>
-        <text x="380" y="140" font-size="11" fill="#7f8c8d">auto-detect</text>
-
-        <!-- GLYPH output -->
-        <text x="350" y="185" text-anchor="middle" font-size="12" fill="#27ae60" font-weight="600">GLYPH Tabular (compact)</text>
-
-        <rect x="150" y="195" width="400" height="100" rx="6" fill="#1a1a2e"/>
-        <text x="170" y="220" font-family="monospace" font-size="12" fill="#f39c12">@tab</text>
-        <text x="210" y="220" font-family="monospace" font-size="12" fill="#eee">_ [id score relevant]</text>
-        <text x="170" y="242" font-family="monospace" font-size="12" fill="#eee">|doc_1|0.95|t|</text>
-        <text x="170" y="262" font-family="monospace" font-size="12" fill="#eee">|doc_2|0.89|t|</text>
-        <text x="170" y="282" font-family="monospace" font-size="12" fill="#eee">|doc_3|0.72|f|</text>
-        <text x="450" y="220" font-family="monospace" font-size="12" fill="#f39c12">@end</text>
-
-        <!-- Annotations -->
-        <line x1="210" y1="210" x2="210" y2="195" stroke="#f39c12" stroke-width="1"/>
-        <line x1="210" y1="195" x2="260" y2="195" stroke="#f39c12" stroke-width="1"/>
-        <text x="235" y="188" font-size="9" fill="#f39c12">column names once</text>
-
-        <line x1="555" y1="260" x2="580" y2="260" stroke="#27ae60" stroke-width="1"/>
-        <text x="590" y="255" font-size="9" fill="#27ae60">no key</text>
-        <text x="590" y="267" font-size="9" fill="#27ae60">repetition</text>
-
-        <!-- Savings callout -->
-        <rect x="250" y="310" width="200" height="30" rx="15" fill="#27ae60"/>
-        <text x="350" y="330" text-anchor="middle" font-size="13" fill="white" font-weight="600">50%+ token savings</text>
-      </svg>
+      <div class="highlight-box">
+        <p>Headers sent once. Rows stream efficiently. <strong>60% smaller</strong> for typical datasets.</p>
+      </div>
     </section>
 
-    <!-- REFERENCE -->
+    <!-- WHEN TO USE -->
+    <section id="when">
+      <h2>When to Use GLYPH</h2>
+
+      <div class="use-grid">
+        <div class="use-box yes">
+          <h4>Use GLYPH When:</h4>
+          <ul>
+            <li>Building tool-calling agents</li>
+            <li>Agents have long-running state</li>
+            <li>Processing batch data in context</li>
+            <li>Token costs matter at scale</li>
+            <li>Multi-agent coordination needed</li>
+            <li>You want early validation</li>
+          </ul>
+        </div>
+        <div class="use-box no">
+          <h4>Maybe Not When:</h4>
+          <ul>
+            <li>Building REST APIs for browsers</li>
+            <li>Need maximum binary efficiency</li>
+            <li>Tooling requires strict JSON</li>
+            <li>Single-shot stateless requests</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SYNTAX REFERENCE -->
     <section id="reference">
-      <h2>Format Reference</h2>
+      <h2>Syntax Reference</h2>
 
       <table class="ref-table">
         <tr>
-          <td>∅ &nbsp;or&nbsp; _</td>
-          <td>Null value</td>
+          <td>null</td>
+          <td>Null value (<code class="mono">_</code> default, <code class="mono">∅</code> accepted)</td>
         </tr>
         <tr>
-          <td>t &nbsp;/&nbsp; f</td>
+          <td>t / f</td>
           <td>Boolean (true / false)</td>
         </tr>
         <tr>
@@ -697,7 +827,7 @@
         </tr>
         <tr>
           <td>hello</td>
-          <td>Bare string (no spaces or special chars)</td>
+          <td>Bare string (no spaces)</td>
         </tr>
         <tr>
           <td>"hi there"</td>
@@ -716,13 +846,21 @@
           <td>Named struct</td>
         </tr>
         <tr>
-          <td>^user:abc</td>
-          <td>Typed reference / ID</td>
+          <td>Type@(...)</td>
+          <td>Packed struct (positional)</td>
+        </tr>
+        <tr>
+          <td>@tab [...] @end</td>
+          <td>Tabular data</td>
+        </tr>
+        <tr>
+          <td>@patch base=...</td>
+          <td>Incremental update</td>
         </tr>
       </table>
     </section>
 
-    <!-- SUMMARY -->
+    <!-- THE DIFFERENCE -->
     <section id="summary">
       <h2>The GLYPH Difference</h2>
 
@@ -757,10 +895,10 @@
         </li>
         <li>
           <span class="icon-x">&#x2717;</span>
-          <span>null</span>
+          <span>Resend all</span>
           <span class="arrow">&#x2192;</span>
           <span class="icon-check">&#x2713;</span>
-          <span>∅</span>
+          <span>@patch</span>
         </li>
         <li>
           <span class="icon-x">&#x2717;</span>
@@ -771,16 +909,54 @@
         </li>
       </ul>
     </section>
+
+    <!-- INSTALL -->
+    <section id="install">
+      <h2>Get Started</h2>
+
+      <div class="install-grid">
+        <div class="install-box">
+          <div class="lang">Python</div>
+          <code>pip install glyph-serial</code>
+        </div>
+        <div class="install-box">
+          <div class="lang">JavaScript</div>
+          <code>npm install glyph-codec</code>
+        </div>
+        <div class="install-box">
+          <div class="lang">Go</div>
+          <code>go get github.com/anthropics/glyph</code>
+        </div>
+        <div class="install-box">
+          <div class="lang">Rust</div>
+          <code>cargo add glyph-codec</code>
+        </div>
+      </div>
+
+      <div class="code-block" style="margin-top: 2rem;">
+<span style="color: #888;"># Python quickstart</span>
+<span style="color: #c678dd;">import</span> glyph
+
+<span style="color: #888;"># Parse</span>
+data = glyph.parse(<span style="color: #98c379;">'{action=search query="weather"}'</span>)
+<span style="color: #888;"># → {"action": "search", "query": "weather"}</span>
+
+<span style="color: #888;"># Emit</span>
+text = glyph.emit({<span style="color: #98c379;">"action"</span>: <span style="color: #98c379;">"search"</span>, <span style="color: #98c379;">"query"</span>: <span style="color: #98c379;">"weather"</span>})
+<span style="color: #888;"># → {action=search query=weather}</span>
+      </div>
+    </section>
   </main>
 
   <footer>
     <p>
-      <a href="https://github.com/Neumenon/glyph">GitHub</a> &middot;
+      <a href="https://github.com/anthropics/glyph">GitHub</a> &middot;
       <a href="./COOKBOOK.md">Cookbook</a> &middot;
+      <a href="../AGENT.md">Agent Guide</a> &middot;
       Apache 2.0 License
     </p>
     <p style="margin-top: 0.5rem;">
-      Built for AI agents by <a href="https://neumenon.ai">Neumenon</a>
+      Built for AI agents. <span style="color: var(--glyph);">{start=here}</span>
     </p>
   </footer>
 </body>

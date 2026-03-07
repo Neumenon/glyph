@@ -716,20 +716,46 @@ func (p *schemaParser) parseTypeSpec() (TypeSpec, error) {
 
 	// Check for parameterized types: list<T>, map<K,V>
 	if name == "list" {
-		if !p.stream.Match(TokenIdent) || p.stream.PeekN(-1).Value != "<" {
-			// Check for < after list
-			// Simple approach: expect <
+		if _, err := p.stream.Expect(TokenLT); err != nil {
+			return TypeSpec{}, fmt.Errorf("expected < after list")
 		}
-		// For now, simplified - just check next token
-		// In full implementation, handle < > properly
-		if p.stream.Peek().Value == "<" || (p.stream.Peek().Type == TokenIdent && false) {
-			// Handle list<T>
+		elem, err := p.parseTypeSpec()
+		if err != nil {
+			return TypeSpec{}, err
 		}
-		return TypeSpec{Kind: TypeSpecList, Elem: &TypeSpec{Kind: TypeSpecRef, Name: "any"}}, nil
+		if _, err := p.stream.Expect(TokenGT); err != nil {
+			return TypeSpec{}, fmt.Errorf("expected > after list type")
+		}
+		return ListType(elem), nil
 	}
 
 	if name == "map" {
-		return TypeSpec{Kind: TypeSpecMap}, nil
+		if _, err := p.stream.Expect(TokenLT); err != nil {
+			return TypeSpec{}, fmt.Errorf("expected < after map")
+		}
+		keyType, err := p.parseTypeSpec()
+		if err != nil {
+			return TypeSpec{}, err
+		}
+		if _, err := p.stream.Expect(TokenComma); err != nil {
+			return TypeSpec{}, fmt.Errorf("expected , in map type")
+		}
+		valType, err := p.parseTypeSpec()
+		if err != nil {
+			return TypeSpec{}, err
+		}
+		if _, err := p.stream.Expect(TokenGT); err != nil {
+			return TypeSpec{}, fmt.Errorf("expected > after map type")
+		}
+		return MapType(keyType, valType), nil
+	}
+
+	if name == "struct" {
+		structDef, err := p.parseStructDef()
+		if err != nil {
+			return TypeSpec{}, err
+		}
+		return TypeSpec{Kind: TypeSpecInlineStruct, Struct: structDef}, nil
 	}
 
 	return PrimitiveType(name), nil

@@ -72,7 +72,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.stream = exports.parseTabularLooseHeaderWithMeta = exports.parseSchemaHeader = exports.buildKeyDictFromValue = exports.canonicalizeLooseWithSchema = exports.llmLooseCanonOpts = exports.tabularLooseCanonOpts = exports.noTabularLooseCanonOpts = exports.defaultLooseCanonOpts = exports.unescapeTabularCell = exports.parseTabularLoose = exports.jsonEqual = exports.stringifyJsonLoose = exports.parseJsonLoose = exports.toJsonLoose = exports.fromJsonLoose = exports.equalLoose = exports.fingerprintLoose = exports.canonicalizeLooseTabular = exports.canonicalizeLooseWithOpts = exports.canonicalizeLooseNoTabular = exports.canonicalizeLoose = exports.mapKeySeg = exports.listIdxSeg = exports.fieldSeg = exports.parsePathToSegs = exports.applyPatch = exports.parsePatch = exports.emitPatch = exports.PatchBuilder = exports.parseHeader = exports.parseTabular = exports.parsePacked = exports.emitHeader = exports.emitV2 = exports.emitTabular = exports.emitPacked = exports.emit = exports.normalizeJson = exports.stringifyJson = exports.parseJson = exports.toJson = exports.fromJson = exports.t = exports.SchemaBuilder = exports.Schema = exports.field = exports.g = exports.GValue = void 0;
+exports.Decimal128 = exports.stream = exports.parseTabularLooseHeaderWithMeta = exports.parseSchemaHeader = exports.buildKeyDictFromValue = exports.canonicalizeLooseWithSchema = exports.llmLooseCanonOpts = exports.tabularLooseCanonOpts = exports.noTabularLooseCanonOpts = exports.defaultLooseCanonOpts = exports.unescapeTabularCell = exports.parseTabularLoose = exports.jsonEqual = exports.stringifyJsonLoose = exports.parseJsonLoose = exports.toJsonLoose = exports.fromJsonLoose = exports.equalLoose = exports.fingerprintLoose = exports.canonicalizeLooseTabular = exports.canonicalizeLooseWithOpts = exports.canonicalizeLooseNoTabular = exports.canonicalizeLoose = exports.mapKeySeg = exports.listIdxSeg = exports.fieldSeg = exports.parsePathToSegs = exports.applyPatch = exports.parsePatch = exports.emitPatch = exports.PatchBuilder = exports.parseHeader = exports.parseTabular = exports.parsePacked = exports.emitHeader = exports.emitV2 = exports.emitTabular = exports.emitPacked = exports.emit = exports.normalizeJson = exports.stringifyJson = exports.parseJson = exports.toJson = exports.fromJson = exports.t = exports.SchemaBuilder = exports.Schema = exports.field = exports.g = exports.GValue = void 0;
+exports.defaultToolRegistry = exports.DEFAULT_MAX_ERRORS = exports.DEFAULT_MAX_FIELDS = exports.DEFAULT_MAX_BUFFER = exports.ErrorCode = exports.ValidatorState = exports.ToolRegistry = exports.StreamingValidator = exports.versionedSchema = exports.formatVersionHeader = exports.parseVersionHeader = exports.compareVersions = exports.EvolutionMode = exports.EvolvingField = exports.VersionSchema = exports.VersionedSchema = exports.parseDecimalLiteral = exports.isDecimalLiteral = exports.decimal = exports.DecimalError = void 0;
 exports.jsonToPacked = jsonToPacked;
 exports.jsonToTabular = jsonToTabular;
 exports.jsonToLyph = jsonToLyph;
@@ -143,6 +144,33 @@ Object.defineProperty(exports, "parseSchemaHeader", { enumerable: true, get: fun
 Object.defineProperty(exports, "parseTabularLooseHeaderWithMeta", { enumerable: true, get: function () { return loose_1.parseTabularLooseHeaderWithMeta; } });
 // GS1 Stream (streaming transport)
 exports.stream = __importStar(require("./stream/index"));
+// Decimal128 - High-precision decimal type
+var decimal128_1 = require("./decimal128");
+Object.defineProperty(exports, "Decimal128", { enumerable: true, get: function () { return decimal128_1.Decimal128; } });
+Object.defineProperty(exports, "DecimalError", { enumerable: true, get: function () { return decimal128_1.DecimalError; } });
+Object.defineProperty(exports, "decimal", { enumerable: true, get: function () { return decimal128_1.decimal; } });
+Object.defineProperty(exports, "isDecimalLiteral", { enumerable: true, get: function () { return decimal128_1.isDecimalLiteral; } });
+Object.defineProperty(exports, "parseDecimalLiteral", { enumerable: true, get: function () { return decimal128_1.parseDecimalLiteral; } });
+// Schema Evolution - Safe API versioning
+var schema_evolution_1 = require("./schema_evolution");
+Object.defineProperty(exports, "VersionedSchema", { enumerable: true, get: function () { return schema_evolution_1.VersionedSchema; } });
+Object.defineProperty(exports, "VersionSchema", { enumerable: true, get: function () { return schema_evolution_1.VersionSchema; } });
+Object.defineProperty(exports, "EvolvingField", { enumerable: true, get: function () { return schema_evolution_1.EvolvingField; } });
+Object.defineProperty(exports, "EvolutionMode", { enumerable: true, get: function () { return schema_evolution_1.EvolutionMode; } });
+Object.defineProperty(exports, "compareVersions", { enumerable: true, get: function () { return schema_evolution_1.compareVersions; } });
+Object.defineProperty(exports, "parseVersionHeader", { enumerable: true, get: function () { return schema_evolution_1.parseVersionHeader; } });
+Object.defineProperty(exports, "formatVersionHeader", { enumerable: true, get: function () { return schema_evolution_1.formatVersionHeader; } });
+Object.defineProperty(exports, "versionedSchema", { enumerable: true, get: function () { return schema_evolution_1.versionedSchema; } });
+// Streaming Validator - Incremental validation
+var stream_validator_1 = require("./stream_validator");
+Object.defineProperty(exports, "StreamingValidator", { enumerable: true, get: function () { return stream_validator_1.StreamingValidator; } });
+Object.defineProperty(exports, "ToolRegistry", { enumerable: true, get: function () { return stream_validator_1.ToolRegistry; } });
+Object.defineProperty(exports, "ValidatorState", { enumerable: true, get: function () { return stream_validator_1.ValidatorState; } });
+Object.defineProperty(exports, "ErrorCode", { enumerable: true, get: function () { return stream_validator_1.ErrorCode; } });
+Object.defineProperty(exports, "DEFAULT_MAX_BUFFER", { enumerable: true, get: function () { return stream_validator_1.DEFAULT_MAX_BUFFER; } });
+Object.defineProperty(exports, "DEFAULT_MAX_FIELDS", { enumerable: true, get: function () { return stream_validator_1.DEFAULT_MAX_FIELDS; } });
+Object.defineProperty(exports, "DEFAULT_MAX_ERRORS", { enumerable: true, get: function () { return stream_validator_1.DEFAULT_MAX_ERRORS; } });
+Object.defineProperty(exports, "defaultToolRegistry", { enumerable: true, get: function () { return stream_validator_1.defaultToolRegistry; } });
 // ============================================================
 // Convenience: Convert JSON directly to LYPH
 // ============================================================

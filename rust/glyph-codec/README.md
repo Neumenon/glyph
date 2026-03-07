@@ -52,6 +52,17 @@ pub enum GValue {
 }
 ```
 
+### Schema + Streaming Field Values
+
+Both `schema_evolution` and `stream_validator` define a `FieldValue` type. The crate root
+re-exports the streaming one as `StreamFieldValue` to avoid name collisions.
+
+```rust
+use glyph_codec::{FieldValue, StreamFieldValue};
+// FieldValue = schema_evolution::FieldValue
+// StreamFieldValue = stream_validator::FieldValue
+```
+
 ### Functions
 
 | Function | Description |

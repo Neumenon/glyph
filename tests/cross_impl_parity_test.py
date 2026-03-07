@@ -11,11 +11,15 @@ import subprocess
 import sys
 import os
 
-sys.path.insert(0, '/home/omen/Documents/Project/Agent-GO/sjson/glyph-py')
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PY_PATH = os.path.join(REPO_ROOT, "py")
+JS_DIST = os.path.join(REPO_ROOT, "js", "dist", "index.js")
+
+sys.path.insert(0, PY_PATH)
 
 from glyph import (
     from_json_loose, canonicalize_loose, canonicalize_loose_no_tabular,
-    llm_loose_canon_opts, canonicalize_loose_with_opts,
+    llm_loose_canon_opts,
 )
 
 
@@ -58,14 +62,14 @@ CROSS_IMPL_VECTORS = [
 def run_js_canonical(data: dict) -> str:
     """Run JS canonicalization via node."""
     js_code = f'''
-    import {{ fromJsonLoose, canonicalizeLoose }} from '/home/omen/Documents/Project/glyph/js/dist/index.js';
+    const {{ fromJsonLoose, canonicalizeLoose }} = require({json.dumps(JS_DIST)});
     const data = {json.dumps(data)};
     const gv = fromJsonLoose(data);
     console.log(canonicalizeLoose(gv));
     '''
 
     result = subprocess.run(
-        ['node', '--input-type=module', '-e', js_code],
+        ['node', '-e', js_code],
         capture_output=True,
         text=True,
         timeout=10
@@ -227,7 +231,7 @@ def test_null_styles():
     print("NULL STYLE OPTIONS")
     print("=" * 70)
 
-    from glyph import LooseCanonOpts, NullStyle, pretty_loose_canon_opts
+    from glyph import LooseCanonOpts, NullStyle
 
     data = {"value": None}
     gv = from_json_loose(data)
@@ -239,13 +243,13 @@ def test_null_styles():
 
     # LLM mode (also underscore)
     llm_opts = llm_loose_canon_opts()
-    llm_result = canonicalize_loose_with_opts(gv, llm_opts)
+    llm_result = canonicalize_loose(gv, llm_opts)
     assert "_" in llm_result, f"LLM should use _: {llm_result}"
     print(f"✅ LLM mode (underscore): {llm_result}")
 
     # Pretty mode (symbol)
-    pretty_opts = pretty_loose_canon_opts()
-    pretty_result = canonicalize_loose_with_opts(gv, pretty_opts)
+    pretty_opts = LooseCanonOpts(null_style=NullStyle.SYMBOL)
+    pretty_result = canonicalize_loose(gv, pretty_opts)
     assert "∅" in pretty_result, f"Pretty should use ∅: {pretty_result}"
     print(f"✅ Pretty mode (symbol): {pretty_result}")
 

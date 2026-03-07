@@ -1,6 +1,8 @@
 package glyph
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -254,6 +256,125 @@ func TestParsePool(t *testing.T) {
 	}
 }
 
+func TestParsePool_FullGlyphValues(t *testing.T) {
+	input := `@pool.obj id=O1 [ErrorResponse{code=500 message="Bad Request"} [1 2 3] {a=1 b=2} ^S1:0]`
+
+	pool, err := ParsePool(input)
+	if err != nil {
+		t.Fatalf("ParsePool failed: %v", err)
+	}
+	if pool.ID != "O1" {
+		t.Fatalf("Pool ID = %q, want %q", pool.ID, "O1")
+	}
+	if len(pool.Entries) != 4 {
+		t.Fatalf("Entries len = %d, want 4", len(pool.Entries))
+	}
+
+	entry0Val := pool.Entries[0]
+	entry0 := mustAsStruct(t, entry0Val)
+	if entry0.TypeName != "ErrorResponse" {
+		t.Fatalf("entry0 type = %q, want %q", entry0.TypeName, "ErrorResponse")
+	}
+	if mustAsInt(t, entry0Val.Get("code")) != 500 {
+		t.Errorf("entry0.code = %d, want 500", mustAsInt(t, entry0Val.Get("code")))
+	}
+	if mustAsStr(t, entry0Val.Get("message")) != "Bad Request" {
+		t.Errorf("entry0.message = %q, want %q", mustAsStr(t, entry0Val.Get("message")), "Bad Request")
+	}
+
+	list := mustAsList(t, pool.Entries[1])
+	if len(list) != 3 || mustAsInt(t, list[0]) != 1 || mustAsInt(t, list[1]) != 2 || mustAsInt(t, list[2]) != 3 {
+		t.Errorf("entry1 list mismatch: got %v", list)
+	}
+
+	m := pool.Entries[2]
+	if mustAsInt(t, m.Get("a")) != 1 || mustAsInt(t, m.Get("b")) != 2 {
+		t.Errorf("entry2 map mismatch: got %s", CanonicalizeLoose(m))
+	}
+
+	if _, err := pool.Entries[3].AsID(); err != nil {
+		t.Errorf("entry3 expected ID, got error: %v", err)
+	}
+}
+
+func TestParsePool_StringPoolTypeEnforced(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{name: "int", input: `@pool.str id=S1 [hello 42]`},
+		{name: "null", input: `@pool.str id=S1 [null]`},
+		{name: "struct", input: `@pool.str id=S1 [Error{code=1}]`},
+		{name: "list", input: `@pool.str id=S1 [[1 2]]`},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := ParsePool(tt.input); err == nil {
+				t.Fatalf("expected error for input: %s", tt.input)
+			}
+		})
+	}
+}
+
+func TestParsePool_RoundTrip(t *testing.T) {
+	pool := &Pool{
+		ID:   "O9",
+		Kind: PoolKindObject,
+		Entries: []*GValue{
+			Struct("ErrorResponse",
+				MapEntry{Key: "code", Value: Int(500)},
+				MapEntry{Key: "message", Value: Str("Bad Request")},
+			),
+			List(Int(1), Int(2), Int(3)),
+			Map(
+				MapEntry{Key: "a", Value: Int(1)},
+				MapEntry{Key: "b", Value: Int(2)},
+			),
+			ID("S1", "0"),
+		},
+	}
+
+	encoded := EmitPool(pool)
+	parsed, err := ParsePool(encoded)
+	if err != nil {
+		t.Fatalf("ParsePool failed: %v", err)
+	}
+	if parsed.ID != pool.ID || parsed.Kind != pool.Kind {
+		t.Fatalf("parsed pool mismatch: got id=%q kind=%v", parsed.ID, parsed.Kind)
+	}
+	if len(parsed.Entries) != len(pool.Entries) {
+		t.Fatalf("entry count mismatch: got %d want %d", len(parsed.Entries), len(pool.Entries))
+	}
+	for i := range pool.Entries {
+		if CanonicalizeLoose(parsed.Entries[i]) != CanonicalizeLoose(pool.Entries[i]) {
+			t.Fatalf("entry %d mismatch: got %s want %s", i, CanonicalizeLoose(parsed.Entries[i]), CanonicalizeLoose(pool.Entries[i]))
+		}
+	}
+}
+
+func TestParsePool_Errors(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{name: "missing_entries", input: `@pool.str id=S1 `},
+		{name: "unterminated", input: `@pool.obj id=O1 [1 2 3`},
+		{name: "trailing_content", input: `@pool.obj id=O1 [1 2] extra`},
+		{name: "unbalanced", input: `@pool.obj id=O1 [1 [2]`},
+		{name: "bad_prefix", input: `@pool.x id=S1 [a]`},
+		{name: "missing_id", input: `@pool.str [a]`},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := ParsePool(tt.input); err == nil {
+				t.Fatalf("expected error for input: %s", tt.input)
+			}
+		})
+	}
+}
+
 func TestPoolRefValue(t *testing.T) {
 	v := PoolRefValue("S1", 5)
 
@@ -320,6 +441,63 @@ func TestAutoInterner(t *testing.T) {
 	}
 	if resolved == nil || mustAsStr(t, resolved) != longString {
 		t.Error("Reference should resolve to original string")
+	}
+}
+
+func TestPoolConcurrentAccess(t *testing.T) {
+	registry := NewPoolRegistry()
+	interner := NewAutoInterner(registry, AutoInternOpts{
+		MinLength:   1,
+		MinOccurs:   1,
+		MaxPoolSize: 256,
+	})
+
+	const (
+		workers    = 8
+		iterations = 200
+	)
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers*iterations)
+	value := "concurrent-string"
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				v := interner.Process(value)
+				if v.IsPoolRef() {
+					ref, err := v.AsPoolRef()
+					if err != nil {
+						errCh <- err
+						continue
+					}
+					resolved, err := registry.Resolve(ref)
+					if err != nil {
+						errCh <- err
+						continue
+					}
+					s, err := resolved.AsStr()
+					if err != nil {
+						errCh <- err
+						continue
+					}
+					if s != value {
+						errCh <- fmt.Errorf("resolved value mismatch: %q", s)
+					}
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("concurrent pool access error: %v", err)
+		}
 	}
 }
 

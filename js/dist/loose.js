@@ -26,6 +26,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.defaultLooseCanonOpts = defaultLooseCanonOpts;
 exports.llmLooseCanonOpts = llmLooseCanonOpts;
 exports.noTabularLooseCanonOpts = noTabularLooseCanonOpts;
+exports.prettyLooseCanonOpts = prettyLooseCanonOpts;
 exports.tabularLooseCanonOpts = tabularLooseCanonOpts;
 exports.canonicalizeLoose = canonicalizeLoose;
 exports.canonicalizeLooseNoTabular = canonicalizeLooseNoTabular;
@@ -49,7 +50,7 @@ const types_1 = require("./types");
  * Default options for loose canonicalization with smart auto-tabular ENABLED.
  * Lists of 3+ homogeneous objects are automatically emitted as @tab blocks.
  * Non-eligible data gracefully falls back to standard format.
- * Uses ∅ for null (human-readable default).
+ * Uses _ for null (ASCII-safe, LLM-friendly - matches Go/Python).
  */
 function defaultLooseCanonOpts() {
     return {
@@ -57,7 +58,7 @@ function defaultLooseCanonOpts() {
         minRows: 3,
         maxCols: 20,
         allowMissing: true,
-        nullStyle: 'symbol',
+        nullStyle: 'underscore',
     };
 }
 /**
@@ -80,6 +81,19 @@ function llmLooseCanonOpts() {
 function noTabularLooseCanonOpts() {
     return {
         autoTabular: false,
+        minRows: 3,
+        maxCols: 20,
+        allowMissing: true,
+        nullStyle: 'symbol',
+    };
+}
+/**
+ * Options for human-readable "pretty" output.
+ * Uses ∅ for null (unicode symbol) for nicer visual appearance.
+ */
+function prettyLooseCanonOpts() {
+    return {
+        autoTabular: true,
         minRows: 3,
         maxCols: 20,
         allowMissing: true,
@@ -397,6 +411,24 @@ function detectTabular(items, opts) {
                     return null;
                 }
             }
+        }
+    }
+    else {
+        // Even with allowMissing, don't use tabular if items have mostly disjoint keys
+        // (this would result in mostly-null rows which defeats the purpose)
+        // Find common keys across all items
+        let commonKeys = new Set(rowKeys[0]);
+        for (let i = 1; i < rowKeys.length; i++) {
+            const itemKeys = rowKeys[i];
+            for (const k of commonKeys) {
+                if (!itemKeys.has(k)) {
+                    commonKeys.delete(k);
+                }
+            }
+        }
+        // If less than half the keys are common, don't use tabular
+        if (commonKeys.size < allKeys.size / 2) {
+            return null;
         }
     }
     // Sort keys by bytewise UTF-8 (same as canonString comparison)

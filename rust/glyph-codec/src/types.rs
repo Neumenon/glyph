@@ -1,6 +1,5 @@
 //! Core GLYPH types
 
-use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 
 /// GLYPH value type enumeration

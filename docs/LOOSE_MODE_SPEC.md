@@ -280,29 +280,30 @@ Auto-Tabular mode provides compact representation for homogeneous lists of objec
 
 ### Enabling Auto-Tabular
 
-Auto-tabular is **opt-in** and disabled by default.
+Auto-tabular is **enabled by default** in canonicalization outputs. Disable it if you need v2.2.x-compatible output or strict non-tabular formatting.
 
 **Go:**
 ```go
-// Default: auto-tabular disabled
+// Default: auto-tabular enabled
 canonical := glyph.CanonicalizeLoose(value)
 
-// With auto-tabular enabled
-canonical := glyph.CanonicalizeLooseTabular(value)
+// Disable auto-tabular
+canonical := glyph.CanonicalizeLooseNoTabular(value)
 
 // Custom options
-opts := glyph.TabularLooseCanonOpts()
-opts.MinRows = 5  // Only tabularize 5+ rows
+opts := glyph.DefaultLooseCanonOpts()
+opts.AutoTabular = false
+opts.MinRows = 5  // Only tabularize 5+ rows (if enabled)
 canonical := glyph.CanonicalizeLooseWithOpts(value, opts)
 ```
 
 **TypeScript:**
 ```typescript
-// Default: auto-tabular disabled
+// Default: auto-tabular enabled
 const canonical = canonicalizeLoose(value);
 
-// With auto-tabular enabled
-const canonical = canonicalizeLooseTabular(value);
+// Disable auto-tabular
+const canonical = canonicalizeLooseWithOpts(value, { autoTabular: false });
 
 // Custom options
 const canonical = canonicalizeLooseWithOpts(value, {
@@ -313,13 +314,16 @@ const canonical = canonicalizeLooseWithOpts(value, {
 
 **CLI:**
 ```bash
-echo '[{"id":1,"name":"a"},{"id":2,"name":"b"},{"id":3,"name":"c"}]' | glyph fmt-loose --auto-tabular
+echo '[{"id":1,"name":"a"},{"id":2,"name":"b"},{"id":3,"name":"c"}]' | glyph fmt-loose
 # Output:
 # @tab _ [id name]
 # |1|a|
 # |2|b|
 # |3|c|
 # @end
+
+# Disable tabular
+echo '[{"id":1},{"id":2},{"id":3}]' | glyph fmt-loose --no-tabular
 ```
 
 ### Eligibility Criteria
@@ -328,8 +332,11 @@ A list qualifies for tabular emission when:
 
 1. Contains ≥ `MinRows` elements (default: 3)
 2. All elements are maps or structs
-3. Total column count ≤ `MaxCols` (default: 20)
-4. When `AllowMissing=false`, all rows must have identical keys
+3. No row is an empty object (must have at least one key)
+4. Total column count ≤ `MaxCols` (default: 20)
+5. When `AllowMissing=false`, all rows must have identical keys
+6. When `AllowMissing=true`, the shared key ratio must be ≥ 50%:
+   `|intersection(keys)| / |union(keys)| >= 0.5`
 
 ### Column Ordering
 

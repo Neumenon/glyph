@@ -517,7 +517,7 @@ func TestAutoTabular_Basic(t *testing.T) {
 }
 
 func TestAutoTabular_MissingKeys(t *testing.T) {
-	// Objects with different keys - missing keys should become null
+	// Objects with different keys - should NOT tabularize when keys are too sparse
 	items := List(
 		Map(MapEntry{Key: "id", Value: Int(1)}, MapEntry{Key: "name", Value: Str("Alice")}),
 		Map(MapEntry{Key: "id", Value: Int(2)}), // missing "name"
@@ -525,8 +525,8 @@ func TestAutoTabular_MissingKeys(t *testing.T) {
 	)
 
 	got := CanonicalizeLooseTabular(items)
-	// Columns sorted: extra, id, name
-	expected := "@tab _ rows=3 cols=3 [extra id name]\n|_|1|Alice|\n|_|2|_|\n|x|3|Carol|\n@end"
+	// Should remain in list form
+	expected := "[{id=1 name=Alice} {id=2} {extra=x id=3 name=Carol}]"
 
 	if got != expected {
 		t.Errorf("AutoTabular missing keys:\nGot:\n%s\n\nWant:\n%s", got, expected)
@@ -1023,7 +1023,8 @@ func TestCrossImpl_CanonicalizeLoose(t *testing.T) {
 			// Normalize by replacing standalone _ (null) with ∅ for comparison until JS is updated.
 			// Only replace _ that's a standalone value, not part of a key name.
 			goCanonNormalized := normalizeNullForComparison(goCanon)
-			if goCanonNormalized != jsResult.Result {
+			jsCanonNormalized := normalizeNullForComparison(jsResult.Result)
+			if goCanonNormalized != jsCanonNormalized {
 				t.Errorf("Canonical mismatch\nGo: %s\nJS: %s", goCanon, jsResult.Result)
 			}
 		})
@@ -1549,7 +1550,8 @@ func TestCrossImpl_CompactKeysRoundtrip(t *testing.T) {
 			// Compare (normalize header format: Go uses @keys=, JS uses keys=)
 			goCanonNorm := strings.ReplaceAll(goCanon, "@keys=", "keys=")
 			goCanonNorm = normalizeNullForComparison(goCanonNorm) // Also normalize null
-			if goCanonNorm != jsResult.Result {
+			jsCanonNorm := normalizeNullForComparison(jsResult.Result)
+			if goCanonNorm != jsCanonNorm {
 				t.Errorf("Compact keys mismatch\nGo: %s\nJS: %s", goCanon, jsResult.Result)
 			}
 		})
@@ -1682,9 +1684,10 @@ func TestTripleImpl_CanonicalizeLoose(t *testing.T) {
 
 			// Normalize null representations: Go uses _, JS uses ∅
 			goCanonNorm := normalizeNullForComparison(goCanon)
+			jsCanonNorm := normalizeNullForComparison(jsCanon)
 
 			// Compare Go vs JS
-			if jsOK && goCanonNorm != jsCanon {
+			if jsOK && goCanonNorm != jsCanonNorm {
 				t.Errorf("Go vs JS mismatch\nGo: %s\nJS: %s", goCanon, jsCanon)
 			}
 
@@ -1695,25 +1698,25 @@ func TestTripleImpl_CanonicalizeLoose(t *testing.T) {
 
 			// Compare JS vs Python (normalize JS's ∅ to Python's _)
 			// Use reverse normalization: replace ∅ values with _
-			jsCanonNorm := jsCanon
+			jsCanonForPy := jsCanon
 			// Special case: standalone ∅ is null
-			if jsCanonNorm == "∅" {
-				jsCanonNorm = "_"
+			if jsCanonForPy == "∅" {
+				jsCanonForPy = "_"
 			}
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, "=∅ ", "=_ ")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, "=∅}", "=_}")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, "=∅]", "=_]")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, "=∅\n", "=_\n")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, "[∅]", "[_]")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, "[∅ ", "[_ ")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, " ∅]", " _]")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, " ∅ ", " _ ")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, "|∅|", "|_|")
-			jsCanonNorm = strings.ReplaceAll(jsCanonNorm, "|∅\n", "|_\n")
-			if strings.HasSuffix(jsCanonNorm, "=∅") {
-				jsCanonNorm = jsCanonNorm[:len(jsCanonNorm)-len("∅")] + "_"
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, "=∅ ", "=_ ")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, "=∅}", "=_}")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, "=∅]", "=_]")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, "=∅\n", "=_\n")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, "[∅]", "[_]")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, "[∅ ", "[_ ")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, " ∅]", " _]")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, " ∅ ", " _ ")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, "|∅|", "|_|")
+			jsCanonForPy = strings.ReplaceAll(jsCanonForPy, "|∅\n", "|_\n")
+			if strings.HasSuffix(jsCanonForPy, "=∅") {
+				jsCanonForPy = jsCanonForPy[:len(jsCanonForPy)-len("∅")] + "_"
 			}
-			if jsOK && pyOK && jsCanonNorm != pyCanon {
+			if jsOK && pyOK && jsCanonForPy != pyCanon {
 				t.Errorf("JS vs Python mismatch\nJS: %s\nPy: %s", jsCanon, pyCanon)
 			}
 		})

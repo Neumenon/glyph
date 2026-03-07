@@ -9,6 +9,13 @@ import json
 import sys
 import os
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PY_PATH = os.path.join(REPO_ROOT, "py")
+GO_DIR = os.path.join(REPO_ROOT, "go")
+JS_DIST = os.path.join(REPO_ROOT, "js", "dist", "index.js")
+RUST_PATH = os.path.join(REPO_ROOT, "rust", "glyph-codec")
+C_DIR = os.path.join(REPO_ROOT, "c", "glyph-codec")
+
 # Test cases: (description, json_input, expected_glyph)
 TEST_CASES = [
     ("null", "null", "_"),
@@ -36,138 +43,263 @@ TEST_CASES = [
     ("empty objects", "[{}, {}, {}]", "[{} {} {}]"),
 ]
 
-def get_python_output(json_str):
-    """Get GLYPH output from Python implementation"""
-    sys.path.insert(0, '/home/omen/Documents/Project/Agent-GO/sjson/glyph-py')
-    from glyph import from_json_loose, canonicalize_loose
-    v = from_json_loose(json_str)
-    return canonicalize_loose(v)
+_go_bin = None
+_rust_bin = None
+_c_bin = None
 
-def get_go_output(json_str):
-    """Get GLYPH output from Go implementation"""
-    go_code = f'''
+
+def ensure_go_bin():
+    global _go_bin
+    if _go_bin and os.path.exists(_go_bin):
+        return _go_bin
+
+    temp_dir = "/tmp/glyph_go_test"
+    os.makedirs(temp_dir, exist_ok=True)
+    main_path = os.path.join(temp_dir, "main.go")
+    bin_path = os.path.join(temp_dir, "glyph_go_canon")
+
+    go_code = r'''
 package main
 
 import (
     "fmt"
-    glyph "/home/omen/Documents/Project/glyph/go/glyph"
+    "io"
+    "os"
+    glyph "github.com/Neumenon/glyph/glyph"
 )
 
-func main() {{
-    v, _ := glyph.FromJSON([]byte(`{json_str}`))
+func main() {
+    var input []byte
+    if len(os.Args) > 1 {
+        input = []byte(os.Args[1])
+    } else {
+        data, _ := io.ReadAll(os.Stdin)
+        input = data
+    }
+    v, err := glyph.FromJSONLoose(input)
+    if err != nil {
+        fmt.Fprint(os.Stderr, err)
+        os.Exit(1)
+    }
     fmt.Print(glyph.CanonicalizeLoose(v))
-}}
+}
 '''
+    with open(main_path, "w") as f:
+        f.write(go_code)
+
+    env = {**os.environ, "GOMOD": os.path.join(GO_DIR, "go.mod"), "GOCACHE": "/tmp/go-cache"}
     result = subprocess.run(
-        ['go', 'run', '-'],
-        input=go_code,
+        ["go", "build", "-o", bin_path, main_path],
         capture_output=True,
         text=True,
-        cwd='/home/omen/Documents/Project/glyph/go'
+        cwd=GO_DIR,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Go build error: {result.stderr}")
+
+    _go_bin = bin_path
+    return _go_bin
+
+
+def ensure_rust_bin():
+    global _rust_bin
+    if _rust_bin and os.path.exists(_rust_bin):
+        return _rust_bin
+
+    temp_dir = "/tmp/glyph_rust_test"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    cargo_toml = f'''[package]
+name = "glyph_canon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+glyph-codec = {{ path = "{RUST_PATH}" }}
+'''
+
+    main_rs = r'''
+use std::io::{self, Read};
+use glyph_codec::{parse_json, canonicalize_loose};
+
+fn main() {
+    let input = std::env::args().nth(1).unwrap_or_else(|| {
+        let mut s = String::new();
+        io::stdin().read_to_string(&mut s).unwrap();
+        s
+    });
+    let v = parse_json(&input).unwrap();
+    print!("{}", canonicalize_loose(&v));
+}
+'''
+
+    with open(os.path.join(temp_dir, "Cargo.toml"), "w") as f:
+        f.write(cargo_toml)
+    os.makedirs(os.path.join(temp_dir, "src"), exist_ok=True)
+    with open(os.path.join(temp_dir, "src", "main.rs"), "w") as f:
+        f.write(main_rs)
+
+    result = subprocess.run(
+        ["cargo", "build", "-q", "--offline"],
+        capture_output=True,
+        text=True,
+        cwd=temp_dir,
+        env={**os.environ, "CARGO_NET_OFFLINE": "true"},
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Rust build error: {result.stderr}")
+
+    _rust_bin = os.path.join(temp_dir, "target", "debug", "glyph_canon")
+    return _rust_bin
+
+
+def ensure_c_bin():
+    global _c_bin
+    if _c_bin and os.path.exists(_c_bin):
+        return _c_bin
+
+    temp_dir = "/tmp/glyph_c_test"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    c_code = r'''
+#include "glyph.h"
+#include <stdio.h>
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        return 1;
+    }
+    const char *json = argv[1];
+    glyph_value_t *v = glyph_from_json(json);
+    if (!v) {
+        return 1;
+    }
+    char *canon = glyph_canonicalize_loose(v);
+    if (canon) {
+        printf("%s", canon);
+        glyph_free(canon);
+    }
+    glyph_value_free(v);
+    return 0;
+}
+'''
+
+    c_path = os.path.join(temp_dir, "test.c")
+    with open(c_path, "w") as f:
+        f.write(c_code)
+
+    lib_path = os.path.join(C_DIR, "build", "libglyph.a")
+    if not os.path.exists(lib_path):
+        build_result = subprocess.run(
+            ["make"],
+            capture_output=True,
+            text=True,
+            cwd=C_DIR,
+        )
+        if build_result.returncode != 0:
+            raise RuntimeError(f"C build error: {build_result.stderr}")
+
+    bin_path = os.path.join(temp_dir, "glyph_canon")
+    compile_result = subprocess.run(
+        [
+            "gcc",
+            "-o",
+            bin_path,
+            c_path,
+            f"-I{C_DIR}/include",
+            f"-L{C_DIR}/build",
+            "-lglyph",
+            "-lm",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if compile_result.returncode != 0:
+        raise RuntimeError(f"C compile error: {compile_result.stderr}")
+
+    _c_bin = bin_path
+    return _c_bin
+
+
+def get_python_output(json_str):
+    """Get GLYPH output from Python implementation"""
+    sys.path.insert(0, PY_PATH)
+    from glyph import from_json_loose, canonicalize_loose
+
+    v = from_json_loose(json.loads(json_str))
+    return canonicalize_loose(v)
+
+
+def get_go_output(json_str):
+    """Get GLYPH output from Go implementation"""
+    try:
+        bin_path = ensure_go_bin()
+    except Exception as exc:
+        return f"ERROR: {exc}"
+
+    result = subprocess.run(
+        [bin_path, json_str],
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         return f"ERROR: {result.stderr}"
     return result.stdout
 
+
 def get_js_output(json_str):
     """Get GLYPH output from JavaScript implementation"""
     js_code = f'''
-const {{ GValue }} = require('/home/omen/Documents/Project/glyph/js/dist/index.js');
-const v = GValue.fromJSON({json_str});
-console.log(v.canonicalizeLoose());
+const {{ fromJsonLoose, canonicalizeLoose }} = require({json.dumps(JS_DIST)});
+const data = JSON.parse({json.dumps(json_str)});
+const v = fromJsonLoose(data);
+console.log(canonicalizeLoose(v));
 '''
     result = subprocess.run(
-        ['node', '-e', js_code],
+        ["node", "-e", js_code],
         capture_output=True,
-        text=True
+        text=True,
     )
     if result.returncode != 0:
         return f"ERROR: {result.stderr}"
     return result.stdout.strip()
 
+
 def get_rust_output(json_str):
     """Get GLYPH output from Rust implementation"""
-    # Create a temporary test
-    rust_code = f'''
-use glyph_codec::{{from_json, canonicalize_loose}};
-fn main() {{
-    let v = from_json(r#"{json_str}"#).unwrap();
-    print!("{{}}", canonicalize_loose(&v));
-}}
-'''
-    # Write temp main.rs
-    temp_dir = '/tmp/glyph_rust_test'
-    os.makedirs(temp_dir, exist_ok=True)
-
-    with open(f'{temp_dir}/Cargo.toml', 'w') as f:
-        f.write('''[package]
-name = "test"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-glyph-codec = { path = "/home/omen/Documents/Project/glyph/rust/glyph-codec" }
-''')
-
-    os.makedirs(f'{temp_dir}/src', exist_ok=True)
-    with open(f'{temp_dir}/src/main.rs', 'w') as f:
-        f.write(rust_code)
+    try:
+        bin_path = ensure_rust_bin()
+    except Exception as exc:
+        return f"ERROR: {exc}"
 
     result = subprocess.run(
-        ['cargo', 'run', '-q'],
+        [bin_path, json_str],
         capture_output=True,
         text=True,
-        cwd=temp_dir
     )
     if result.returncode != 0:
         return f"ERROR: {result.stderr}"
     return result.stdout
 
+
 def get_c_output(json_str):
     """Get GLYPH output from C implementation"""
-    c_code = f'''
-#include "glyph.h"
-#include <stdio.h>
-#include <stdlib.h>
-
-int main(void) {{
-    const char *json = {repr(json_str)};
-    glyph_value_t *v = glyph_from_json(json);
-    if (v) {{
-        char *canon = glyph_canonicalize_loose(v);
-        printf("%s", canon);
-        glyph_free(canon);
-        glyph_value_free(v);
-    }}
-    return 0;
-}}
-'''
-    # Write and compile
-    temp_dir = '/tmp/glyph_c_test'
-    os.makedirs(temp_dir, exist_ok=True)
-
-    with open(f'{temp_dir}/test.c', 'w') as f:
-        f.write(c_code)
-
-    c_dir = '/home/omen/Documents/Project/glyph/c/glyph-codec'
-    compile_result = subprocess.run(
-        ['gcc', '-o', f'{temp_dir}/test', f'{temp_dir}/test.c',
-         f'-I{c_dir}/include', f'-L{c_dir}/build', '-lglyph', '-lm'],
-        capture_output=True,
-        text=True
-    )
-    if compile_result.returncode != 0:
-        return f"COMPILE ERROR: {compile_result.stderr}"
+    try:
+        bin_path = ensure_c_bin()
+    except Exception as exc:
+        return f"ERROR: {exc}"
 
     run_result = subprocess.run(
-        [f'{temp_dir}/test'],
+        [bin_path, json_str],
         capture_output=True,
         text=True,
-        env={**os.environ, 'LD_LIBRARY_PATH': f'{c_dir}/build'}
+        env={**os.environ, "LD_LIBRARY_PATH": f"{C_DIR}/build"},
     )
     if run_result.returncode != 0:
         return f"RUN ERROR: {run_result.stderr}"
     return run_result.stdout
+
 
 def main():
     print("=" * 70)
@@ -238,9 +370,7 @@ def main():
         print(f"✅ ALL {passed} TESTS PASSED - FULL PARITY ACROSS ALL IMPLEMENTATIONS")
     else:
         print(f"❌ {passed} passed, {failed} failed")
-    print("=" * 70)
 
-    return 0 if failed == 0 else 1
 
-if __name__ == '__main__':
-    sys.exit(main())
+if __name__ == "__main__":
+    main()

@@ -7,12 +7,15 @@ Tests JSON -> GLYPH -> JSON round-trip fidelity across edge cases.
 """
 
 import json
+import os
 import sys
 import traceback
 from typing import Any, List, Tuple
 
 # Add the glyph-codec path
-sys.path.insert(0, '/home/omen/Documents/Project/Agent-GO/sjson/glyph-py')
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PY_PATH = os.path.join(REPO_ROOT, "py")
+sys.path.insert(0, PY_PATH)
 
 from glyph import (
     from_json_loose, to_json_loose,

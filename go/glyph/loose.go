@@ -17,7 +17,7 @@ import (
 // in schema-optional mode. Used for hashing, comparison, and deduplication.
 //
 // Canonical rules:
-// - null → "∅"
+// - null → "_" (default) or "∅"
 // - bool → "t" / "f"
 // - int → decimal, no leading zeros, -0 → 0
 // - float → shortest roundtrip, E→e, -0→0
@@ -705,6 +705,8 @@ func detectTabular(items []*GValue, opts LooseCanonOpts) ([]string, bool) {
 
 	// Collect all keys from all elements
 	keySet := make(map[string]struct{})
+	var commonKeys map[string]struct{}
+	var firstKeys map[string]struct{}
 
 	for _, item := range items {
 		keys := getObjectKeys(item)
@@ -712,14 +714,53 @@ func detectTabular(items []*GValue, opts LooseCanonOpts) ([]string, bool) {
 			// Not an object/map/struct - can't tabularize
 			return nil, false
 		}
+		if len(keys) == 0 {
+			return nil, false
+		}
+		itemSet := make(map[string]struct{}, len(keys))
 		for _, k := range keys {
 			keySet[k] = struct{}{}
+			itemSet[k] = struct{}{}
+		}
+		if firstKeys == nil {
+			firstKeys = make(map[string]struct{}, len(itemSet))
+			for k := range itemSet {
+				firstKeys[k] = struct{}{}
+			}
+		} else if !opts.AllowMissing {
+			if len(itemSet) != len(firstKeys) {
+				return nil, false
+			}
+			for k := range firstKeys {
+				if _, ok := itemSet[k]; !ok {
+					return nil, false
+				}
+			}
+		}
+		if commonKeys == nil {
+			commonKeys = make(map[string]struct{}, len(itemSet))
+			for k := range itemSet {
+				commonKeys[k] = struct{}{}
+			}
+		} else {
+			for k := range commonKeys {
+				if _, ok := itemSet[k]; !ok {
+					delete(commonKeys, k)
+				}
+			}
 		}
 	}
 
 	// Check column count
 	if len(keySet) == 0 || len(keySet) > opts.MaxCols {
 		return nil, false
+	}
+
+	// With AllowMissing, require at least 50% shared keys across rows
+	if opts.AllowMissing {
+		if commonKeys == nil || len(commonKeys)*2 < len(keySet) {
+			return nil, false
+		}
 	}
 
 	// Pre-compute canonical keys for sorting (avoids O(n log n) canonString calls)
@@ -738,16 +779,6 @@ func detectTabular(items []*GValue, opts LooseCanonOpts) ([]string, bool) {
 	cols := make([]string, len(sortable))
 	for i, sc := range sortable {
 		cols[i] = sc.key
-	}
-
-	// If AllowMissing is false, verify all elements have identical keysets
-	if !opts.AllowMissing {
-		for _, item := range items {
-			keys := getObjectKeys(item)
-			if len(keys) != len(cols) {
-				return nil, false
-			}
-		}
 	}
 
 	return cols, true

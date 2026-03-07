@@ -1,7 +1,9 @@
 package glyph
 
 import (
+	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -304,4 +306,177 @@ func TestTabularReaderWithTime(t *testing.T) {
 	if !kickoff.timeVal.Equal(expected) {
 		t.Errorf("kickoff = %v, want %v", kickoff.timeVal, expected)
 	}
+}
+
+func TestTabularReaderDateOnly(t *testing.T) {
+	schema := makeMatchSchema()
+
+	input := `@tab Match [m k H A O P fh fa]
+^m:TEST 2025-12-19 Team@(^t:ARS Arsenal EPL) Team@(^t:LIV Liverpool EPL) Odds@(2.1 3.4 3.25) Pred@(0.45 0.27 0.28 1.72 1.31) 2 1
+@end`
+
+	tr := NewTabularReaderFromString(input, schema)
+	rows, err := tr.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+
+	kickoff := rows[0].Get("kickoff")
+	if kickoff == nil || kickoff.typ != TypeTime {
+		t.Fatalf("kickoff not a time: %v", kickoff)
+	}
+
+	expected := time.Date(2025, 12, 19, 0, 0, 0, 0, time.UTC)
+	if !kickoff.timeVal.Equal(expected) {
+		t.Errorf("kickoff = %v, want %v", kickoff.timeVal, expected)
+	}
+}
+
+func TestTabularReaderNullAliases(t *testing.T) {
+	schema := makeHikeSchemaForTabularTest()
+
+	input := `@tab Hike [i n d e c s]
+1 "Blue Lake Trail" 7.5 320 ^p:ana _
+2 "Ridge Overlook" 9.2 540 ^p:luis null
+@end`
+
+	tr := NewTabularReaderFromString(input, schema)
+	rows, err := tr.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if rows[0].Get("starred") == nil || !rows[0].Get("starred").IsNull() {
+		t.Fatalf("row1.starred = %v, want null", rows[0].Get("starred"))
+	}
+	if rows[1].Get("starred") == nil || !rows[1].Get("starred").IsNull() {
+		t.Fatalf("row2.starred = %v, want null", rows[1].Get("starred"))
+	}
+}
+
+func TestTabularReaderExtraColumns(t *testing.T) {
+	schema := makeTeamSchema()
+
+	input := `@tab Team [t n l]
+^t:ARS Arsenal EPL EXTRA
+@end`
+
+	tr := NewTabularReaderFromString(input, schema)
+	if _, err := tr.ReadAll(); err == nil {
+		t.Fatal("expected error for extra columns")
+	}
+}
+
+func TestInlineTabularExtraColumns(t *testing.T) {
+	schema := makeTeamSchema()
+
+	input := "@tab Team [t n l] ^t:ARS Arsenal EPL EXTRA @end"
+	if _, err := ParseInlineTabular(input, schema); err == nil {
+		t.Fatal("expected error for extra columns in inline tabular")
+	}
+}
+
+func TestInlineTabularSplitWithPipes(t *testing.T) {
+	schema := makeTeamSchema()
+
+	input := `@tab Team [t n l] ^t:ARS "Ars|enal" EPL | ^t:LIV "Liv|erpool" EPL @end`
+	rows, err := ParseInlineTabular(input, schema)
+	if err != nil {
+		t.Fatalf("ParseInlineTabular error: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if mustAsStr(t, rows[0].Get("name")) != "Ars|enal" {
+		t.Errorf("rows[0].name = %q, want %q", mustAsStr(t, rows[0].Get("name")), "Ars|enal")
+	}
+	if mustAsStr(t, rows[1].Get("name")) != "Liv|erpool" {
+		t.Errorf("rows[1].name = %q, want %q", mustAsStr(t, rows[1].Get("name")), "Liv|erpool")
+	}
+}
+
+func TestTabularReaderNestedCommas(t *testing.T) {
+	schema := makeListMapSchemaForTabularTest()
+
+	input := `@tab Foo [v a]
+[1, 2, 3] {x=1, y=2}
+@end`
+
+	tr := NewTabularReaderFromString(input, schema)
+	rows, err := tr.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+
+	vals := mustAsList(t, rows[0].Get("vals"))
+	if len(vals) != 3 || mustAsInt(t, vals[0]) != 1 || mustAsInt(t, vals[1]) != 2 || mustAsInt(t, vals[2]) != 3 {
+		t.Errorf("vals mismatch: %v", vals)
+	}
+	attrs := rows[0].Get("attrs")
+	if mustAsInt(t, attrs.Get("x")) != 1 || mustAsInt(t, attrs.Get("y")) != 2 {
+		t.Errorf("attrs mismatch: %s", CanonicalizeLoose(attrs))
+	}
+}
+
+func TestTabularReaderNilSchema(t *testing.T) {
+	input := `@tab Team [t n l]
+^t:ARS Arsenal EPL
+@end`
+
+	tr := NewTabularReaderFromString(input, nil)
+	if _, _, err := tr.ReadHeader(); err == nil {
+		t.Fatal("expected error for nil schema")
+	}
+}
+
+func TestInlineTabularNilSchema(t *testing.T) {
+	input := "@tab Team [t n l] ^t:ARS Arsenal EPL @end"
+	if _, err := ParseInlineTabular(input, nil); err == nil {
+		t.Fatal("expected error for nil schema")
+	}
+}
+
+func TestTabularReaderLargeRow(t *testing.T) {
+	schema := makeSingleStringSchemaForTabularTest()
+	large := strings.Repeat("a", 200000)
+	input := fmt.Sprintf("@tab Blob [n]\n\"%s\"\n@end", large)
+
+	tr := NewTabularReaderFromString(input, schema)
+	rows, err := tr.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if mustAsStr(t, rows[0].Get("name")) != large {
+		t.Errorf("name length = %d, want %d", len(mustAsStr(t, rows[0].Get("name"))), len(large))
+	}
+}
+
+func makeListMapSchemaForTabularTest() *Schema {
+	return NewSchemaBuilder().
+		AddStruct("Foo", "v1",
+			Field("vals", ListType(PrimitiveType("int")), WithFID(1), WithWireKey("v")),
+			Field("attrs", MapType(PrimitiveType("str"), PrimitiveType("int")), WithFID(2), WithWireKey("a")),
+		).
+		Build()
+}
+
+func makeSingleStringSchemaForTabularTest() *Schema {
+	return NewSchemaBuilder().
+		AddStruct("Blob", "v1",
+			Field("name", PrimitiveType("str"), WithFID(1), WithWireKey("n")),
+		).
+		Build()
 }

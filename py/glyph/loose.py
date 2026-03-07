@@ -5,7 +5,7 @@ Schema-optional canonicalization for GLYPH values.
 Provides deterministic string representation for hashing, comparison, and deduplication.
 
 Canonical rules:
-- null -> "∅" or "_"
+- null -> "_" (default) or "∅"
 - bool -> "t" / "f"
 - int -> decimal, no leading zeros, -0 -> 0
 - float -> shortest roundtrip, E->e, -0->0
@@ -51,7 +51,7 @@ class LooseCanonOpts:
     min_rows: int = 3
     max_cols: int = 20
     allow_missing: bool = True
-    null_style: NullStyle = NullStyle.SYMBOL
+    null_style: NullStyle = NullStyle.UNDERSCORE
     schema_ref: Optional[str] = None
     key_dict: Optional[List[str]] = None
     use_compact_keys: bool = False
@@ -79,19 +79,15 @@ def no_tabular_loose_canon_opts() -> LooseCanonOpts:
 NULL_SYMBOL = "∅"
 NULL_UNDERSCORE = "_"
 
-# Characters safe for bare strings
-BARE_SAFE_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-./+@")
-BARE_START_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_")
-
 # Reserved words that must be quoted
-RESERVED_WORDS = {"t", "f", "true", "false", "null", "nil", "_"}
+RESERVED_WORDS = {"t", "f", "true", "false", "null", "none", "nil", "_"}
 
 
 # ============================================================
 # Canonical Scalar Encoding
 # ============================================================
 
-def canon_null(style: NullStyle = NullStyle.SYMBOL) -> str:
+def canon_null(style: NullStyle = NullStyle.UNDERSCORE) -> str:
     """Canonicalize null."""
     if style == NullStyle.UNDERSCORE:
         return NULL_UNDERSCORE
@@ -153,13 +149,13 @@ def is_bare_safe(s: str) -> bool:
         return False
     if s in RESERVED_WORDS:
         return False
-    if s[0] not in BARE_START_CHARS:
+
+    first = s[0]
+    if not (first == "_" or first.isalpha()):
         return False
-    # Check if it looks like a number
-    if s[0].isdigit() or (s[0] == '-' and len(s) > 1 and s[1].isdigit()):
-        return False
-    for c in s:
-        if c not in BARE_SAFE_CHARS:
+
+    for c in s[1:]:
+        if not (c.isalpha() or c.isdigit() or c in "_-./"):
             return False
     return True
 
@@ -217,12 +213,9 @@ def is_id_safe(s: str) -> bool:
     """Check if string can be used unquoted in an ID (no reserved word check)."""
     if not s:
         return False
-    # First char must be letter, underscore, or digit (IDs can be numeric)
-    if s[0] not in BARE_SAFE_CHARS:
-        return False
-    # Rest must be bare-safe chars (no colon since it's the delimiter)
+    # IDs allow letters, digits, _, -, ., / (no colon since it's the delimiter)
     for c in s:
-        if c not in BARE_SAFE_CHARS:
+        if not (c.isalpha() or c.isdigit() or c in "_-./"):
             return False
     return True
 
@@ -361,7 +354,9 @@ def _try_tabular(items: List[GValue], opts: LooseCanonOpts) -> Optional[str]:
         return None
 
     # Check if all items are maps or structs
-    keys_set: Optional[Set[str]] = None
+    union_keys: Set[str] = set()
+    common_keys: Optional[Set[str]] = None
+    first_keys: Optional[Set[str]] = None
 
     for item in items:
         if item.type == GType.MAP:
@@ -371,19 +366,35 @@ def _try_tabular(items: List[GValue], opts: LooseCanonOpts) -> Optional[str]:
         else:
             return None  # Not eligible
 
-        if keys_set is None:
-            keys_set = item_keys
+        if len(item_keys) == 0:
+            return None
+
+        union_keys |= item_keys
+
+        if first_keys is None:
+            first_keys = set(item_keys)
         elif not opts.allow_missing:
-            if keys_set != item_keys:
+            if first_keys != item_keys:
                 return None  # Keys don't match
+
+        if common_keys is None:
+            common_keys = set(item_keys)
         else:
-            keys_set = keys_set.union(item_keys)
+            common_keys &= item_keys
 
-    if keys_set is None or len(keys_set) == 0:
+    if len(union_keys) == 0:
         return None
 
-    if len(keys_set) > opts.max_cols:
+    if len(union_keys) > opts.max_cols:
         return None
+
+    # If allowing missing keys, require at least 50% common keys
+    if opts.allow_missing:
+        if common_keys is None or len(common_keys) * 2 < len(union_keys):
+            return None
+
+    # Use union keys for columns
+    keys_set = union_keys
 
     # Sort columns
     cols = sorted(keys_set, key=lambda k: canon_string(k).encode('utf-8'))

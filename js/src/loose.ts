@@ -123,7 +123,7 @@ export function noTabularLooseCanonOpts(): LooseCanonOpts {
     minRows: 3,
     maxCols: 20,
     allowMissing: true,
-    nullStyle: 'underscore',
+    nullStyle: 'symbol',
   };
 }
 
@@ -177,9 +177,12 @@ function canonInt(n: number): string {
 }
 
 function canonFloat(f: number): string {
+  if (Number.isNaN(f)) return 'NaN';
+  if (f === Infinity) return 'Inf';
+  if (f === -Infinity) return '-Inf';
   if (f === 0) return '0';
   if (Object.is(f, -0)) return '0'; // Negative zero -> 0
-  
+
   // Use Go-compatible formatting (%g format)
   // Go's %g uses exponential for values with exponent < -4 or >= precision (default 6)
   const absF = Math.abs(f);
@@ -822,7 +825,12 @@ function parseLooseValue(s: string): unknown {
   // Bool
   if (s === 't') return true;
   if (s === 'f') return false;
-  
+
+  // Float special values
+  if (s === 'NaN') return NaN;
+  if (s === 'Inf') return Infinity;
+  if (s === '-Inf') return -Infinity;
+
   // Quoted string
   if (s.startsWith('"') && s.endsWith('"')) {
     return unquoteString(s);

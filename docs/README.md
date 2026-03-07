@@ -416,7 +416,7 @@ def handle_mismatch(sid: int, frame: stream.Frame):
 
 | Type | GLYPH | Python |
 |------|-------|--------|
-| null | `∅` or `_` | `None` |
+| null | `_` (default) or `∅` | `None` |
 | bool | `t`, `f` | `True`, `False` |
 | int | `42`, `-100` | `int` |
 | float | `3.14`, `1e-10` | `float` |
@@ -693,6 +693,8 @@ gval, _ := glyph.FromJSONLoose(jsonData)
 // Canonical GLYPH output
 fmt.Println(glyph.CanonicalizeLoose(gval))
 // Output: {name=Alice scores=[95 87 92]}
+// Note: auto-tabular is enabled by default (eligible lists of objects with >=50% shared keys).
+//       Use CanonicalizeLooseNoTabular for non-tabular output.
 
 // Convert back to JSON
 jsonOut, _ := glyph.ToJSONLoose(gval)
@@ -960,7 +962,7 @@ handler.OnBaseMismatch = func(sid uint64, frame *stream.Frame) error {
 
 | Type | Example | Notes |
 |------|---------|-------|
-| `null` | `∅` or `_` | Underscore for ASCII-safe contexts |
+| `null` | `_` (default) or `∅` | Underscore is the canonical default |
 | `bool` | `t`, `f` | Single character |
 | `int` | `42`, `-100` | 64-bit signed |
 | `float` | `3.14`, `1e-10` | 64-bit IEEE 754 |

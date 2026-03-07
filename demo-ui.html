@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLYPH Oracle Demo - Customer Service Agent</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #0a0e27;
+      --bg-secondary: #141829;
+      --bg-tertiary: #1a1f3a;
+      --border-color: #2a2f4f;
+      --text-primary: #f8f9fa;
+      --text-secondary: #a8adc5;
+      --text-muted: #6b7280;
+      --accent-teal: #14b8a6;
+      --accent-cyan: #06b6d4;
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --glyph-color: #14b8a6;
+      --json-color: #f43f5e;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* HEADER */
+    header {
+      position: fixed;
+      top: 0;
+      width: 100%;
+      background: rgba(10, 14, 39, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border-color);
+      z-index: 1000;
+      padding: 1.25rem 0;
+    }
+
+    .header-content {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-buttons {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .nav-btn {
+      padding: 0.5rem 1.25rem;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .nav-btn:hover {
+      border-color: var(--accent-teal);
+      color: var(--accent-teal);
+    }
+
+    .nav-btn.active {
+      background: var(--accent-teal);
+      color: var(--bg-primary);
+      border-color: var(--accent-teal);
+    }
+
+    /* MAIN CONTAINER */
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 8rem 2rem 4rem;
+    }
+
+    /* HERO SECTION */
+    .hero {
+      text-align: center;
+      margin-bottom: 5rem;
+      animation: fadeInDown 0.8s ease-out;
+    }
+
+    .hero h1 {
+      font-size: 3.5rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 1rem;
+      line-height: 1.1;
+      background: linear-gradient(135deg, var(--accent-teal), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+    }
+
+    .hero .tagline {
+      font-size: 1rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* SCENARIO FLOW */
+    .scenario-flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin: 4rem 0;
+    }
+
+    .scenario-card {
+      background: linear-gradient(135deg, var(--bg-tertiary), transparent);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .scenario-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent-teal), transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .scenario-card:hover {
+      border-color: var(--accent-teal);
+      transform: translateY(-8px);
+      box-shadow: 0 20px 40px rgba(20, 184, 166, 0.1);
+    }
+
+    .scenario-card:hover::before {
+      opacity: 1;
+    }
+
+    .scenario-number {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--accent-teal);
+      margin-bottom: 0.5rem;
+      opacity: 0.5;
+    }
+
+    .scenario-card h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .scenario-card p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    /* ACTIVE SCENARIO */
+    .scenario-card.active {
+      background: linear-gradient(135deg, rgba(20, 184, 166, 0.15), transparent);
+      border-color: var(--accent-teal);
+    }
+
+    /* TURN DISPLAY */
+    .turn-container {
+      margin: 3rem 0;
+      opacity: 0;
+      animation: fadeInUp 0.6s ease-out forwards;
+    }
+
+    .turn-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .turn-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 50px;
+      height: 50px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan));
+      font-weight: 700;
+      font-size: 1.5rem;
+      color: var(--bg-primary);
+    }
+
+    .turn-header h2 {
+      font-size: 2rem;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .turn-description {
+      background: var(--bg-tertiary);
+      border-left: 3px solid var(--accent-teal);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    /* COMPARISON BOXES */
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin: 2rem 0;
+    }
+
+    @media (max-width: 768px) {
+      .comparison {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .code-box {
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+      background: linear-gradient(135deg, var(--bg-tertiary), transparent);
+      transition: all 0.3s ease;
+    }
+
+    .code-box:hover {
+      border-color: var(--accent-teal);
+      transform: translateY(-4px);
+    }
+
+    .code-header {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .code-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .code-label.json {
+      color: var(--json-color);
+    }
+
+    .code-label.glyph {
+      color: var(--glyph-color);
+    }
+
+    .code-label::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .code-label.json::before {
+      background: var(--json-color);
+    }
+
+    .code-label.glyph::before {
+      background: var(--glyph-color);
+    }
+
+    .code-content {
+      padding: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      overflow-x: auto;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .code-content pre {
+      margin: 0;
+    }
+
+    .token-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      margin-top: 1rem;
+      width: fit-content;
+    }
+
+    .token-badge.json {
+      color: var(--json-color);
+      border-color: var(--json-color);
+    }
+
+    .token-badge.glyph {
+      color: var(--glyph-color);
+      border-color: var(--glyph-color);
+    }
+
+    /* METRICS SECTION */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .metric-card {
+      background: linear-gradient(135deg, var(--bg-tertiary), transparent);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(20, 184, 166, 0.05), transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+
+    .metric-card:hover {
+      border-color: var(--accent-teal);
+      transform: translateY(-8px);
+    }
+
+    .metric-card:hover::after {
+      opacity: 1;
+    }
+
+    .metric-value {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--accent-teal);
+      margin-bottom: 0.5rem;
+    }
+
+    .metric-label {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 500;
+    }
+
+    .metric-description {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.75rem;
+    }
+
+    /* BAR CHART */
+    .chart-container {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 2rem;
+      margin: 2rem 0;
+    }
+
+    .chart-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      color: var(--text-primary);
+    }
+
+    .chart-item {
+      margin-bottom: 1.5rem;
+    }
+
+    .chart-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .chart-label-left {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .chart-label-right {
+      color: var(--accent-teal);
+      font-weight: 700;
+    }
+
+    .chart-bar {
+      height: 8px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, rgba(20, 184, 166, 0.2), rgba(20, 184, 166, 0.05));
+      border: 1px solid rgba(20, 184, 166, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-teal), var(--accent-cyan));
+      border-radius: 4px;
+      animation: slideIn 1s ease-out forwards;
+    }
+
+    @keyframes slideIn {
+      from {
+        width: 0;
+      }
+    }
+
+    /* SUMMARY SECTION */
+    .summary-section {
+      background: linear-gradient(135deg, rgba(20, 184, 166, 0.1), transparent);
+      border: 1px solid var(--accent-teal);
+      border-radius: 16px;
+      padding: 3rem;
+      margin: 4rem 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .summary-section::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(20, 184, 166, 0.1), transparent);
+      pointer-events: none;
+    }
+
+    .summary-section h2 {
+      font-size: 2rem;
+      margin-bottom: 1.5rem;
+      position: relative;
+      z-index: 1;
+      color: var(--accent-teal);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .summary-item {
+      text-align: center;
+    }
+
+    .summary-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent-teal);
+      margin-bottom: 0.5rem;
+    }
+
+    .summary-label {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 500;
+    }
+
+    /* CONTROLS */
+    .controls {
+      display: flex;
+      gap: 1rem;
+      margin: 3rem 0;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: transparent;
+      color: var(--text-primary);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    button:hover {
+      border-color: var(--accent-teal);
+      color: var(--accent-teal);
+      background: rgba(20, 184, 166, 0.1);
+    }
+
+    button.primary {
+      background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan));
+      border-color: var(--accent-teal);
+      color: var(--bg-primary);
+    }
+
+    button.primary:hover {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      box-shadow: 0 20px 40px rgba(20, 184, 166, 0.2);
+    }
+
+    /* FOOTER */
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 3rem 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      margin-top: 5rem;
+    }
+
+    footer p {
+      margin: 0.5rem 0;
+      font-size: 0.9rem;
+    }
+
+    /* ANIMATIONS */
+    @keyframes fadeInDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      .hero h1 {
+        font-size: 2.5rem;
+      }
+
+      main {
+        padding: 6rem 1rem 2rem;
+      }
+
+      header {
+        padding: 1rem 0;
+      }
+
+      .header-content {
+        padding: 0 1rem;
+      }
+
+      .summary-section {
+        padding: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <div class="logo">⟩ GLYPH</div>
+      <nav class="nav-buttons">
+        <button class="nav-btn active" onclick="scrollToSection('hero')">Demo</button>
+        <button class="nav-btn" onclick="scrollToSection('summary')">Summary</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- HERO -->
+    <section class="hero" id="hero">
+      <h1>GLYPH Oracle Demo</h1>
+      <p>Customer Service AI Agent with Streaming Validation</p>
+      <p class="tagline">30-50% token savings, cryptographic state verification, real-time hallucination detection</p>
+    </section>
+
+    <!-- SCENARIO CARDS -->
+    <section class="scenario-flow">
+      <div class="scenario-card active" onclick="showTurn(1)">
+        <div class="scenario-number">①</div>
+        <h3>Research Policy</h3>
+        <p>Agent searches knowledge base for refund policy. Knowledge base results delivered in GLYPH tabular format.</p>
+      </div>
+
+      <div class="scenario-card" onclick="showTurn(2)">
+        <div class="scenario-number">②</div>
+        <h3>Fetch & Validate</h3>
+        <p>Retrieve customer history and validate tool calls with streaming validation. Detect hallucinations at token 5.</p>
+      </div>
+
+      <div class="scenario-card" onclick="showTurn(3)">
+        <div class="scenario-number">③</div>
+        <h3>Incremental Patch</h3>
+        <p>Instead of full state resync, GLYPH patches only changed fields. 90% smaller than JSON.</p>
+      </div>
+    </section>
+
+    <!-- TURN 1 -->
+    <section class="turn-container" id="turn-1">
+      <div class="turn-header">
+        <div class="turn-badge">①</div>
+        <h2>Turn 1: Research Policy</h2>
+      </div>
+      <div class="turn-description">
+        <strong>User:</strong> "My TV arrived damaged. What's your refund policy?"<br>
+        <strong>Agent Action:</strong> Search knowledge base for refund information
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">Knowledge Base Results</h3>
+      <div class="chart-container">
+        <div class="chart-title">Knowledge Base Search: 5 Articles</div>
+        <div class="chart-item">
+          <div class="chart-label">
+            <span class="chart-label-left">📄 JSON Format</span>
+            <span class="chart-label-right">780 tokens</span>
+          </div>
+          <div class="chart-bar">
+            <div class="chart-bar-fill" style="width: 100%; background: linear-gradient(90deg, var(--json-color), var(--error));"></div>
+          </div>
+        </div>
+        <div class="chart-item">
+          <div class="chart-label">
+            <span class="chart-label-left">📊 GLYPH Tabular</span>
+            <span class="chart-label-right">350 tokens</span>
+          </div>
+          <div class="chart-bar">
+            <div class="chart-bar-fill" style="width: 44.9%; animation-delay: 0.2s;"></div>
+          </div>
+        </div>
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); text-align: right;">
+          <span style="color: var(--glyph-color); font-weight: 700;">↓ 55% Savings</span>
+        </div>
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">Code Comparison</h3>
+      <div class="comparison">
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label json">JSON Format</span>
+          </div>
+          <div class="code-content">
+            <pre>[{
+  "id": "kb_001",
+  "title": "Refund Policy",
+  "relevance": 0.98,
+  "snippet": "30-day..."
+}, ...]</pre>
+            <div class="token-badge json">
+              <span>📊</span>
+              <span>780 tokens</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label glyph">GLYPH Tabular</span>
+          </div>
+          <div class="code-content">
+            <pre>@tab Article [id title
+  relevance snippet]
+kb_001 "Refund..." 0.98
+kb_002 "Replace..." 0.95
+@end</pre>
+            <div class="token-badge glyph">
+              <span>📊</span>
+              <span>350 tokens</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">Agent State Serialization</h3>
+      <div class="comparison">
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label json">JSON State</span>
+          </div>
+          <div class="code-content">
+            <pre>{
+  "conversation_id": "...",
+  "turns": [...],
+  "step": 1,
+  "refund_ok": false
+}</pre>
+            <div class="token-badge json">
+              <span>📦</span>
+              <span>774 chars</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label glyph">GLYPH State</span>
+          </div>
+          <div class="code-content">
+            <pre>{conversation_id=... 
+turns=[...] step=1 
+refund_ok=f}</pre>
+            <div class="token-badge glyph">
+              <span>📦</span>
+              <span>694 chars</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-value">10.3%</div>
+          <div class="metric-label">Smaller</div>
+          <div class="metric-description">State serialization savings</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">694</div>
+          <div class="metric-label">Chars</div>
+          <div class="metric-description">GLYPH vs 774 JSON</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">✓</div>
+          <div class="metric-label">Hash Verified</div>
+          <div class="metric-description">0e8686232e66cfdc</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TURN 2 -->
+    <section class="turn-container hidden" id="turn-2">
+      <div class="turn-header">
+        <div class="turn-badge">②</div>
+        <h2>Turn 2: Fetch & Validate</h2>
+      </div>
+      <div class="turn-description">
+        <strong>User:</strong> "Please look up my account and process the refund."<br>
+        <strong>Agent Action:</strong> Fetch customer history + validate refund tool call with streaming validation
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">Streaming Validation: Token-by-Token</h3>
+      <div class="chart-container">
+        <div class="chart-title">Hallucination Detection Speed</div>
+        <div class="chart-item">
+          <div class="chart-label">
+            <span class="chart-label-left">❌ JSON Unknown Tool</span>
+            <span class="chart-label-right">50+ tokens wasted</span>
+          </div>
+          <div class="chart-bar">
+            <div class="chart-bar-fill" style="width: 100%; background: linear-gradient(90deg, var(--error), var(--warning));"></div>
+          </div>
+        </div>
+        <div class="chart-item">
+          <div class="chart-label">
+            <span class="chart-label-left">✓ GLYPH Early Detection</span>
+            <span class="chart-label-right">3-5 tokens to reject</span>
+          </div>
+          <div class="chart-bar">
+            <div class="chart-bar-fill" style="width: 7%; background: linear-gradient(90deg, var(--success), var(--accent-teal)); animation-delay: 0.2s;"></div>
+          </div>
+        </div>
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); text-align: right;">
+          <span style="color: var(--success); font-weight: 700;">↓ 94% Faster</span>
+        </div>
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">Tool Call Validation</h3>
+      <div class="comparison">
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label">Tool Registry</span>
+          </div>
+          <div class="code-content">
+            <pre>registry.add_tool(
+  "process_refund",
+  {
+    "customer_id": str,
+    "amount_cents": int,
+    "order_id": str
+  }
+)</pre>
+          </div>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label glyph">Streaming Validation</span>
+          </div>
+          <div class="code-content">
+            <pre>validator = StreamValidator()
+
+for token in llm_stream:
+  result = validator.push(token)
+  if not result['allowed']:
+    cancel_generation()
+    # Reject at token 3!</pre>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">Updated State</h3>
+      <div class="comparison">
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label json">JSON State (Turn 2)</span>
+          </div>
+          <div class="code-content">
+            <pre>{
+  "turns": [
+    { "num": 1, "... },
+    { "num": 2, "... }
+  ],
+  "step": 2,
+  "refund_ok": true,
+  "amount": 5999
+}</pre>
+            <div class="token-badge json">
+              <span>📦</span>
+              <span>1603 chars</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label glyph">GLYPH State (Turn 2)</span>
+          </div>
+          <div class="code-content">
+            <pre>{turns=[{num=1...}
+{num=2...}] step=2 
+refund_ok=t amount=5999}</pre>
+            <div class="token-badge glyph">
+              <span>📦</span>
+              <span>1433 chars</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-value">10.6%</div>
+          <div class="metric-label">Smaller</div>
+          <div class="metric-description">State grows, savings hold</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">1433</div>
+          <div class="metric-label">Chars</div>
+          <div class="metric-description">GLYPH vs 1603 JSON</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">170</div>
+          <div class="metric-label">Chars Saved</div>
+          <div class="metric-description">Per turn cumulative</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TURN 3 -->
+    <section class="turn-container hidden" id="turn-3">
+      <div class="turn-header">
+        <div class="turn-badge">③</div>
+        <h2>Turn 3: Incremental Patching</h2>
+      </div>
+      <div class="turn-description">
+        <strong>Scenario:</strong> Instead of resending full state, GLYPH sends only what changed.<br>
+        <strong>Impact:</strong> 90.6% smaller messages for long-running agents
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">State Synchronization</h3>
+      <div class="chart-container">
+        <div class="chart-title">Per-Turn State Size</div>
+        <div class="chart-item">
+          <div class="chart-label">
+            <span class="chart-label-left">Full Resync (JSON)</span>
+            <span class="chart-label-right">1603 chars</span>
+          </div>
+          <div class="chart-bar">
+            <div class="chart-bar-fill" style="width: 100%; background: linear-gradient(90deg, var(--json-color), var(--error));"></div>
+          </div>
+        </div>
+        <div class="chart-item">
+          <div class="chart-label">
+            <span class="chart-label-left">Incremental Patch (GLYPH)</span>
+            <span class="chart-label-right">150 chars</span>
+          </div>
+          <div class="chart-bar">
+            <div class="chart-bar-fill" style="width: 9.4%; background: linear-gradient(90deg, var(--accent-teal), var(--accent-cyan)); animation-delay: 0.3s;"></div>
+          </div>
+        </div>
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); text-align: right;">
+          <span style="color: var(--glyph-color); font-weight: 700;">↓ 90.6% Savings</span>
+        </div>
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">Patch Format</h3>
+      <div class="comparison">
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label json">Full Resync (JSON)</span>
+          </div>
+          <div class="code-content">
+            <pre">{
+  "conversation_id": "conv_2025_001",
+  "customer_id": "cust_789",
+  "turns": [
+    {...full turn 1...},
+    {...full turn 2...},
+    {...full turn 3...}
+  ],
+  "step": 3,
+  "refund_ok": true
+}</pre>
+            <div class="token-badge json">
+              <span>🔄</span>
+              <span>1603 chars/turn</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span class="code-label glyph">Incremental Patch (GLYPH)</span>
+          </div>
+          <div class="code-content">
+            <pre>@patch base=78bc1460e64bcff5
+turns+{num=3 user="..." 
+tools=[...] results=[...]}
+current_step~1
+refund_approved=t</pre>
+            <div class="token-badge glyph">
+              <span>🔄</span>
+              <span>150 chars/turn</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="color: var(--text-primary); margin: 2rem 0 1rem;">Cryptographic Verification</h3>
+      <div class="code-box">
+        <div class="code-header">
+          <span class="code-label glyph">State Hash Verification</span>
+        </div>
+        <div class="code-content">
+          <pre>Turn 1: hash = 0e8686232e66cfdc
+Turn 2: hash = 78bc1460e64bcff5
+
+Patch received:
+@patch base=78bc1460e64bcff5
+  ↓ (matches Turn 2 hash)
+  ✓ Apply patch safely
+
+If base hash ≠ actual hash:
+  ↓ (state corruption detected)
+  🔄 Automatic resync triggered</pre>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-value">90.6%</div>
+          <div class="metric-label">Smaller</div>
+          <div class="metric-description">Incremental patch vs full resync</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">150</div>
+          <div class="metric-label">Chars</div>
+          <div class="metric-description">Patch vs 1603 full state</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">✓</div>
+          <div class="metric-label">Byzantine Safe</div>
+          <div class="metric-description">Detects silent corruption</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUMMARY SECTION -->
+    <section class="summary-section" id="summary">
+      <h2>Real Impact at Scale</h2>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <div class="summary-value">10-15%</div>
+          <div class="summary-label">State Savings</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-value">55%</div>
+          <div class="summary-label">Tabular Data</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-value">90.6%</div>
+          <div class="summary-label">Patch Updates</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-value">3-5</div>
+          <div class="summary-label">Tokens to Reject</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid rgba(20, 184, 166, 0.3);">
+        <h3 style="color: var(--text-primary); font-size: 1.2rem; margin-bottom: 1rem;">For 100k Agent Requests/Day</h3>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <div class="summary-value" style="color: var(--json-color);">$15.00</div>
+            <div class="summary-label">JSON Cost</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-value" style="color: var(--glyph-color);">$8.40</div>
+            <div class="summary-label">GLYPH Cost</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-value" style="color: var(--success);">$6.60</div>
+            <div class="summary-label">Daily Savings</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-value" style="color: var(--accent-teal);">$2,409</div>
+            <div class="summary-label">Annual Savings</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTROLS -->
+    <div class="controls">
+      <button class="primary" onclick="showTurn(1)">← Back</button>
+      <button class="primary" onclick="nextTurn()">Next →</button>
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+      <p><strong>GLYPH Oracle Demo</strong> — Token-efficient serialization for AI agents</p>
+      <p>30-50% smaller payloads · Streaming validation · State verification · Multi-agent coordination</p>
+      <p style="margin-top: 2rem; color: var(--text-muted); font-size: 0.85rem;">
+        Run the demo: <code style="background: var(--bg-tertiary); padding: 0.2rem 0.5rem; border-radius: 4px;">python3 demo_oracle_sophisticated.py</code>
+      </p>
+    </footer>
+  </main>
+
+  <script>
+    let currentTurn = 1;
+    let demoData = {};
+
+    async function loadTurnData(turnNum) {
+      try {
+        const response = await fetch(`/api/demo?turn=${turnNum}`);
+        const data = await response.json();
+        demoData[turnNum] = data;
+        return data;
+      } catch (error) {
+        console.error('Failed to load turn data:', error);
+        return null;
+      }
+    }
+
+    async function showTurn(turnNum) {
+      // Load data if not cached
+      if (!demoData[turnNum]) {
+        const data = await loadTurnData(turnNum);
+        if (!data) return;
+      }
+      // Hide all turns
+      document.getElementById('turn-1').classList.add('hidden');
+      document.getElementById('turn-2').classList.add('hidden');
+      document.getElementById('turn-3').classList.add('hidden');
+
+      // Remove active from all cards
+      document.querySelectorAll('.scenario-card').forEach(card => {
+        card.classList.remove('active');
+      });
+
+      // Show selected turn
+      document.getElementById(`turn-${turnNum}`).classList.remove('hidden');
+
+      // Add active to selected card
+      document.querySelectorAll('.scenario-card')[turnNum - 1].classList.add('active');
+
+      currentTurn = turnNum;
+
+      // Set animation delay for turn containers
+      const turnElements = document.querySelectorAll('.turn-container:not(.hidden)');
+      turnElements.forEach((el, index) => {
+        el.style.animationDelay = `${index * 0.1}s`;
+      });
+    }
+
+    async function nextTurn() {
+      if (currentTurn < 3) {
+        await showTurn(currentTurn + 1);
+        document.getElementById(`turn-${currentTurn}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+
+    function scrollToSection(sectionId) {
+      const element = document.getElementById(sectionId);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Load first turn data
+      await loadTurnData(1);
+      
+      // Animate charts
+      document.querySelectorAll('.chart-bar-fill').forEach((bar, index) => {
+        const width = bar.style.width;
+        bar.style.width = '0';
+        setTimeout(() => {
+          bar.style.width = width;
+        }, 100 + index * 100);
+      });
+    });
+  </script>
+</body>
+</html>

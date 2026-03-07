@@ -33,10 +33,17 @@ type TabularReader struct {
 	rowNum   int
 }
 
+const (
+	tabularScannerBufSize = 64 * 1024
+	tabularScannerMaxSize = 4 * 1024 * 1024
+)
+
 // NewTabularReader creates a streaming tabular reader.
 func NewTabularReader(r io.Reader, schema *Schema) *TabularReader {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, tabularScannerBufSize), tabularScannerMaxSize)
 	return &TabularReader{
-		scanner: bufio.NewScanner(r),
+		scanner: scanner,
 		schema:  schema,
 	}
 }
@@ -52,6 +59,9 @@ func NewTabularReaderFromString(input string, schema *Schema) *TabularReader {
 func (tr *TabularReader) ReadHeader() (typeName string, columns []string, err error) {
 	if tr.started {
 		return tr.typeName, tr.columns, nil
+	}
+	if tr.schema == nil {
+		return "", nil, fmt.Errorf("schema is required for tabular parsing")
 	}
 
 	// Read lines until we find @tab
@@ -242,6 +252,10 @@ func (tr *TabularReader) parseRow(line string) (*GValue, error) {
 
 		entries = append(entries, MapEntry{Key: fd.Name, Value: val})
 	}
+	p.skipWhitespace()
+	if p.pos < len(p.input) {
+		return nil, fmt.Errorf("row %d: extra columns starting at %d", tr.rowNum, p.pos+1)
+	}
 
 	return &GValue{
 		typ: TypeStruct,
@@ -297,6 +311,14 @@ func (p *tabularRowParser) parseValue(fd *FieldDef) (*GValue, error) {
 	// Check for null: ∅
 	if c == 0xe2 && p.peekRune() == '∅' {
 		p.consumeRune()
+		return Null(), nil
+	}
+	if c == '_' && p.isTokenBoundary(p.pos+1) {
+		p.pos++
+		return Null(), nil
+	}
+	if c == 'n' && strings.HasPrefix(p.input[p.pos:], "null") && p.isTokenBoundary(p.pos+4) {
+		p.pos += 4
 		return Null(), nil
 	}
 
@@ -467,7 +489,7 @@ func (p *tabularRowParser) parseBitmapHeader(td *TypeDef) ([]bool, error) {
 
 func (p *tabularRowParser) parseNumberOrTime() (*GValue, error) {
 	// Check if it looks like an ISO-8601 timestamp
-	if p.pos+10 < len(p.input) && p.input[p.pos+4] == '-' && p.input[p.pos+7] == '-' && p.input[p.pos+10] == 'T' {
+	if looksLikeTime(p.input, p.pos) {
 		return p.parseTime()
 	}
 	return p.parseNumber()
@@ -648,6 +670,10 @@ func (p *tabularRowParser) parseList() (*GValue, error) {
 	var items []*GValue
 	for {
 		p.skipWhitespace()
+		if p.peek() == ',' {
+			p.pos++
+			continue
+		}
 		if p.peek() == ']' {
 			p.pos++
 			return List(items...), nil
@@ -658,6 +684,10 @@ func (p *tabularRowParser) parseList() (*GValue, error) {
 			return nil, err
 		}
 		items = append(items, val)
+		p.skipWhitespace()
+		if p.peek() == ',' {
+			p.pos++
+		}
 	}
 }
 
@@ -669,12 +699,16 @@ func (p *tabularRowParser) parseMap() (*GValue, error) {
 	var entries []MapEntry
 	for {
 		p.skipWhitespace()
+		if p.peek() == ',' {
+			p.pos++
+			continue
+		}
 		if p.peek() == '}' {
 			p.pos++
 			return Map(entries...), nil
 		}
 
-		key, err := p.parseBareOrQuotedString()
+		keyStr, err := p.parseMapKey()
 		if err != nil {
 			return nil, err
 		}
@@ -690,11 +724,11 @@ func (p *tabularRowParser) parseMap() (*GValue, error) {
 			return nil, err
 		}
 
-		keyStr, err := key.AsStr()
-		if err != nil {
-			return nil, err
-		}
 		entries = append(entries, MapEntry{Key: keyStr, Value: val})
+		p.skipWhitespace()
+		if p.peek() == ',' {
+			p.pos++
+		}
 	}
 }
 
@@ -744,6 +778,42 @@ func (p *tabularRowParser) expectLiteral(s string) bool {
 	return false
 }
 
+func (p *tabularRowParser) parseMapKey() (string, error) {
+	p.skipWhitespace()
+	if p.peek() == '"' {
+		v, err := p.parseQuotedString()
+		if err != nil {
+			return "", err
+		}
+		return v.AsStr()
+	}
+
+	start := p.pos
+	for p.pos < len(p.input) {
+		c := p.input[p.pos]
+		if c == '=' || c == ':' || c == ' ' || c == '\t' || c == '\n' || c == ')' || c == ']' || c == '}' || c == '|' || c == ',' {
+			break
+		}
+		p.pos++
+	}
+	if p.pos == start {
+		return "", fmt.Errorf("expected map key")
+	}
+	return p.input[start:p.pos], nil
+}
+
+func (p *tabularRowParser) isTokenBoundary(pos int) bool {
+	if pos >= len(p.input) {
+		return true
+	}
+	switch p.input[pos] {
+	case ' ', '\t', '\n', ')', ']', '}', '|':
+		return true
+	default:
+		return false
+	}
+}
+
 // ============================================================
 // Inline Tabular Parser
 // ============================================================
@@ -752,6 +822,9 @@ func (p *tabularRowParser) expectLiteral(s string) bool {
 // @tab Type [cols] v1 v2 | v3 v4 | ... @end
 func ParseInlineTabular(input string, schema *Schema) ([]*GValue, error) {
 	input = strings.TrimSpace(input)
+	if schema == nil {
+		return nil, fmt.Errorf("schema is required for tabular parsing")
+	}
 
 	if !strings.HasPrefix(input, "@tab ") {
 		return nil, fmt.Errorf("expected @tab header")
@@ -794,8 +867,8 @@ func ParseInlineTabular(input string, schema *Schema) ([]*GValue, error) {
 		fields[i] = fd
 	}
 
-	// Split by | for rows
-	rowStrs := strings.Split(rest, "|")
+	// Split by | for rows (respect quoted strings)
+	rowStrs := splitInlineRows(rest)
 	var rows []*GValue
 
 	for _, rowStr := range rowStrs {
@@ -828,6 +901,10 @@ func ParseInlineTabular(input string, schema *Schema) ([]*GValue, error) {
 			}
 			entries = append(entries, MapEntry{Key: fd.Name, Value: val})
 		}
+		p.skipWhitespace()
+		if p.pos < len(p.input) {
+			return nil, fmt.Errorf("extra columns in inline row starting at %d", p.pos+1)
+		}
 
 		rows = append(rows, &GValue{
 			typ: TypeStruct,
@@ -839,6 +916,76 @@ func ParseInlineTabular(input string, schema *Schema) ([]*GValue, error) {
 	}
 
 	return rows, nil
+}
+
+func looksLikeTime(input string, pos int) bool {
+	if pos+9 >= len(input) {
+		return false
+	}
+	if input[pos+4] != '-' || input[pos+7] != '-' {
+		return false
+	}
+	// Date-time with T
+	if pos+10 < len(input) && input[pos+10] == 'T' {
+		return true
+	}
+	// Date-only if boundary after YYYY-MM-DD
+	if pos+10 == len(input) {
+		return true
+	}
+	return isTimeDelimiter(input[pos+10])
+}
+
+func isTimeDelimiter(c byte) bool {
+	switch c {
+	case ' ', '\t', '\n', ')', ']', '}', '|':
+		return true
+	default:
+		return false
+	}
+}
+
+func splitInlineRows(input string) []string {
+	var rows []string
+	var b strings.Builder
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(input); i++ {
+		c := input[i]
+		if inString {
+			b.WriteByte(c)
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch c {
+		case '"':
+			inString = true
+			b.WriteByte(c)
+		case '|':
+			rows = append(rows, strings.TrimSpace(b.String()))
+			b.Reset()
+		default:
+			b.WriteByte(c)
+		}
+	}
+
+	if b.Len() > 0 {
+		rows = append(rows, strings.TrimSpace(b.String()))
+	}
+
+	return rows
 }
 
 func parseInlineHeader(header string) (typeName string, columns []string, err error) {

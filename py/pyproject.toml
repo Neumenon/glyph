@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "glyph-serial"
+name = "glyph-py"
 version = "1.0.0"
 description = "Token-efficient serialization for AI agents"
 readme = "README.md"

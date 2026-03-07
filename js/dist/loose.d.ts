@@ -70,7 +70,7 @@ export interface LooseCanonOpts {
  * Default options for loose canonicalization with smart auto-tabular ENABLED.
  * Lists of 3+ homogeneous objects are automatically emitted as @tab blocks.
  * Non-eligible data gracefully falls back to standard format.
- * Uses ∅ for null (human-readable default).
+ * Uses _ for null (ASCII-safe, LLM-friendly - matches Go/Python).
  */
 export declare function defaultLooseCanonOpts(): LooseCanonOpts;
 /**
@@ -83,6 +83,11 @@ export declare function llmLooseCanonOpts(): LooseCanonOpts;
  * Use for backward compatibility or when tabular format is not desired.
  */
 export declare function noTabularLooseCanonOpts(): LooseCanonOpts;
+/**
+ * Options for human-readable "pretty" output.
+ * Uses ∅ for null (unicode symbol) for nicer visual appearance.
+ */
+export declare function prettyLooseCanonOpts(): LooseCanonOpts;
 /**
  * Options preset for tabular-enabled canonicalization.
  * @deprecated auto-tabular is now the default.

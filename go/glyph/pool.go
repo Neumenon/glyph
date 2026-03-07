@@ -93,10 +93,13 @@ type Pool struct {
 	ID      string    // Pool identifier (S1, O1, etc.)
 	Kind    PoolKind  // String or Object pool
 	Entries []*GValue // Pool entries
+	mu      sync.RWMutex
 }
 
 // Get returns the value at the given index.
 func (p *Pool) Get(index int) (*GValue, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	if index < 0 || index >= len(p.Entries) {
 		return nil, fmt.Errorf("%w: %s[%d] (len=%d)", ErrPoolIndex, p.ID, index, len(p.Entries))
 	}
@@ -105,6 +108,8 @@ func (p *Pool) Get(index int) (*GValue, error) {
 
 // Add appends a value to the pool and returns its index.
 func (p *Pool) Add(value *GValue) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	index := len(p.Entries)
 	p.Entries = append(p.Entries, value)
 	return index
@@ -113,6 +118,9 @@ func (p *Pool) Add(value *GValue) int {
 // String returns the pool definition format.
 func (p *Pool) String() string {
 	var sb strings.Builder
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	if p.Kind == PoolKindString {
 		sb.WriteString("@pool.str id=")
@@ -269,34 +277,90 @@ func ParsePool(input string) (*Pool, error) {
 		return nil, fmt.Errorf("expected [ for pool entries")
 	}
 
-	// Find matching ]
-	bracketCount := 0
-	endIdx := -1
-	for i := 0; i < len(rest); i++ {
-		if rest[i] == '[' {
-			bracketCount++
-		} else if rest[i] == ']' {
-			bracketCount--
-			if bracketCount == 0 {
-				endIdx = i
-				break
-			}
-		}
-	}
-	if endIdx < 0 {
-		return nil, fmt.Errorf("unclosed pool entries")
+	endIdx, err := findMatchingBracket(rest)
+	if err != nil {
+		return nil, err
 	}
 
 	entriesStr := rest[1:endIdx]
 
-	// Parse individual entries (simplified - space-separated values)
-	entries, err := parsePoolEntries(entriesStr, kind)
+	if trailing := strings.TrimSpace(rest[endIdx+1:]); trailing != "" {
+		return nil, fmt.Errorf("unexpected trailing content after pool entries: %s", trailing)
+	}
+
+	listText := "[" + entriesStr + "]"
+	res, err := ParseWithOptions(listText, ParseOptions{Tolerant: false})
 	if err != nil {
 		return nil, err
 	}
-	pool.Entries = entries
+	if res == nil || res.Value == nil {
+		return nil, fmt.Errorf("failed to parse pool entries")
+	}
+	if len(res.Errors) > 0 {
+		return nil, fmt.Errorf("parse pool entries: %s", res.Errors[0].Error())
+	}
+	if res.Value.typ != TypeList {
+		return nil, fmt.Errorf("pool entries must be a list")
+	}
+	pool.Entries = res.Value.listVal
+	if pool.Kind == PoolKindString {
+		for i, entry := range pool.Entries {
+			if entry == nil || entry.typ != TypeStr {
+				entryType := "nil"
+				if entry != nil {
+					entryType = entry.typ.String()
+				}
+				return nil, fmt.Errorf("pool.str entries must be strings (entry %d is %s)", i, entryType)
+			}
+		}
+	}
 
 	return pool, nil
+}
+
+func findMatchingBracket(input string) (int, error) {
+	if input == "" || input[0] != '[' {
+		return -1, fmt.Errorf("expected [ for pool entries")
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(input); i++ {
+		c := input[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch c {
+		case '"':
+			inString = true
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return i, nil
+			}
+			if depth < 0 {
+				return -1, fmt.Errorf("unbalanced pool entries")
+			}
+		}
+	}
+
+	return -1, fmt.Errorf("unclosed pool entries")
 }
 
 // parsePoolEntries parses pool entry values.

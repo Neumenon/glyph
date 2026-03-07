@@ -66,6 +66,18 @@ from .loose import (
     glyph_to_json,
 )
 
+# Streaming validation
+from .stream_validator import (
+    StreamingValidator,
+    ToolRegistry,
+    ToolSchema,
+    ArgSchema,
+    ArgType,
+    StreamValidationResult,
+    ValidatorState,
+    TimelineEvent,
+)
+
 # Convenient aliases
 emit = canonicalize_loose
 from_json = from_json_loose
@@ -108,4 +120,13 @@ __all__ = [
     "stringify_json_loose",
     "json_to_glyph",
     "glyph_to_json",
+    # Streaming validation
+    "StreamingValidator",
+    "ToolRegistry",
+    "ToolSchema",
+    "ArgSchema",
+    "ArgType",
+    "StreamValidationResult",
+    "ValidatorState",
+    "TimelineEvent",
 ]

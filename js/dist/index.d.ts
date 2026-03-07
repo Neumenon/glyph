@@ -45,6 +45,9 @@ export { parsePacked, parseTabular, parseHeader, ParseOptions, Header, TabularPa
 export { Patch, PatchOp, PatchOpKind, PathSeg, PathSegKind, PatchBuilder, PatchEmitOptions, emitPatch, parsePatch, applyPatch, parsePathToSegs, fieldSeg, listIdxSeg, mapKeySeg, } from './patch';
 export { canonicalizeLoose, canonicalizeLooseNoTabular, canonicalizeLooseWithOpts, canonicalizeLooseTabular, fingerprintLoose, equalLoose, fromJsonLoose, toJsonLoose, parseJsonLoose, stringifyJsonLoose, jsonEqual, parseTabularLoose, unescapeTabularCell, BridgeOpts, LooseCanonOpts, TabularParseResult as LooseTabularParseResult, defaultLooseCanonOpts, noTabularLooseCanonOpts, tabularLooseCanonOpts, llmLooseCanonOpts, canonicalizeLooseWithSchema, buildKeyDictFromValue, parseSchemaHeader, parseTabularLooseHeaderWithMeta, NullStyle, SchemaHeaderResult, TabularMetadata, } from './loose';
 export * as stream from './stream/index';
+export { Decimal128, DecimalError, decimal, isDecimalLiteral, parseDecimalLiteral, } from './decimal128';
+export { VersionedSchema, VersionSchema, EvolvingField, EvolvingFieldConfig, EvolutionMode, FieldType, FieldValue as EvolutionFieldValue, ParseResult as EvolutionParseResult, EmitResult as EvolutionEmitResult, ChangelogEntry, compareVersions, parseVersionHeader, formatVersionHeader, versionedSchema, } from './schema_evolution';
+export { StreamingValidator, ToolRegistry, ToolSchema, ArgSchema, ValidationResult, ValidationError, ValidatorState, ErrorCode, TimelineEvent, FieldValue as ValidatorFieldValue, ValidatorLimits, DEFAULT_MAX_BUFFER, DEFAULT_MAX_FIELDS, DEFAULT_MAX_ERRORS, defaultToolRegistry, } from './stream_validator';
 import { FromJsonOptions } from './json';
 import { V2Options } from './emit';
 import { Schema } from './schema';

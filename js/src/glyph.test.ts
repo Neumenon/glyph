@@ -459,7 +459,7 @@ describe('Patch', () => {
 describe('Loose Mode', () => {
   describe('canonicalizeLoose', () => {
     test('scalars', () => {
-      expect(canonicalizeLoose(g.null())).toBe('∅');
+      expect(canonicalizeLoose(g.null())).toBe('_');
       expect(canonicalizeLoose(g.bool(true))).toBe('t');
       expect(canonicalizeLoose(g.bool(false))).toBe('f');
       expect(canonicalizeLoose(g.int(0))).toBe('0');
@@ -482,7 +482,7 @@ describe('Loose Mode', () => {
       expect(canonicalizeLoose(g.list())).toBe('[]');
       expect(canonicalizeLoose(g.list(g.int(1)))).toBe('[1]');
       expect(canonicalizeLoose(g.list(g.int(1), g.int(2), g.int(3)))).toBe('[1 2 3]');
-      expect(canonicalizeLoose(g.list(g.null(), g.bool(true), g.int(42)))).toBe('[∅ t 42]');
+      expect(canonicalizeLoose(g.list(g.null(), g.bool(true), g.int(42)))).toBe('[_ t 42]');
     });
 
     test('map sorted keys', () => {
@@ -661,7 +661,7 @@ describe('Auto-Tabular', () => {
       expect(result).toBe('[{id=1} 42 hello]');
     });
 
-    test('missing keys emit null symbol', () => {
+    test('missing keys emit null underscore', () => {
       const list = g.list(
         g.map(field('id', g.int(1)), field('name', g.str('a'))),
         g.map(field('id', g.int(2))),
@@ -669,7 +669,7 @@ describe('Auto-Tabular', () => {
       );
       
       const result = canonicalizeLooseTabular(list);
-      expect(result).toContain('|2|∅|');
+      expect(result).toContain('|2|_|');
     });
 
     test('pipe escaping in values', () => {
@@ -843,7 +843,7 @@ interface Manifest {
 }
 
 describe('Golden Files', () => {
-  const testdataDir = path.join(__dirname, '..', '..', 'glyph', 'testdata', 'loose_json');
+  const testdataDir = path.join(__dirname, '..', '..', 'go', 'glyph', 'testdata', 'loose_json');
   const manifestPath = path.join(testdataDir, 'manifest.json');
   
   let manifest: Manifest;
