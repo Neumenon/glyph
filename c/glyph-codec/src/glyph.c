@@ -29,41 +29,64 @@ typedef struct {
     char *data;
     size_t len;
     size_t cap;
+    bool oom;
 } strbuf_t;
 
 static void strbuf_init(strbuf_t *buf) {
     buf->data = malloc(256);
     buf->len = 0;
     buf->cap = 256;
-    if (buf->data) buf->data[0] = '\0';
-}
-
-static void strbuf_grow(strbuf_t *buf, size_t need) {
-    if (buf->len + need >= buf->cap) {
-        size_t new_cap = buf->cap * 2;
-        while (buf->len + need >= new_cap) new_cap *= 2;
-        char *new_data = realloc(buf->data, new_cap);
-        if (new_data) {
-            buf->data = new_data;
-            buf->cap = new_cap;
-        }
+    buf->oom = (buf->data == NULL);
+    if (buf->data) {
+        buf->data[0] = '\0';
+    } else {
+        buf->cap = 0;
     }
 }
 
+static bool strbuf_grow(strbuf_t *buf, size_t need) {
+    if (buf->oom) return false;
+    if (buf->len + need < buf->cap) return true;
+
+    size_t new_cap = buf->cap ? buf->cap : 1;
+    while (buf->len + need >= new_cap) {
+        if (new_cap > SIZE_MAX / 2) {
+            buf->oom = true;
+            return false;
+        }
+        new_cap *= 2;
+    }
+
+    char *new_data = realloc(buf->data, new_cap);
+    if (!new_data) {
+        buf->oom = true;
+        return false;
+    }
+    buf->data = new_data;
+    buf->cap = new_cap;
+    return true;
+}
+
 static void strbuf_append(strbuf_t *buf, const char *s) {
+    if (!s) return;
     size_t len = strlen(s);
-    strbuf_grow(buf, len + 1);
+    if (!strbuf_grow(buf, len + 1)) return;
     memcpy(buf->data + buf->len, s, len + 1);
     buf->len += len;
 }
 
 static void strbuf_append_char(strbuf_t *buf, char c) {
-    strbuf_grow(buf, 2);
+    if (!strbuf_grow(buf, 2)) return;
     buf->data[buf->len++] = c;
     buf->data[buf->len] = '\0';
 }
 
 static char *strbuf_finish(strbuf_t *buf) {
+    if (buf->oom) {
+        free(buf->data);
+        buf->data = NULL;
+        return NULL;
+    }
     return buf->data;
 }
 
@@ -109,16 +132,29 @@ glyph_value_t *glyph_str(const char *val) {
     if (v) {
         v->type = GLYPH_STR;
         v->str_val = strdup_safe(val);
+        if (val && !v->str_val) {
+            free(v);
+            return NULL;
+        }
     }
     return v;
 }
 
 glyph_value_t *glyph_bytes(const uint8_t *data, size_t len) {
+    if (len > 0 && !data) return NULL;
+
     glyph_value_t *v = calloc(1, sizeof(glyph_value_t));
     if (v) {
         v->type = GLYPH_BYTES;
-        v->bytes_val.data = malloc(len);
-        if (v->bytes_val.data) {
+        if (len == 0) {
+            v->bytes_val.data = NULL;
+            v->bytes_val.len = 0;
+        } else {
+            v->bytes_val.data = malloc(len);
+            if (!v->bytes_val.data) {
+                free(v);
+                return NULL;
+            }
             memcpy(v->bytes_val.data, data, len);
             v->bytes_val.len = len;
         }
@@ -132,6 +168,12 @@ glyph_value_t *glyph_id(const char *prefix, const char *value) {
         v->type = GLYPH_ID;
         v->id_val.prefix = strdup_safe(prefix ? prefix : "");
         v->id_val.value = strdup_safe(value);
+        if (!v->id_val.prefix || (value && !v->id_val.value)) {
+            free(v->id_val.prefix);
+            free(v->id_val.value);
+            free(v);
+            return NULL;
+        }
     }
     return v;
 }
@@ -152,11 +194,13 @@ void glyph_list_append(glyph_value_t *list, glyph_value_t *item) {
     size_t new_count = list->list_val.count + 1;
     glyph_value_t **new_items = realloc(list->list_val.items,
                                         new_count * sizeof(glyph_value_t *));
-    if (new_items) {
-        new_items[list->list_val.count] = item;
-        list->list_val.items = new_items;
-        list->list_val.count = new_count;
+    if (!new_items) {
+        glyph_value_free(item);
+        return;
     }
+    new_items[list->list_val.count] = item;
+    list->list_val.items = new_items;
+    list->list_val.count = new_count;
 }
 
 glyph_value_t *glyph_map_new(void) {
@@ -172,15 +216,24 @@ glyph_value_t *glyph_map_new(void) {
 void glyph_map_set(glyph_value_t *map, const char *key, glyph_value_t *value) {
     if (!map || map->type != GLYPH_MAP || !key || !value) return;
 
+    char *key_copy = strdup_safe(key);
+    if (!key_copy) {
+        glyph_value_free(value);
+        return;
+    }
+
     size_t new_count = map->map_val.count + 1;
     glyph_map_entry_t *new_entries = realloc(map->map_val.entries,
                                               new_count * sizeof(glyph_map_entry_t));
-    if (new_entries) {
-        new_entries[map->map_val.count].key = strdup_safe(key);
-        new_entries[map->map_val.count].value = value;
-        map->map_val.entries = new_entries;
-        map->map_val.count = new_count;
+    if (!new_entries) {
+        free(key_copy);
+        glyph_value_free(value);
+        return;
     }
+    new_entries[map->map_val.count].key = key_copy;
+    new_entries[map->map_val.count].value = value;
+    map->map_val.entries = new_entries;
+    map->map_val.count = new_count;
 }
 
 glyph_value_t *glyph_struct_new(const char *type_name) {
@@ -188,6 +241,10 @@ glyph_value_t *glyph_struct_new(const char *type_name) {
     if (v) {
         v->type = GLYPH_STRUCT;
         v->struct_val.type_name = strdup_safe(type_name);
+        if (type_name && !v->struct_val.type_name) {
+            free(v);
+            return NULL;
+        }
         v->struct_val.fields = NULL;
         v->struct_val.fields_count = 0;
     }
@@ -197,15 +254,24 @@ glyph_value_t *glyph_struct_new(const char *type_name) {
 void glyph_struct_set(glyph_value_t *s, const char *key, glyph_value_t *value) {
     if (!s || s->type != GLYPH_STRUCT || !key || !value) return;
 
+    char *key_copy = strdup_safe(key);
+    if (!key_copy) {
+        glyph_value_free(value);
+        return;
+    }
+
     size_t new_count = s->struct_val.fields_count + 1;
     glyph_map_entry_t *new_fields = realloc(s->struct_val.fields,
                                              new_count * sizeof(glyph_map_entry_t));
-    if (new_fields) {
-        new_fields[s->struct_val.fields_count].key = strdup_safe(key);
-        new_fields[s->struct_val.fields_count].value = value;
-        s->struct_val.fields = new_fields;
-        s->struct_val.fields_count = new_count;
+    if (!new_fields) {
+        free(key_copy);
+        glyph_value_free(value);
+        return;
     }
+    new_fields[s->struct_val.fields_count].key = key_copy;
+    new_fields[s->struct_val.fields_count].value = value;
+    s->struct_val.fields = new_fields;
+    s->struct_val.fields_count = new_count;
 }
 
 glyph_value_t *glyph_sum(const char *tag, glyph_value_t *value) {
@@ -214,6 +280,11 @@ glyph_value_t *glyph_sum(const char *tag, glyph_value_t *value) {
         v->type = GLYPH_SUM;
         v->sum_val.tag = strdup_safe(tag);
         v->sum_val.value = value;
+        if (tag && !v->sum_val.tag) {
+            glyph_value_free(value);
+            free(v);
+            return NULL;
+        }
     }
     return v;
 }
@@ -382,9 +453,15 @@ static void write_canon_value(strbuf_t *buf, const glyph_value_t *v,
 
 /* Compare entries by canonical key for sorting */
 static int compare_entries(const void *a, const void *b) {
-    const glyph_map_entry_t *ea = a;
-    const glyph_map_entry_t *eb = b;
+    const glyph_map_entry_t *ea = (const glyph_map_entry_t *)a;
+    const glyph_map_entry_t *eb = (const glyph_map_entry_t *)b;
     return strcmp(ea->key, eb->key);
+}
+
+static int compare_key_strings(const void *a, const void *b) {
+    const char *const *ka = (const char *const *)a;
+    const char *const *kb = (const char *const *)b;
+    return strcmp(*ka, *kb);
 }
 
 static void write_canon_map(strbuf_t *buf, const glyph_map_entry_t *entries,
@@ -422,6 +499,7 @@ static bool check_homogeneous(glyph_value_t **items, size_t count,
     /* Collect all keys */
     size_t all_keys_cap = 64;
     char **all_keys = malloc(all_keys_cap * sizeof(char *));
+    if (!all_keys) return false;
     size_t all_keys_count = 0;
 
     for (size_t i = 0; i < count; i++) {
@@ -452,9 +530,21 @@ static bool check_homogeneous(glyph_value_t **items, size_t count,
             if (!found) {
                 if (all_keys_count >= all_keys_cap) {
                     all_keys_cap *= 2;
-                    all_keys = realloc(all_keys, all_keys_cap * sizeof(char *));
+                    char **new_all_keys = realloc(all_keys, all_keys_cap * sizeof(char *));
+                    if (!new_all_keys) {
+                        for (size_t m = 0; m < all_keys_count; m++) free(all_keys[m]);
+                        free(all_keys);
+                        return false;
+                    }
+                    all_keys = new_all_keys;
                 }
-                all_keys[all_keys_count++] = strdup_safe(key);
+                all_keys[all_keys_count] = strdup_safe(key);
+                if (!all_keys[all_keys_count]) {
+                    for (size_t m = 0; m < all_keys_count; m++) free(all_keys[m]);
+                    free(all_keys);
+                    return false;
+                }
+                all_keys_count++;
             }
         }
     }
@@ -503,8 +593,7 @@ static bool check_homogeneous(glyph_value_t **items, size_t count,
     }
 
     /* Sort columns */
-    qsort(all_keys, all_keys_count, sizeof(char *),
-          (int (*)(const void *, const void *))strcmp);
+    qsort(all_keys, all_keys_count, sizeof(char *), compare_key_strings);
 
     *out_cols = all_keys;
     *out_col_count = all_keys_count;
@@ -717,7 +806,12 @@ char *glyph_canonicalize_loose_no_tabular(const glyph_value_t *v) {
 char *glyph_canonicalize_loose_with_opts(const glyph_value_t *v,
                                           const glyph_canon_opts_t *opts) {
     strbuf_t buf;
+    glyph_canon_opts_t default_opts;
     strbuf_init(&buf);
+    if (!opts) {
+        default_opts = glyph_canon_opts_default();
+        opts = &default_opts;
+    }
     write_canon_value(&buf, v, opts);
     return strbuf_finish(&buf);
 }

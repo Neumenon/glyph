@@ -239,5 +239,95 @@ def test_integration_with_streaming():
     assert result.fields["max_results"] == 5
 
 
+def test_tool_allowed_only_after_tool_name_is_final():
+    """Partial tool-name detection should not mark the tool as disallowed."""
+    registry = ToolRegistry()
+    registry.add_tool("search", {})
+
+    validator = StreamingValidator(registry)
+
+    result = validator.push_token("unknown_tool")
+    assert result.tool_name == "unknown_tool"
+    assert result.tool_allowed
+
+    result = validator.push_token("{")
+    assert not result.tool_allowed
+    assert "UNKNOWN_TOOL" in str(result.errors)
+
+
+def test_nested_value_parsing():
+    """Nested lists and maps should survive incremental parsing."""
+    registry = ToolRegistry()
+    registry.add_tool("batch", {
+        "items": {"type": "list", "required": True},
+    })
+
+    validator = StreamingValidator(registry)
+    response = 'batch{items=[{id=1 tags=[alpha beta]} {id=2 tags=[]}]}'
+
+    for char in response:
+        result = validator.push_token(char)
+
+    assert result.complete
+    assert result.valid
+    assert result.fields["items"][0]["id"] == 1
+    assert result.fields["items"][0]["tags"] == ["alpha", "beta"]
+    assert result.fields["items"][1]["tags"] == []
+
+
+def test_buffer_limit_trips_error():
+    """The validator should stop accepting oversized payloads."""
+    registry = ToolRegistry()
+    registry.add_tool("search", {"query": {"type": "str"}})
+
+    validator = StreamingValidator(registry, max_buffer=16)
+    result = validator.push_token('search{query="0123456789"}')
+
+    assert result.state == ValidatorState.ERROR
+    assert any("Buffer exceeds max size" in error for error in result.errors)
+
+
+def test_field_limit_trips_error():
+    """The validator should cap the number of parsed fields."""
+    registry = ToolRegistry()
+    registry.add_tool("bulk", {})
+
+    validator = StreamingValidator(registry, max_fields=1)
+    for char in "bulk{a=1 b=2}":
+        result = validator.push_token(char)
+
+    assert result.state == ValidatorState.ERROR
+    assert any("Field count exceeds max" in error for error in result.errors)
+
+
+def test_error_limit_is_capped():
+    """Error accumulation should remain bounded."""
+    registry = ToolRegistry()
+    registry.add_tool("search", {
+        "query": {"type": "str", "required": True},
+        "max_results": {"type": "int", "max": 1},
+    })
+
+    validator = StreamingValidator(registry, max_errors=1)
+    for char in 'search{max_results=2 extra=foo}':
+        result = validator.push_token(char)
+
+    assert len(result.errors) == 1
+    assert not result.valid
+
+
+def test_mismatched_nested_delimiters_fail_fast():
+    """Unexpected nested closers should not drive depth negative."""
+    registry = ToolRegistry()
+    registry.add_tool("search", {"query": {"type": "list"}})
+
+    validator = StreamingValidator(registry)
+    for char in "search{query=[1}}":
+        result = validator.push_token(char)
+
+    assert result.state == ValidatorState.ERROR
+    assert any("Mismatched closing delimiter" in error for error in result.errors)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

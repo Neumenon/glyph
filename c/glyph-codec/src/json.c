@@ -10,6 +10,9 @@
 #include <math.h>
 #include <time.h>
 
+#define JSON_MAX_DEPTH      128u
+#define JSON_MAX_STRING_LEN (1024u * 1024u)
+
 /* ============================================================
  * JSON Parser
  * ============================================================ */
@@ -18,7 +21,66 @@ typedef struct {
     const char *input;
     size_t pos;
     size_t len;
+    size_t depth;
 } json_parser_t;
+
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} parse_strbuf_t;
+
+static bool parse_strbuf_grow(parse_strbuf_t *buf, size_t needed) {
+    if (needed > JSON_MAX_STRING_LEN + 1) {
+        return false;
+    }
+    if (needed <= buf->cap) {
+        return true;
+    }
+
+    size_t new_cap = buf->cap ? buf->cap : 1;
+    while (new_cap < needed) {
+        if (new_cap > (JSON_MAX_STRING_LEN + 1) / 2) {
+            new_cap = JSON_MAX_STRING_LEN + 1;
+            break;
+        }
+        new_cap *= 2;
+    }
+    if (new_cap < needed || new_cap > JSON_MAX_STRING_LEN + 1) {
+        return false;
+    }
+
+    char *new_data = realloc(buf->data, new_cap);
+    if (!new_data) {
+        return false;
+    }
+    buf->data = new_data;
+    buf->cap = new_cap;
+    return true;
+}
+
+static bool parse_strbuf_append_char(parse_strbuf_t *buf, char c) {
+    if (!parse_strbuf_grow(buf, buf->len + 2)) {
+        return false;
+    }
+    buf->data[buf->len++] = c;
+    buf->data[buf->len] = '\0';
+    return true;
+}
+
+static bool parser_enter_container(json_parser_t *p) {
+    if (p->depth >= JSON_MAX_DEPTH) {
+        return false;
+    }
+    p->depth++;
+    return true;
+}
+
+static void parser_leave_container(json_parser_t *p) {
+    if (p->depth > 0) {
+        p->depth--;
+    }
+}
 
 static void skip_whitespace(json_parser_t *p) {
     while (p->pos < p->len && isspace((unsigned char)p->input[p->pos])) {
@@ -51,15 +113,18 @@ static glyph_value_t *parse_value(json_parser_t *p);
 static char *parse_string(json_parser_t *p) {
     if (next(p) != '"') return NULL;
 
-    size_t cap = 64;
-    char *str = malloc(cap);
-    size_t len = 0;
+    parse_strbuf_t buf = {
+        .data = malloc(64),
+        .len = 0,
+        .cap = 64,
+    };
+    if (!buf.data) return NULL;
+    buf.data[0] = '\0';
 
     while (p->pos < p->len) {
         char c = p->input[p->pos++];
         if (c == '"') {
-            str[len] = '\0';
-            return str;
+            return buf.data;
         }
         if (c == '\\' && p->pos < p->len) {
             c = p->input[p->pos++];
@@ -80,35 +145,35 @@ static char *parse_string(json_parser_t *p) {
                         if (code < 0x80) {
                             c = (char)code;
                         } else if (code < 0x800) {
-                            if (len + 2 >= cap) {
-                                cap *= 2;
-                                str = realloc(str, cap);
+                            if (!parse_strbuf_append_char(&buf, (char)(0xC0 | (code >> 6)))) {
+                                free(buf.data);
+                                return NULL;
                             }
-                            str[len++] = 0xC0 | (code >> 6);
                             c = 0x80 | (code & 0x3F);
                         } else {
-                            if (len + 3 >= cap) {
-                                cap *= 2;
-                                str = realloc(str, cap);
+                            if (!parse_strbuf_append_char(&buf, (char)(0xE0 | (code >> 12))) ||
+                                !parse_strbuf_append_char(&buf, (char)(0x80 | ((code >> 6) & 0x3F)))) {
+                                free(buf.data);
+                                return NULL;
                             }
-                            str[len++] = 0xE0 | (code >> 12);
-                            str[len++] = 0x80 | ((code >> 6) & 0x3F);
                             c = 0x80 | (code & 0x3F);
                         }
+                    } else {
+                        free(buf.data);
+                        return NULL;
                     }
                     break;
                 }
                 default: break;
             }
         }
-        if (len + 1 >= cap) {
-            cap *= 2;
-            str = realloc(str, cap);
+        if (!parse_strbuf_append_char(&buf, c)) {
+            free(buf.data);
+            return NULL;
         }
-        str[len++] = c;
     }
 
-    free(str);
+    free(buf.data);
     return NULL;
 }
 
@@ -134,12 +199,18 @@ static glyph_value_t *parse_number(json_parser_t *p) {
 
 static glyph_value_t *parse_array(json_parser_t *p) {
     if (next(p) != '[') return NULL;
+    if (!parser_enter_container(p)) return NULL;
 
     glyph_value_t *list = glyph_list_new();
+    if (!list) {
+        parser_leave_container(p);
+        return NULL;
+    }
 
     skip_whitespace(p);
     if (peek(p) == ']') {
         next(p);
+        parser_leave_container(p);
         return list;
     }
 
@@ -147,18 +218,27 @@ static glyph_value_t *parse_array(json_parser_t *p) {
         glyph_value_t *item = parse_value(p);
         if (!item) {
             glyph_value_free(list);
+            parser_leave_container(p);
             return NULL;
         }
+        size_t prev_count = list->list_val.count;
         glyph_list_append(list, item);
+        if (list->list_val.count != prev_count + 1) {
+            glyph_value_free(list);
+            parser_leave_container(p);
+            return NULL;
+        }
 
         skip_whitespace(p);
         char c = peek(p);
         if (c == ']') {
             next(p);
+            parser_leave_container(p);
             break;
         }
         if (c != ',') {
             glyph_value_free(list);
+            parser_leave_container(p);
             return NULL;
         }
         next(p); /* consume comma */
@@ -169,12 +249,18 @@ static glyph_value_t *parse_array(json_parser_t *p) {
 
 static glyph_value_t *parse_object(json_parser_t *p) {
     if (next(p) != '{') return NULL;
+    if (!parser_enter_container(p)) return NULL;
 
     glyph_value_t *map = glyph_map_new();
+    if (!map) {
+        parser_leave_container(p);
+        return NULL;
+    }
 
     skip_whitespace(p);
     if (peek(p) == '}') {
         next(p);
+        parser_leave_container(p);
         return map;
     }
 
@@ -182,12 +268,14 @@ static glyph_value_t *parse_object(json_parser_t *p) {
         skip_whitespace(p);
         if (peek(p) != '"') {
             glyph_value_free(map);
+            parser_leave_container(p);
             return NULL;
         }
 
         char *key = parse_string(p);
         if (!key) {
             glyph_value_free(map);
+            parser_leave_container(p);
             return NULL;
         }
 
@@ -195,6 +283,7 @@ static glyph_value_t *parse_object(json_parser_t *p) {
         if (next(p) != ':') {
             free(key);
             glyph_value_free(map);
+            parser_leave_container(p);
             return NULL;
         }
 
@@ -202,20 +291,30 @@ static glyph_value_t *parse_object(json_parser_t *p) {
         if (!value) {
             free(key);
             glyph_value_free(map);
+            parser_leave_container(p);
             return NULL;
         }
 
+        size_t prev_count = map->map_val.count;
         glyph_map_set(map, key, value);
+        if (map->map_val.count != prev_count + 1) {
+            free(key);
+            glyph_value_free(map);
+            parser_leave_container(p);
+            return NULL;
+        }
         free(key);
 
         skip_whitespace(p);
         char c = peek(p);
         if (c == '}') {
             next(p);
+            parser_leave_container(p);
             break;
         }
         if (c != ',') {
             glyph_value_free(map);
+            parser_leave_container(p);
             return NULL;
         }
         next(p); /* consume comma */
@@ -264,9 +363,19 @@ glyph_value_t *glyph_from_json(const char *json) {
         .input = json,
         .pos = 0,
         .len = strlen(json),
+        .depth = 0,
     };
 
-    return parse_value(&p);
+    glyph_value_t *value = parse_value(&p);
+    if (!value) return NULL;
+
+    skip_whitespace(&p);
+    if (p.pos != p.len) {
+        glyph_value_free(value);
+        return NULL;
+    }
+
+    return value;
 }
 
 /* ============================================================
@@ -277,31 +386,53 @@ typedef struct {
     char *data;
     size_t len;
     size_t cap;
+    bool oom;
 } json_buf_t;
 
 static void json_buf_init(json_buf_t *buf) {
     buf->cap = 256;
     buf->data = malloc(buf->cap);
     buf->len = 0;
-    if (buf->data) buf->data[0] = '\0';
-}
-
-static void json_buf_grow(json_buf_t *buf, size_t need) {
-    if (buf->len + need >= buf->cap) {
-        while (buf->len + need >= buf->cap) buf->cap *= 2;
-        buf->data = realloc(buf->data, buf->cap);
+    buf->oom = (buf->data == NULL);
+    if (buf->data) {
+        buf->data[0] = '\0';
+    } else {
+        buf->cap = 0;
     }
 }
 
+static bool json_buf_grow(json_buf_t *buf, size_t need) {
+    if (buf->oom) return false;
+    if (buf->len + need < buf->cap) return true;
+
+    size_t new_cap = buf->cap ? buf->cap : 1;
+    while (buf->len + need >= new_cap) {
+        if (new_cap > SIZE_MAX / 2) {
+            buf->oom = true;
+            return false;
+        }
+        new_cap *= 2;
+    }
+    char *new_data = realloc(buf->data, new_cap);
+    if (!new_data) {
+        buf->oom = true;
+        return false;
+    }
+    buf->data = new_data;
+    buf->cap = new_cap;
+    return true;
+}
+
 static void json_buf_append(json_buf_t *buf, const char *s) {
+    if (!s) return;
     size_t len = strlen(s);
-    json_buf_grow(buf, len + 1);
+    if (!json_buf_grow(buf, len + 1)) return;
     memcpy(buf->data + buf->len, s, len + 1);
     buf->len += len;
 }
 
 static void json_buf_append_char(json_buf_t *buf, char c) {
-    json_buf_grow(buf, 2);
+    if (!json_buf_grow(buf, 2)) return;
     buf->data[buf->len++] = c;
     buf->data[buf->len] = '\0';
 }
@@ -453,6 +584,10 @@ char *glyph_to_json(const glyph_value_t *v) {
     json_buf_t buf;
     json_buf_init(&buf);
     write_json_value(&buf, v);
+    if (buf.oom) {
+        free(buf.data);
+        return NULL;
+    }
     return buf.data;
 }
 

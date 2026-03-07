@@ -59,6 +59,10 @@ class PackedParser {
     }
     
     this.expect(')');
+    this.skipWhitespace();
+    if (this.pos !== this.input.length) {
+      throw new Error(`trailing garbage at pos ${this.pos}`);
+    }
     return value;
   }
 
@@ -274,50 +278,40 @@ class PackedParser {
     const start = this.pos;
     while (this.pos < this.input.length) {
       const c = this.input[this.pos];
-      if (c === ' ' || c === ')' || c === ']' || c === '}' || c === '\n') {
+      if (this.isTokenBoundary(c)) {
         break;
       }
       this.pos++;
     }
     const timeStr = this.input.slice(start, this.pos);
-    return GValue.time(new Date(timeStr));
+    const date = new Date(timeStr);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`invalid time at pos ${start}`);
+    }
+    return GValue.time(date);
   }
 
   private parseNumber(): GValue {
     const start = this.pos;
-    
-    // Optional minus
-    if (this.input[this.pos] === '-') this.pos++;
-    
-    // Integer part
-    while (this.pos < this.input.length && this.input[this.pos] >= '0' && this.input[this.pos] <= '9') {
-      this.pos++;
+    const match = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(this.input.slice(this.pos));
+    if (!match) {
+      throw new Error(`invalid number at pos ${start}`);
     }
-    
-    let isFloat = false;
-    
-    // Decimal part
-    if (this.pos < this.input.length && this.input[this.pos] === '.') {
-      isFloat = true;
-      this.pos++;
-      while (this.pos < this.input.length && this.input[this.pos] >= '0' && this.input[this.pos] <= '9') {
-        this.pos++;
-      }
+
+    const numStr = match[0];
+    const next = this.input[this.pos + numStr.length] ?? '';
+    if (next !== '' && !this.isTokenBoundary(next)) {
+      throw new Error(`invalid numeric token at pos ${start}`);
     }
-    
-    // Exponent
-    if (this.pos < this.input.length && (this.input[this.pos] === 'e' || this.input[this.pos] === 'E')) {
-      isFloat = true;
-      this.pos++;
-      if (this.input[this.pos] === '+' || this.input[this.pos] === '-') this.pos++;
-      while (this.pos < this.input.length && this.input[this.pos] >= '0' && this.input[this.pos] <= '9') {
-        this.pos++;
-      }
+
+    this.pos += numStr.length;
+    const num = Number(numStr);
+    if (!Number.isFinite(num)) {
+      throw new Error(`invalid number at pos ${start}`);
     }
-    
-    const numStr = this.input.slice(start, this.pos);
-    if (isFloat) {
-      return GValue.float(parseFloat(numStr));
+
+    if (numStr.includes('.') || numStr.includes('e') || numStr.includes('E')) {
+      return GValue.float(num);
     }
     return GValue.int(parseInt(numStr, 10));
   }
@@ -444,6 +438,10 @@ class PackedParser {
 
   private peek(): string {
     return this.pos < this.input.length ? this.input[this.pos] : '';
+  }
+
+  private isTokenBoundary(c: string): boolean {
+    return c === '' || c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === ')' || c === ']' || c === '}';
   }
 
   private expect(c: string): void {

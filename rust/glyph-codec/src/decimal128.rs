@@ -14,6 +14,8 @@ use std::fmt;
 use std::ops::{Add, Sub, Mul, Div, Neg};
 use std::str::FromStr;
 
+const MAX_I128_POW10_EXP: u32 = 38;
+
 /// Decimal128 represents a 128-bit decimal number.
 /// Value = coefficient * 10^(-scale)
 #[derive(Clone, Copy, Eq)]
@@ -99,8 +101,25 @@ impl Decimal128 {
     /// Convert to i64 (truncates fractional part).
     pub fn to_i64(&self) -> i64 {
         let coef = coef_to_int(&self.coef);
-        let divisor = 10i128.pow(self.scale as u32);
-        (coef / divisor) as i64
+        let value = if self.scale >= 0 {
+            match checked_pow10(self.scale as u32) {
+                Some(divisor) => coef / divisor,
+                None => 0,
+            }
+        } else {
+            match checked_scale_coef(coef, self.scale.unsigned_abs() as u32) {
+                Ok(value) => value,
+                Err(_) => {
+                    return if coef.is_negative() {
+                        i64::MIN
+                    } else {
+                        i64::MAX
+                    };
+                }
+            }
+        };
+
+        saturating_i128_to_i64(value)
     }
 
     /// Convert to f64 (with potential precision loss).
@@ -130,7 +149,7 @@ impl Decimal128 {
         let coef = coef_to_int(&self.coef);
         Self {
             scale: self.scale,
-            coef: int_to_coef(coef.abs()),
+            coef: int_to_coef(coef.wrapping_abs()),
         }
     }
 
@@ -139,7 +158,7 @@ impl Decimal128 {
         let coef = coef_to_int(&self.coef);
         Self {
             scale: self.scale,
-            coef: int_to_coef(-coef),
+            coef: int_to_coef(coef.wrapping_neg()),
         }
     }
 }
@@ -147,26 +166,31 @@ impl Decimal128 {
 impl fmt::Display for Decimal128 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let coef = coef_to_int(&self.coef);
-
-        if self.scale == 0 {
-            return write!(f, "{}", coef);
+        let mut digits = coef.to_string();
+        let negative = digits.starts_with('-');
+        if negative {
+            digits.remove(0);
         }
 
-        let negative = coef < 0;
-        let mut coef_str = coef.abs().to_string();
-
-        // Pad with zeros if needed
-        while coef_str.len() <= self.scale as usize {
-            coef_str.insert(0, '0');
-        }
-
-        let insert_pos = coef_str.len() - self.scale as usize;
-        coef_str.insert(insert_pos, '.');
+        let rendered = if self.scale > 0 {
+            let mut digits = digits;
+            while digits.len() <= self.scale as usize {
+                digits.insert(0, '0');
+            }
+            let insert_pos = digits.len() - self.scale as usize;
+            digits.insert(insert_pos, '.');
+            digits
+        } else if self.scale < 0 {
+            let zeros = "0".repeat(self.scale.unsigned_abs() as usize);
+            format!("{}{}", digits, zeros)
+        } else {
+            digits
+        };
 
         if negative {
-            write!(f, "-{}", coef_str)
+            write!(f, "-{}", rendered)
         } else {
-            write!(f, "{}", coef_str)
+            write!(f, "{}", rendered)
         }
     }
 }
@@ -191,19 +215,23 @@ impl PartialOrd for Decimal128 {
 
 impl Ord for Decimal128 {
     fn cmp(&self, other: &Self) -> Ordering {
-        let mut c1 = coef_to_int(&self.coef);
-        let mut c2 = coef_to_int(&other.coef);
+        let c1 = coef_to_int(&self.coef);
+        let c2 = coef_to_int(&other.coef);
 
-        // Align scales
-        if self.scale < other.scale {
-            let diff = (other.scale - self.scale) as u32;
-            c1 *= 10i128.pow(diff);
-        } else if self.scale > other.scale {
-            let diff = (self.scale - other.scale) as u32;
-            c2 *= 10i128.pow(diff);
+        if c1 == c2 && self.scale == other.scale {
+            return Ordering::Equal;
         }
 
-        c1.cmp(&c2)
+        if c1.is_negative() != c2.is_negative() {
+            return c1.cmp(&c2);
+        }
+
+        let ordering = compare_abs_decimal(c1, self.scale, c2, other.scale);
+        if c1.is_negative() {
+            ordering.reverse()
+        } else {
+            ordering
+        }
     }
 }
 
@@ -211,26 +239,10 @@ impl Add for Decimal128 {
     type Output = Result<Self, DecimalError>;
 
     fn add(self, other: Self) -> Self::Output {
-        let mut c1 = coef_to_int(&self.coef);
-        let mut c2 = coef_to_int(&other.coef);
-        let target_scale;
-
-        if self.scale < other.scale {
-            let diff = (other.scale - self.scale) as u32;
-            c1 *= 10i128.pow(diff);
-            target_scale = other.scale;
-        } else {
-            let diff = (self.scale - other.scale) as u32;
-            c2 *= 10i128.pow(diff);
-            target_scale = self.scale;
-        }
-
-        let result = c1 + c2;
-
-        // Check overflow (128-bit signed max)
-        if result.leading_zeros() < 1 && result.leading_ones() < 1 {
-            return Err(DecimalError::Overflow);
-        }
+        let target_scale = self.scale.max(other.scale);
+        let c1 = align_coef_to_scale(coef_to_int(&self.coef), self.scale, target_scale)?;
+        let c2 = align_coef_to_scale(coef_to_int(&other.coef), other.scale, target_scale)?;
+        let result = c1.checked_add(c2).ok_or(DecimalError::Overflow)?;
 
         Ok(Self {
             scale: target_scale,
@@ -243,7 +255,15 @@ impl Sub for Decimal128 {
     type Output = Result<Self, DecimalError>;
 
     fn sub(self, other: Self) -> Self::Output {
-        self + other.negate()
+        let target_scale = self.scale.max(other.scale);
+        let c1 = align_coef_to_scale(coef_to_int(&self.coef), self.scale, target_scale)?;
+        let c2 = align_coef_to_scale(coef_to_int(&other.coef), other.scale, target_scale)?;
+        let result = c1.checked_sub(c2).ok_or(DecimalError::Overflow)?;
+
+        Ok(Self {
+            scale: target_scale,
+            coef: int_to_coef(result),
+        })
     }
 }
 
@@ -253,7 +273,7 @@ impl Mul for Decimal128 {
     fn mul(self, other: Self) -> Self::Output {
         let c1 = coef_to_int(&self.coef);
         let c2 = coef_to_int(&other.coef);
-        let result = c1 * c2;
+        let result = c1.checked_mul(c2).ok_or(DecimalError::Overflow)?;
 
         let new_scale = self.scale as i16 + other.scale as i16;
         if new_scale > 127 || new_scale < -127 {
@@ -277,7 +297,7 @@ impl Div for Decimal128 {
         }
 
         let c1 = coef_to_int(&self.coef);
-        let result = c1 / c2;
+        let result = c1.checked_div(c2).ok_or(DecimalError::Overflow)?;
 
         let new_scale = self.scale as i16 - other.scale as i16;
         if new_scale > 127 || new_scale < -127 {
@@ -347,6 +367,83 @@ fn coef_to_int(coef: &[u8; 16]) -> i128 {
     i128::from_be_bytes(*coef)
 }
 
+fn checked_pow10(exp: u32) -> Option<i128> {
+    if exp > MAX_I128_POW10_EXP {
+        return None;
+    }
+
+    let mut value = 1i128;
+    for _ in 0..exp {
+        value = value.checked_mul(10)?;
+    }
+    Some(value)
+}
+
+fn checked_scale_coef(coef: i128, exp: u32) -> Result<i128, DecimalError> {
+    if exp == 0 || coef == 0 {
+        return Ok(coef);
+    }
+
+    let factor = checked_pow10(exp).ok_or(DecimalError::Overflow)?;
+    coef.checked_mul(factor).ok_or(DecimalError::Overflow)
+}
+
+fn align_coef_to_scale(coef: i128, from_scale: i8, to_scale: i8) -> Result<i128, DecimalError> {
+    let diff = i16::from(to_scale) - i16::from(from_scale);
+    if diff < 0 {
+        return Err(DecimalError::ScaleOverflow);
+    }
+
+    checked_scale_coef(coef, diff as u32)
+}
+
+fn normalize_decimal_parts(coef: i128, scale: i8) -> (String, i32) {
+    if coef == 0 {
+        return ("0".to_string(), 0);
+    }
+
+    let mut digits = coef.to_string();
+    if digits.starts_with('-') {
+        digits.remove(0);
+    }
+    let mut scale = i32::from(scale);
+
+    while digits.len() > 1 && digits.ends_with('0') {
+        digits.pop();
+        scale -= 1;
+    }
+
+    (digits, scale)
+}
+
+fn compare_abs_decimal(left_coef: i128, left_scale: i8, right_coef: i128, right_scale: i8) -> Ordering {
+    let (mut left_digits, left_scale) = normalize_decimal_parts(left_coef, left_scale);
+    let (mut right_digits, right_scale) = normalize_decimal_parts(right_coef, right_scale);
+
+    let target_scale = left_scale.max(right_scale);
+    if target_scale > left_scale {
+        left_digits.push_str(&"0".repeat((target_scale - left_scale) as usize));
+    }
+    if target_scale > right_scale {
+        right_digits.push_str(&"0".repeat((target_scale - right_scale) as usize));
+    }
+
+    left_digits
+        .len()
+        .cmp(&right_digits.len())
+        .then_with(|| left_digits.cmp(&right_digits))
+}
+
+fn saturating_i128_to_i64(value: i128) -> i64 {
+    if value > i64::MAX as i128 {
+        i64::MAX
+    } else if value < i64::MIN as i128 {
+        i64::MIN
+    } else {
+        value as i64
+    }
+}
+
 /// Check if a string is a decimal literal (ends with 'm').
 pub fn is_decimal_literal(s: &str) -> bool {
     let s = s.trim();
@@ -399,6 +496,17 @@ mod tests {
     }
 
     #[test]
+    fn test_negative_scale_display_and_conversion() {
+        let d = Decimal128::new(-2, int_to_coef(123));
+        assert_eq!(d.to_string(), "12300");
+        assert_eq!(d.to_i64(), 12300);
+
+        let neg = Decimal128::new(-3, int_to_coef(-45));
+        assert_eq!(neg.to_string(), "-45000");
+        assert_eq!(neg.to_i64(), -45000);
+    }
+
+    #[test]
     fn test_arithmetic() {
         let d1 = Decimal128::from_string("100.50").unwrap();
         let d2 = Decimal128::from_string("50.25").unwrap();
@@ -441,5 +549,29 @@ mod tests {
 
         let d = parse_decimal_literal("99.99m").unwrap();
         assert_eq!(d.to_string(), "99.99");
+    }
+
+    #[test]
+    fn test_add_overflow_returns_error() {
+        let max = Decimal128::new(0, int_to_coef(i128::MAX));
+        let one = Decimal128::from_i64(1);
+
+        assert_eq!(max + one, Err(DecimalError::Overflow));
+    }
+
+    #[test]
+    fn test_mul_overflow_returns_error() {
+        let huge = Decimal128::new(0, int_to_coef(i128::MAX));
+        let two = Decimal128::from_i64(2);
+
+        assert_eq!(huge * two, Err(DecimalError::Overflow));
+    }
+
+    #[test]
+    fn test_compare_negative_scale() {
+        let lhs = Decimal128::new(-2, int_to_coef(123));
+        let rhs = Decimal128::from_i64(12299);
+
+        assert!(lhs > rhs);
     }
 }

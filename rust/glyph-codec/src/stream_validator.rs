@@ -147,7 +147,13 @@ pub enum ErrorCode {
     ConstraintPattern,
     ConstraintEnum,
     InvalidType,
+    LimitExceeded,
+    InvalidStructure,
 }
+
+pub const DEFAULT_MAX_BUFFER: usize = 1 << 20; // 1 MB
+pub const DEFAULT_MAX_FIELDS: usize = 1000;
+pub const DEFAULT_MAX_ERRORS: usize = 100;
 
 /// Validation error.
 #[derive(Debug, Clone)]
@@ -231,10 +237,15 @@ pub struct StreamingValidator {
 
     // Timeline
     timeline: Vec<TimelineEvent>,
+
+    // Hard limits
+    max_buffer_size: usize,
+    max_field_count: usize,
+    max_error_count: usize,
 }
 
 /// Field value during parsing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FieldValue {
     Null,
     Bool(bool),
@@ -269,7 +280,35 @@ impl StreamingValidator {
             complete_at_token: 0,
             complete_at_time: Duration::ZERO,
             timeline: Vec::new(),
+            max_buffer_size: DEFAULT_MAX_BUFFER,
+            max_field_count: DEFAULT_MAX_FIELDS,
+            max_error_count: DEFAULT_MAX_ERRORS,
         }
+    }
+
+    pub fn with_limits(
+        mut self,
+        max_buffer_size: usize,
+        max_field_count: usize,
+        max_error_count: usize,
+    ) -> Self {
+        if max_buffer_size > 0 {
+            self.max_buffer_size = max_buffer_size;
+        }
+        if max_field_count > 0 {
+            self.max_field_count = max_field_count;
+        }
+        if max_error_count > 0 {
+            self.max_error_count = max_error_count;
+        }
+        self
+    }
+
+    fn add_error(&mut self, error: ValidationError) {
+        if self.errors.len() >= self.max_error_count {
+            return;
+        }
+        self.errors.push(error);
     }
 
     /// Reset the validator for reuse.
@@ -313,6 +352,9 @@ impl StreamingValidator {
         for c in token.chars() {
             self.char_count += 1;
             self.process_char(c);
+            if self.state == ValidatorState::Error {
+                break;
+            }
         }
 
         let elapsed = self.start_time.map(|t| t.elapsed()).unwrap_or(Duration::ZERO);
@@ -365,6 +407,19 @@ impl StreamingValidator {
     }
 
     fn process_char(&mut self, c: char) {
+        if matches!(self.state, ValidatorState::Complete | ValidatorState::Error) {
+            return;
+        }
+
+        if self.buffer.len() >= self.max_buffer_size {
+            self.state = ValidatorState::Error;
+            self.add_error(ValidationError::new(
+                ErrorCode::LimitExceeded,
+                "Buffer size limit exceeded",
+            ));
+            return;
+        }
+
         self.buffer.push(c);
 
         // Handle escape sequences
@@ -402,15 +457,30 @@ impl StreamingValidator {
             '{' => {
                 if self.state == ValidatorState::Waiting {
                     self.state = ValidatorState::InObject;
+                } else if self.depth >= 1 {
+                    self.current_val.push(c);
                 }
                 self.depth += 1;
             }
             '}' => {
+                if self.depth == 0 {
+                    self.state = ValidatorState::Error;
+                    self.add_error(ValidationError::new(
+                        ErrorCode::InvalidStructure,
+                        "Unexpected closing brace",
+                    ));
+                    return;
+                }
+                if self.depth > 1 {
+                    self.current_val.push(c);
+                }
                 self.depth -= 1;
                 if self.depth == 0 {
                     self.finish_field();
-                    self.state = ValidatorState::Complete;
-                    self.validate_complete();
+                    if self.state != ValidatorState::Error {
+                        self.state = ValidatorState::Complete;
+                        self.validate_complete();
+                    }
                 }
             }
             '[' => {
@@ -418,6 +488,14 @@ impl StreamingValidator {
                 self.current_val.push(c);
             }
             ']' => {
+                if self.depth == 0 {
+                    self.state = ValidatorState::Error;
+                    self.add_error(ValidationError::new(
+                        ErrorCode::InvalidStructure,
+                        "Unexpected closing bracket",
+                    ));
+                    return;
+                }
                 self.depth -= 1;
                 self.current_val.push(c);
             }
@@ -451,26 +529,40 @@ impl StreamingValidator {
         self.current_val.clear();
         self.has_key = false;
 
+        if !self.fields.contains_key(&key) && self.fields.len() >= self.max_field_count {
+            self.state = ValidatorState::Error;
+            self.add_error(ValidationError::new(
+                ErrorCode::LimitExceeded,
+                "Field count limit exceeded",
+            ));
+            return;
+        }
+
         let value = self.parse_value(&val_str);
 
         // Check for tool/action field
         if key == "action" || key == "tool" {
             if let FieldValue::Str(ref s) = value {
+                let discovered_now = self.tool_name.is_none();
                 self.tool_name = Some(s.clone());
 
                 // Validate against allow list
                 if !self.registry.is_allowed(s) {
-                    self.errors.push(
+                    self.add_error(
                         ValidationError::new(ErrorCode::UnknownTool, &format!("Unknown tool: {}", s))
                             .with_field(&key)
                     );
+                }
+
+                if discovered_now {
+                    self.validate_existing_fields(s);
                 }
             }
         }
 
         // Validate field constraints
-        if let Some(ref tool_name) = self.tool_name.clone() {
-            self.validate_field(&key, &value, tool_name);
+        if let Some(tool_name) = self.tool_name.clone() {
+            self.validate_field(&key, &value, &tool_name);
         }
 
         self.fields.insert(key, value);
@@ -514,10 +606,26 @@ impl StreamingValidator {
             None => return,
         };
 
-        let arg_schema = match schema.args.get(key) {
+        let arg_schema = match schema.args.get(key).cloned() {
             Some(s) => s,
             None => return,
         };
+
+        if !Self::type_matches(&arg_schema, value) {
+            self.add_error(
+                ValidationError::new(
+                    ErrorCode::InvalidType,
+                    &format!(
+                        "{} expected {} but got {}",
+                        key,
+                        arg_schema.arg_type,
+                        Self::field_type_name(value),
+                    ),
+                )
+                .with_field(key),
+            );
+            return;
+        }
 
         // Numeric constraints
         if let Some(num) = match value {
@@ -527,7 +635,7 @@ impl StreamingValidator {
         } {
             if let Some(min) = arg_schema.min {
                 if num < min {
-                    self.errors.push(
+                    self.add_error(
                         ValidationError::new(ErrorCode::ConstraintMin, &format!("{} < {}", key, min))
                             .with_field(key)
                     );
@@ -535,7 +643,7 @@ impl StreamingValidator {
             }
             if let Some(max) = arg_schema.max {
                 if num > max {
-                    self.errors.push(
+                    self.add_error(
                         ValidationError::new(ErrorCode::ConstraintMax, &format!("{} > {}", key, max))
                             .with_field(key)
                     );
@@ -547,7 +655,7 @@ impl StreamingValidator {
         if let FieldValue::Str(s) = value {
             if let Some(min_len) = arg_schema.min_len {
                 if s.len() < min_len {
-                    self.errors.push(
+                    self.add_error(
                         ValidationError::new(ErrorCode::ConstraintLen, &format!("{} length < {}", key, min_len))
                             .with_field(key)
                     );
@@ -555,7 +663,7 @@ impl StreamingValidator {
             }
             if let Some(max_len) = arg_schema.max_len {
                 if s.len() > max_len {
-                    self.errors.push(
+                    self.add_error(
                         ValidationError::new(ErrorCode::ConstraintLen, &format!("{} length > {}", key, max_len))
                             .with_field(key)
                     );
@@ -563,7 +671,7 @@ impl StreamingValidator {
             }
             if let Some(ref pattern) = arg_schema.pattern {
                 if !pattern.is_match(s) {
-                    self.errors.push(
+                    self.add_error(
                         ValidationError::new(ErrorCode::ConstraintPattern, &format!("{} pattern mismatch", key))
                             .with_field(key)
                     );
@@ -571,7 +679,7 @@ impl StreamingValidator {
             }
             if let Some(ref enum_values) = arg_schema.enum_values {
                 if !enum_values.contains(s) {
-                    self.errors.push(
+                    self.add_error(
                         ValidationError::new(ErrorCode::ConstraintEnum, &format!("{} not in allowed values", key))
                             .with_field(key)
                     );
@@ -580,9 +688,43 @@ impl StreamingValidator {
         }
     }
 
+    fn validate_existing_fields(&mut self, tool_name: &str) {
+        let fields: Vec<(String, FieldValue)> = self
+            .fields
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+
+        for (key, value) in fields {
+            self.validate_field(&key, &value, tool_name);
+        }
+    }
+
+    fn type_matches(arg_schema: &ArgSchema, value: &FieldValue) -> bool {
+        let expected = arg_schema.arg_type.to_ascii_lowercase();
+
+        match value {
+            FieldValue::Null => !arg_schema.required,
+            FieldValue::Bool(_) => matches!(expected.as_str(), "bool" | "boolean"),
+            FieldValue::Int(_) => matches!(expected.as_str(), "int" | "integer" | "float" | "number"),
+            FieldValue::Float(_) => matches!(expected.as_str(), "float" | "number"),
+            FieldValue::Str(_) => matches!(expected.as_str(), "string" | "str"),
+        }
+    }
+
+    fn field_type_name(value: &FieldValue) -> &'static str {
+        match value {
+            FieldValue::Null => "null",
+            FieldValue::Bool(_) => "bool",
+            FieldValue::Int(_) => "int",
+            FieldValue::Float(_) => "float",
+            FieldValue::Str(_) => "string",
+        }
+    }
+
     fn validate_complete(&mut self) {
         if self.tool_name.is_none() {
-            self.errors.push(ValidationError::new(ErrorCode::MissingTool, "No action field found"));
+            self.add_error(ValidationError::new(ErrorCode::MissingTool, "No action field found"));
             return;
         }
 
@@ -593,13 +735,23 @@ impl StreamingValidator {
         };
 
         // Check required fields
-        for (arg_name, arg_schema) in &schema.args {
-            if arg_schema.required && !self.fields.contains_key(arg_name) {
-                self.errors.push(
-                    ValidationError::new(ErrorCode::MissingRequired, &format!("Missing required field: {}", arg_name))
-                        .with_field(arg_name)
-                );
-            }
+        let missing_required: Vec<String> = schema
+            .args
+            .iter()
+            .filter_map(|(arg_name, arg_schema)| {
+                if arg_schema.required && !self.fields.contains_key(arg_name) {
+                    Some(arg_name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for arg_name in missing_required {
+            self.add_error(
+                ValidationError::new(ErrorCode::MissingRequired, &format!("Missing required field: {}", arg_name))
+                    .with_field(&arg_name)
+            );
         }
     }
 
@@ -609,7 +761,7 @@ impl StreamingValidator {
 
         ValidationResult {
             complete: self.state == ValidatorState::Complete,
-            valid: self.errors.is_empty(),
+            valid: self.state != ValidatorState::Error && self.errors.is_empty(),
             tool_name: self.tool_name.clone(),
             tool_allowed,
             errors: self.errors.clone(),
@@ -628,7 +780,13 @@ impl StreamingValidator {
 
     /// Check if the stream should be cancelled.
     pub fn should_stop(&self) -> bool {
-        self.errors.iter().any(|e| e.code == ErrorCode::UnknownTool)
+        self.state == ValidatorState::Error
+            || self.errors.iter().any(|e| {
+                matches!(
+                    e.code,
+                    ErrorCode::UnknownTool | ErrorCode::LimitExceeded | ErrorCode::InvalidStructure
+                )
+            })
     }
 }
 
@@ -756,5 +914,116 @@ mod tests {
         assert!(registry.is_allowed("calculate"));
         assert!(registry.is_allowed("browse"));
         assert!(!registry.is_allowed("unknown"));
+    }
+
+    #[test]
+    fn test_streaming_validator_type_enforcement() {
+        let mut registry = ToolRegistry::new();
+        registry.register(
+            ToolSchema::new("search")
+                .arg("query", ArgSchema::new("string").required())
+                .arg("max_results", ArgSchema::new("int")),
+        );
+
+        let mut v = StreamingValidator::new(registry);
+        v.start();
+
+        let result = v.push_token("{action=\"search\" query=123 max_results=\"ten\"}");
+
+        assert!(!result.valid);
+        assert_eq!(
+            result
+                .errors
+                .iter()
+                .filter(|e| e.code == ErrorCode::InvalidType)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn test_streaming_validator_type_enforcement_when_action_arrives_last() {
+        let mut registry = ToolRegistry::new();
+        registry.register(
+            ToolSchema::new("search")
+                .arg("query", ArgSchema::new("string").required())
+                .arg("max_results", ArgSchema::new("int")),
+        );
+
+        let mut v = StreamingValidator::new(registry);
+        v.start();
+
+        let result = v.push_token("{query=123 max_results=\"ten\" action=\"search\"}");
+
+        assert!(!result.valid);
+        assert_eq!(
+            result
+                .errors
+                .iter()
+                .filter(|e| e.code == ErrorCode::InvalidType)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn test_streaming_validator_buffer_limit() {
+        let registry = ToolRegistry::new();
+        let mut v =
+            StreamingValidator::new(registry).with_limits(16, DEFAULT_MAX_FIELDS, DEFAULT_MAX_ERRORS);
+        v.start();
+
+        let result = v.push_token("{action=\"search\" query=\"this is too long\"}");
+
+        assert!(v.should_stop());
+        assert!(matches!(v.state, ValidatorState::Error));
+        assert!(result.errors.iter().any(|e| e.code == ErrorCode::LimitExceeded));
+    }
+
+    #[test]
+    fn test_streaming_validator_field_limit() {
+        let mut registry = ToolRegistry::new();
+        registry.register(ToolSchema::new("test"));
+
+        let mut v =
+            StreamingValidator::new(registry).with_limits(DEFAULT_MAX_BUFFER, 2, DEFAULT_MAX_ERRORS);
+        v.start();
+
+        let result = v.push_token("{action=\"test\" a=1 b=2 c=3}");
+
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.code == ErrorCode::LimitExceeded));
+    }
+
+    #[test]
+    fn test_streaming_validator_error_limit() {
+        let mut registry = ToolRegistry::new();
+        registry.register(
+            ToolSchema::new("search")
+                .arg("a", ArgSchema::new("int").min(10.0))
+                .arg("b", ArgSchema::new("int").min(10.0))
+                .arg("c", ArgSchema::new("int").min(10.0)),
+        );
+
+        let mut v =
+            StreamingValidator::new(registry).with_limits(DEFAULT_MAX_BUFFER, DEFAULT_MAX_FIELDS, 2);
+        v.start();
+
+        let result = v.push_token("{action=\"search\" a=1 b=2 c=3}");
+
+        assert!(result.errors.len() <= 2);
+    }
+
+    #[test]
+    fn test_streaming_validator_depth_underflow() {
+        let registry = ToolRegistry::new();
+        let mut v = StreamingValidator::new(registry);
+        v.start();
+
+        let result = v.push_token("}");
+
+        assert!(v.should_stop());
+        assert!(!result.complete);
+        assert!(result.errors.iter().any(|e| e.code == ErrorCode::InvalidStructure));
     }
 }

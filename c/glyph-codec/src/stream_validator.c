@@ -12,6 +12,12 @@
 #include <time.h>
 #include <limits.h>
 
+#define DEFAULT_MAX_BUFFER   (1024u * 1024u)
+#define DEFAULT_MAX_FIELDS   1000u
+#define DEFAULT_MAX_ERRORS   100u
+#define DEFAULT_MAX_TIMELINE 1024u
+#define DEFAULT_MAX_DEPTH    128
+
 /* ============================================================
  * Internal Helpers
  * ============================================================ */
@@ -28,6 +34,46 @@ static uint64_t current_time_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static void free_enum_values(char **values, size_t count) {
+    if (!values) return;
+    for (size_t i = 0; i < count; i++) {
+        free(values[i]);
+    }
+    free(values);
+}
+
+static bool grow_char_buffer(char **buf, size_t *cap, size_t needed, size_t max_cap) {
+    if (!buf || !cap) return false;
+    if (needed <= *cap) return true;
+    if (needed > max_cap) return false;
+
+    size_t new_cap = *cap ? *cap : 1;
+    while (new_cap < needed) {
+        if (new_cap > max_cap / 2) {
+            new_cap = max_cap;
+            break;
+        }
+        new_cap *= 2;
+    }
+    if (new_cap < needed || new_cap > max_cap) return false;
+
+    char *new_buf = realloc(*buf, new_cap);
+    if (!new_buf) return false;
+
+    *buf = new_buf;
+    *cap = new_cap;
+    return true;
+}
+
+static bool append_buffer_char(char **buf, size_t *len, size_t *cap, size_t max_cap, char c) {
+    if (!grow_char_buffer(buf, cap, *len + 2, max_cap)) {
+        return false;
+    }
+    (*buf)[(*len)++] = c;
+    (*buf)[*len] = '\0';
+    return true;
 }
 
 /* ============================================================
@@ -48,6 +94,11 @@ arg_schema_t *arg_schema_new(const char *name, const char *type) {
     a->pattern = NULL;
     a->enum_values = NULL;
     a->enum_count = 0;
+
+    if ((name && !a->name) || (type && !a->type)) {
+        arg_schema_free(a);
+        return NULL;
+    }
 
     return a;
 }
@@ -80,20 +131,25 @@ void arg_schema_set_pattern(arg_schema_t *a, const char *pattern) {
 void arg_schema_set_enum(arg_schema_t *a, const char **values, size_t count) {
     if (!a) return;
 
-    /* Free existing */
-    if (a->enum_values) {
-        for (size_t i = 0; i < a->enum_count; i++) {
-            free(a->enum_values[i]);
+    char **new_values = NULL;
+    if (count > 0) {
+        new_values = calloc(count, sizeof(char *));
+        if (!new_values) {
+            return;
         }
-        free(a->enum_values);
     }
-
-    a->enum_values = calloc(count, sizeof(char *));
-    a->enum_count = count;
 
     for (size_t i = 0; i < count; i++) {
-        a->enum_values[i] = strdup_safe(values[i]);
+        new_values[i] = strdup_safe(values[i]);
+        if (values[i] && !new_values[i]) {
+            free_enum_values(new_values, count);
+            return;
+        }
     }
+
+    free_enum_values(a->enum_values, a->enum_count);
+    a->enum_values = new_values;
+    a->enum_count = count;
 }
 
 void arg_schema_free(arg_schema_t *a) {
@@ -103,12 +159,7 @@ void arg_schema_free(arg_schema_t *a) {
     free(a->type);
     free(a->pattern);
 
-    if (a->enum_values) {
-        for (size_t i = 0; i < a->enum_count; i++) {
-            free(a->enum_values[i]);
-        }
-        free(a->enum_values);
-    }
+    free_enum_values(a->enum_values, a->enum_count);
 
     free(a);
 }
@@ -127,6 +178,11 @@ tool_schema_t *tool_schema_new(const char *name, const char *description) {
     t->args_count = 0;
     t->args_capacity = 0;
 
+    if ((name && !t->name) || (description && !t->description)) {
+        tool_schema_free(t);
+        return NULL;
+    }
+
     return t;
 }
 
@@ -136,7 +192,10 @@ void tool_schema_add_arg(tool_schema_t *t, arg_schema_t *arg) {
     if (t->args_count >= t->args_capacity) {
         size_t new_cap = t->args_capacity == 0 ? 8 : t->args_capacity * 2;
         arg_schema_t *new_args = realloc(t->args, new_cap * sizeof(arg_schema_t));
-        if (!new_args) return;
+        if (!new_args) {
+            arg_schema_free(arg);
+            return;
+        }
         t->args = new_args;
         t->args_capacity = new_cap;
     }
@@ -155,12 +214,7 @@ void tool_schema_free(tool_schema_t *t) {
         free(t->args[i].name);
         free(t->args[i].type);
         free(t->args[i].pattern);
-        if (t->args[i].enum_values) {
-            for (size_t j = 0; j < t->args[i].enum_count; j++) {
-                free(t->args[i].enum_values[j]);
-            }
-            free(t->args[i].enum_values);
-        }
+        free_enum_values(t->args[i].enum_values, t->args[i].enum_count);
     }
     free(t->args);
 
@@ -193,12 +247,7 @@ void tool_registry_free(tool_registry_t *r) {
             free(r->tools[i].args[j].name);
             free(r->tools[i].args[j].type);
             free(r->tools[i].args[j].pattern);
-            if (r->tools[i].args[j].enum_values) {
-                for (size_t k = 0; k < r->tools[i].args[j].enum_count; k++) {
-                    free(r->tools[i].args[j].enum_values[k]);
-                }
-                free(r->tools[i].args[j].enum_values);
-            }
+            free_enum_values(r->tools[i].args[j].enum_values, r->tools[i].args[j].enum_count);
         }
         free(r->tools[i].args);
     }
@@ -213,7 +262,10 @@ void tool_registry_register(tool_registry_t *r, tool_schema_t *tool) {
     if (r->tools_count >= r->tools_capacity) {
         size_t new_cap = r->tools_capacity == 0 ? 8 : r->tools_capacity * 2;
         tool_schema_t *new_tools = realloc(r->tools, new_cap * sizeof(tool_schema_t));
-        if (!new_tools) return;
+        if (!new_tools) {
+            tool_schema_free(tool);
+            return;
+        }
         r->tools = new_tools;
         r->tools_capacity = new_cap;
     }
@@ -244,11 +296,20 @@ tool_registry_t *tool_registry_default(void) {
     /* Register 'search' tool */
     tool_schema_t *search = tool_schema_new("search", "Search for information");
     arg_schema_t *query = arg_schema_new("query", "string");
+    if (!search || !query) {
+        tool_schema_free(search);
+        arg_schema_free(query);
+        goto fail;
+    }
     arg_schema_set_required(query, true);
     arg_schema_set_length(query, 1, SIZE_MAX);
     tool_schema_add_arg(search, query);
 
     arg_schema_t *max_results = arg_schema_new("max_results", "int");
+    if (!max_results) {
+        tool_schema_free(search);
+        goto fail;
+    }
     arg_schema_set_range(max_results, 1, 100);
     tool_schema_add_arg(search, max_results);
     tool_registry_register(r, search);
@@ -256,10 +317,19 @@ tool_registry_t *tool_registry_default(void) {
     /* Register 'calculate' tool */
     tool_schema_t *calculate = tool_schema_new("calculate", "Evaluate a mathematical expression");
     arg_schema_t *expression = arg_schema_new("expression", "string");
+    if (!calculate || !expression) {
+        tool_schema_free(calculate);
+        arg_schema_free(expression);
+        goto fail;
+    }
     arg_schema_set_required(expression, true);
     tool_schema_add_arg(calculate, expression);
 
     arg_schema_t *precision = arg_schema_new("precision", "int");
+    if (!precision) {
+        tool_schema_free(calculate);
+        goto fail;
+    }
     arg_schema_set_range(precision, 0, 15);
     tool_schema_add_arg(calculate, precision);
     tool_registry_register(r, calculate);
@@ -267,6 +337,11 @@ tool_registry_t *tool_registry_default(void) {
     /* Register 'browse' tool */
     tool_schema_t *browse = tool_schema_new("browse", "Fetch a web page");
     arg_schema_t *url = arg_schema_new("url", "string");
+    if (!browse || !url) {
+        tool_schema_free(browse);
+        arg_schema_free(url);
+        goto fail;
+    }
     arg_schema_set_required(url, true);
     arg_schema_set_pattern(url, "^https?://");
     tool_schema_add_arg(browse, url);
@@ -275,11 +350,20 @@ tool_registry_t *tool_registry_default(void) {
     /* Register 'execute' tool */
     tool_schema_t *execute = tool_schema_new("execute", "Execute a shell command");
     arg_schema_t *command = arg_schema_new("command", "string");
+    if (!execute || !command) {
+        tool_schema_free(execute);
+        arg_schema_free(command);
+        goto fail;
+    }
     arg_schema_set_required(command, true);
     tool_schema_add_arg(execute, command);
     tool_registry_register(r, execute);
 
     return r;
+
+fail:
+    tool_registry_free(r);
+    return NULL;
 }
 
 /* ============================================================
@@ -294,6 +378,11 @@ streaming_validator_t *streaming_validator_new(tool_registry_t *registry) {
 
     /* Initialize parser state */
     v->buffer = malloc(256);
+    if (!v->buffer) {
+        free(v);
+        return NULL;
+    }
+    v->buffer[0] = '\0';
     v->buffer_len = 0;
     v->buffer_cap = 256;
     v->state = VALIDATOR_WAITING;
@@ -302,6 +391,12 @@ streaming_validator_t *streaming_validator_new(tool_registry_t *registry) {
     v->escape_next = false;
     v->current_key = NULL;
     v->current_val = malloc(256);
+    if (!v->current_val) {
+        free(v->buffer);
+        free(v);
+        return NULL;
+    }
+    v->current_val[0] = '\0';
     v->current_val_len = 0;
     v->current_val_cap = 256;
     v->has_key = false;
@@ -370,6 +465,7 @@ void streaming_validator_reset(streaming_validator_t *v) {
 
     /* Reset buffer */
     v->buffer_len = 0;
+    if (v->buffer) v->buffer[0] = '\0';
     v->state = VALIDATOR_WAITING;
     v->depth = 0;
     v->in_string = false;
@@ -377,6 +473,7 @@ void streaming_validator_reset(streaming_validator_t *v) {
     free(v->current_key);
     v->current_key = NULL;
     v->current_val_len = 0;
+    if (v->current_val) v->current_val[0] = '\0';
     v->has_key = false;
 
     /* Reset parsed data */
@@ -423,8 +520,14 @@ void streaming_validator_start(streaming_validator_t *v) {
 /* Add error to validator */
 static void add_error(streaming_validator_t *v, validation_error_code_t code,
                       const char *message, const char *field) {
+    if (v->errors_count >= DEFAULT_MAX_ERRORS) {
+        return;
+    }
     if (v->errors_count >= v->errors_capacity) {
         size_t new_cap = v->errors_capacity == 0 ? 8 : v->errors_capacity * 2;
+        if (new_cap > DEFAULT_MAX_ERRORS) {
+            new_cap = DEFAULT_MAX_ERRORS;
+        }
         validation_error_t *new_errors = realloc(v->errors, new_cap * sizeof(validation_error_t));
         if (!new_errors) return;
         v->errors = new_errors;
@@ -441,8 +544,14 @@ static void add_error(streaming_validator_t *v, validation_error_code_t code,
 static void add_timeline_event(streaming_validator_t *v, const char *event,
                                 size_t token, size_t char_pos, uint64_t elapsed,
                                 const char *detail) {
+    if (v->timeline_count >= DEFAULT_MAX_TIMELINE) {
+        return;
+    }
     if (v->timeline_count >= v->timeline_capacity) {
         size_t new_cap = v->timeline_capacity == 0 ? 8 : v->timeline_capacity * 2;
+        if (new_cap > DEFAULT_MAX_TIMELINE) {
+            new_cap = DEFAULT_MAX_TIMELINE;
+        }
         timeline_event_t *new_timeline = realloc(v->timeline, new_cap * sizeof(timeline_event_t));
         if (!new_timeline) return;
         v->timeline = new_timeline;
@@ -517,15 +626,41 @@ static validator_field_value_t parse_value(const char *s, size_t len) {
 
 /* Add parsed field */
 static void add_field(streaming_validator_t *v, const char *key, validator_field_value_t value) {
+    if (v->fields_count >= DEFAULT_MAX_FIELDS) {
+        if (value.type == VFIELD_STR) {
+            free(value.str_val);
+        }
+        add_error(v, VERR_CONSTRAINT_LEN, "too many fields", key);
+        v->state = VALIDATOR_ERROR;
+        return;
+    }
     if (v->fields_count >= v->fields_capacity) {
         size_t new_cap = v->fields_capacity == 0 ? 16 : v->fields_capacity * 2;
+        if (new_cap > DEFAULT_MAX_FIELDS) {
+            new_cap = DEFAULT_MAX_FIELDS;
+        }
         parsed_field_t *new_fields = realloc(v->fields, new_cap * sizeof(parsed_field_t));
-        if (!new_fields) return;
+        if (!new_fields) {
+            if (value.type == VFIELD_STR) {
+                free(value.str_val);
+            }
+            add_error(v, VERR_CONSTRAINT_LEN, "out of memory", key);
+            v->state = VALIDATOR_ERROR;
+            return;
+        }
         v->fields = new_fields;
         v->fields_capacity = new_cap;
     }
 
     v->fields[v->fields_count].key = strdup_safe(key);
+    if (key && !v->fields[v->fields_count].key) {
+        if (value.type == VFIELD_STR) {
+            free(value.str_val);
+        }
+        add_error(v, VERR_CONSTRAINT_LEN, "out of memory", key);
+        v->state = VALIDATOR_ERROR;
+        return;
+    }
     v->fields[v->fields_count].value = value;
     v->fields_count++;
 }
@@ -608,10 +743,15 @@ static void finish_field(streaming_validator_t *v) {
     /* Check for tool/action field */
     if (strcmp(v->current_key, "action") == 0 || strcmp(v->current_key, "tool") == 0) {
         if (value.type == VFIELD_STR && value.str_val) {
+            free(v->tool_name);
             v->tool_name = strdup_safe(value.str_val);
+            if (!v->tool_name) {
+                add_error(v, VERR_CONSTRAINT_LEN, "out of memory", v->current_key);
+                v->state = VALIDATOR_ERROR;
+            }
 
             /* Validate against allow list */
-            if (!tool_registry_is_allowed(v->registry, value.str_val)) {
+            if (v->tool_name && !tool_registry_is_allowed(v->registry, value.str_val)) {
                 char buf[128];
                 snprintf(buf, sizeof(buf), "Unknown tool: %s", value.str_val);
                 add_error(v, VERR_UNKNOWN_TOOL, buf, v->current_key);
@@ -663,31 +803,33 @@ static void validate_complete(streaming_validator_t *v) {
 
 /* Process a single character */
 static void process_char(streaming_validator_t *v, char c) {
-    /* Grow buffer if needed */
-    if (v->buffer_len >= v->buffer_cap - 1) {
-        size_t new_cap = v->buffer_cap * 2;
-        char *new_buf = realloc(v->buffer, new_cap);
-        if (new_buf) {
-            v->buffer = new_buf;
-            v->buffer_cap = new_cap;
-        }
+    if (v->state == VALIDATOR_ERROR || v->state == VALIDATOR_COMPLETE) {
+        return;
     }
-    v->buffer[v->buffer_len++] = c;
-    v->buffer[v->buffer_len] = '\0';
+
+    if (!append_buffer_char(&v->buffer, &v->buffer_len, &v->buffer_cap, DEFAULT_MAX_BUFFER, c)) {
+        add_error(v, VERR_CONSTRAINT_LEN, "validator buffer limit exceeded", NULL);
+        v->state = VALIDATOR_ERROR;
+        return;
+    }
 
     /* Handle escape sequences */
     if (v->escape_next) {
         v->escape_next = false;
-        if (v->current_val_len < v->current_val_cap - 1) {
-            v->current_val[v->current_val_len++] = c;
+        if (!append_buffer_char(&v->current_val, &v->current_val_len, &v->current_val_cap,
+                                DEFAULT_MAX_BUFFER, c)) {
+            add_error(v, VERR_CONSTRAINT_LEN, "value buffer limit exceeded", v->current_key);
+            v->state = VALIDATOR_ERROR;
         }
         return;
     }
 
     if (c == '\\' && v->in_string) {
         v->escape_next = true;
-        if (v->current_val_len < v->current_val_cap - 1) {
-            v->current_val[v->current_val_len++] = c;
+        if (!append_buffer_char(&v->current_val, &v->current_val_len, &v->current_val_cap,
+                                DEFAULT_MAX_BUFFER, c)) {
+            add_error(v, VERR_CONSTRAINT_LEN, "value buffer limit exceeded", v->current_key);
+            v->state = VALIDATOR_ERROR;
         }
         return;
     }
@@ -705,8 +847,10 @@ static void process_char(streaming_validator_t *v, char c) {
 
     /* Inside string - accumulate */
     if (v->in_string) {
-        if (v->current_val_len < v->current_val_cap - 1) {
-            v->current_val[v->current_val_len++] = c;
+        if (!append_buffer_char(&v->current_val, &v->current_val_len, &v->current_val_cap,
+                                DEFAULT_MAX_BUFFER, c)) {
+            add_error(v, VERR_CONSTRAINT_LEN, "value buffer limit exceeded", v->current_key);
+            v->state = VALIDATOR_ERROR;
         }
         return;
     }
@@ -717,10 +861,20 @@ static void process_char(streaming_validator_t *v, char c) {
             if (v->state == VALIDATOR_WAITING) {
                 v->state = VALIDATOR_IN_OBJECT;
             }
+            if (v->depth >= DEFAULT_MAX_DEPTH) {
+                add_error(v, VERR_CONSTRAINT_LEN, "nesting depth exceeded", NULL);
+                v->state = VALIDATOR_ERROR;
+                return;
+            }
             v->depth++;
             break;
 
         case '}':
+            if (v->depth <= 0) {
+                add_error(v, VERR_CONSTRAINT_LEN, "unbalanced closing brace", NULL);
+                v->state = VALIDATOR_ERROR;
+                return;
+            }
             v->depth--;
             if (v->depth == 0) {
                 finish_field(v);
@@ -730,16 +884,30 @@ static void process_char(streaming_validator_t *v, char c) {
             break;
 
         case '[':
+            if (v->depth >= DEFAULT_MAX_DEPTH) {
+                add_error(v, VERR_CONSTRAINT_LEN, "nesting depth exceeded", v->current_key);
+                v->state = VALIDATOR_ERROR;
+                return;
+            }
             v->depth++;
-            if (v->current_val_len < v->current_val_cap - 1) {
-                v->current_val[v->current_val_len++] = c;
+            if (!append_buffer_char(&v->current_val, &v->current_val_len, &v->current_val_cap,
+                                    DEFAULT_MAX_BUFFER, c)) {
+                add_error(v, VERR_CONSTRAINT_LEN, "value buffer limit exceeded", v->current_key);
+                v->state = VALIDATOR_ERROR;
             }
             break;
 
         case ']':
+            if (v->depth <= 0) {
+                add_error(v, VERR_CONSTRAINT_LEN, "unbalanced closing bracket", v->current_key);
+                v->state = VALIDATOR_ERROR;
+                return;
+            }
             v->depth--;
-            if (v->current_val_len < v->current_val_cap - 1) {
-                v->current_val[v->current_val_len++] = c;
+            if (!append_buffer_char(&v->current_val, &v->current_val_len, &v->current_val_cap,
+                                    DEFAULT_MAX_BUFFER, c)) {
+                add_error(v, VERR_CONSTRAINT_LEN, "value buffer limit exceeded", v->current_key);
+                v->state = VALIDATOR_ERROR;
             }
             break;
 
@@ -754,11 +922,19 @@ static void process_char(streaming_validator_t *v, char c) {
                 char *start = v->current_val;
                 while (*start && isspace(*start)) start++;
                 v->current_key = strdup_safe(start);
+                if (!v->current_key) {
+                    add_error(v, VERR_CONSTRAINT_LEN, "out of memory", NULL);
+                    v->state = VALIDATOR_ERROR;
+                    return;
+                }
                 v->current_val_len = 0;
+                v->current_val[0] = '\0';
                 v->has_key = true;
             } else {
-                if (v->current_val_len < v->current_val_cap - 1) {
-                    v->current_val[v->current_val_len++] = c;
+                if (!append_buffer_char(&v->current_val, &v->current_val_len, &v->current_val_cap,
+                                        DEFAULT_MAX_BUFFER, c)) {
+                    add_error(v, VERR_CONSTRAINT_LEN, "value buffer limit exceeded", v->current_key);
+                    v->state = VALIDATOR_ERROR;
                 }
             }
             break;
@@ -773,8 +949,10 @@ static void process_char(streaming_validator_t *v, char c) {
             break;
 
         default:
-            if (v->current_val_len < v->current_val_cap - 1) {
-                v->current_val[v->current_val_len++] = c;
+            if (!append_buffer_char(&v->current_val, &v->current_val_len, &v->current_val_cap,
+                                    DEFAULT_MAX_BUFFER, c)) {
+                add_error(v, VERR_CONSTRAINT_LEN, "value buffer limit exceeded", v->current_key);
+                v->state = VALIDATOR_ERROR;
             }
     }
 }
@@ -836,6 +1014,7 @@ validation_result_t *streaming_validator_get_result(const streaming_validator_t 
     r->complete = (v->state == VALIDATOR_COMPLETE);
     r->valid = (v->errors_count == 0);
     r->tool_name = strdup_safe(v->tool_name);
+    if (v->tool_name && !r->tool_name) goto fail;
     r->tool_allowed = v->tool_name ? tool_registry_is_allowed(v->registry, v->tool_name) : false;
     r->tool_allowed_set = (v->tool_name != NULL);
 
@@ -843,10 +1022,15 @@ validation_result_t *streaming_validator_get_result(const streaming_validator_t 
     r->errors_count = v->errors_count;
     if (v->errors_count > 0) {
         r->errors = calloc(v->errors_count, sizeof(validation_error_t));
+        if (!r->errors) goto fail;
         for (size_t i = 0; i < v->errors_count; i++) {
             r->errors[i].code = v->errors[i].code;
             r->errors[i].message = strdup_safe(v->errors[i].message);
             r->errors[i].field = strdup_safe(v->errors[i].field);
+            if ((v->errors[i].message && !r->errors[i].message) ||
+                (v->errors[i].field && !r->errors[i].field)) {
+                goto fail;
+            }
         }
     }
 
@@ -854,11 +1038,14 @@ validation_result_t *streaming_validator_get_result(const streaming_validator_t 
     r->fields_count = v->fields_count;
     if (v->fields_count > 0) {
         r->fields = calloc(v->fields_count, sizeof(parsed_field_t));
+        if (!r->fields) goto fail;
         for (size_t i = 0; i < v->fields_count; i++) {
             r->fields[i].key = strdup_safe(v->fields[i].key);
+            if (v->fields[i].key && !r->fields[i].key) goto fail;
             r->fields[i].value = v->fields[i].value;
             if (v->fields[i].value.type == VFIELD_STR) {
                 r->fields[i].value.str_val = strdup_safe(v->fields[i].value.str_val);
+                if (v->fields[i].value.str_val && !r->fields[i].value.str_val) goto fail;
             }
         }
     }
@@ -877,16 +1064,25 @@ validation_result_t *streaming_validator_get_result(const streaming_validator_t 
     r->timeline_count = v->timeline_count;
     if (v->timeline_count > 0) {
         r->timeline = calloc(v->timeline_count, sizeof(timeline_event_t));
+        if (!r->timeline) goto fail;
         for (size_t i = 0; i < v->timeline_count; i++) {
             r->timeline[i].event = strdup_safe(v->timeline[i].event);
             r->timeline[i].token = v->timeline[i].token;
             r->timeline[i].char_pos = v->timeline[i].char_pos;
             r->timeline[i].elapsed = v->timeline[i].elapsed;
             r->timeline[i].detail = strdup_safe(v->timeline[i].detail);
+            if ((v->timeline[i].event && !r->timeline[i].event) ||
+                (v->timeline[i].detail && !r->timeline[i].detail)) {
+                goto fail;
+            }
         }
     }
 
     return r;
+
+fail:
+    validation_result_free(r);
+    return NULL;
 }
 
 bool streaming_validator_should_stop(const streaming_validator_t *v) {
@@ -905,23 +1101,29 @@ void validation_result_free(validation_result_t *r) {
 
     free(r->tool_name);
 
-    for (size_t i = 0; i < r->errors_count; i++) {
-        free(r->errors[i].message);
-        free(r->errors[i].field);
+    if (r->errors) {
+        for (size_t i = 0; i < r->errors_count; i++) {
+            free(r->errors[i].message);
+            free(r->errors[i].field);
+        }
     }
     free(r->errors);
 
-    for (size_t i = 0; i < r->fields_count; i++) {
-        free(r->fields[i].key);
-        if (r->fields[i].value.type == VFIELD_STR) {
-            free(r->fields[i].value.str_val);
+    if (r->fields) {
+        for (size_t i = 0; i < r->fields_count; i++) {
+            free(r->fields[i].key);
+            if (r->fields[i].value.type == VFIELD_STR) {
+                free(r->fields[i].value.str_val);
+            }
         }
     }
     free(r->fields);
 
-    for (size_t i = 0; i < r->timeline_count; i++) {
-        free(r->timeline[i].event);
-        free(r->timeline[i].detail);
+    if (r->timeline) {
+        for (size_t i = 0; i < r->timeline_count; i++) {
+            free(r->timeline[i].event);
+            free(r->timeline[i].detail);
+        }
     }
     free(r->timeline);
 

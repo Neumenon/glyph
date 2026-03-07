@@ -260,6 +260,16 @@ impl VersionSchema {
 
         Ok(())
     }
+
+    fn unknown_fields(&self, data: &HashMap<String, FieldValue>) -> Vec<String> {
+        let mut unknown: Vec<String> = data
+            .keys()
+            .filter(|name| !self.fields.contains_key(*name))
+            .cloned()
+            .collect();
+        unknown.sort();
+        unknown
+    }
 }
 
 // ============================================================
@@ -322,6 +332,15 @@ impl VersionedSchema {
         // Validate in strict mode
         if self.mode == EvolutionMode::Strict {
             schema.validate(&data)?;
+            let unknown_fields = schema.unknown_fields(&data);
+            if !unknown_fields.is_empty() {
+                let noun = if unknown_fields.len() == 1 {
+                    "unknown field"
+                } else {
+                    "unknown fields"
+                };
+                return Err(format!("{}: {}", noun, unknown_fields.join(", ")));
+            }
         }
 
         let mut result = data.clone();
@@ -616,5 +635,22 @@ mod tests {
     #[test]
     fn test_format_version_header() {
         assert_eq!(format_version_header("2.0"), "@version 2.0");
+    }
+
+    #[test]
+    fn test_strict_mode_rejects_unknown_fields() {
+        let mut schema = VersionedSchema::new("Match").with_mode(EvolutionMode::Strict);
+        schema.add_version("1.0", vec![
+            EvolvingField::new("home", FieldType::Str).required(),
+            EvolvingField::new("away", FieldType::Str).required(),
+        ]);
+
+        let mut data = HashMap::new();
+        data.insert("home".to_string(), FieldValue::Str("Arsenal".to_string()));
+        data.insert("away".to_string(), FieldValue::Str("Liverpool".to_string()));
+        data.insert("venue".to_string(), FieldValue::Str("Emirates".to_string()));
+
+        let err = schema.parse(data, "1.0").unwrap_err();
+        assert_eq!(err, "unknown field: venue");
     }
 }

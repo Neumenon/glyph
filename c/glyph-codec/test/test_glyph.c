@@ -3,10 +3,14 @@
  */
 
 #include "glyph.h"
+#include "decimal128.h"
+#include "schema_evolution.h"
+#include "stream_validator.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -283,6 +287,20 @@ TEST(tabular_homogeneous) {
     glyph_value_free(v);
 }
 
+TEST(tabular_columns_sorted) {
+    glyph_value_t *v = glyph_list_new();
+    for (int i = 0; i < 3; i++) {
+        glyph_value_t *m = glyph_map_new();
+        glyph_map_set(m, "b", glyph_int(i + 10));
+        glyph_map_set(m, "a", glyph_int(i));
+        glyph_list_append(v, m);
+    }
+    char *canon = glyph_canonicalize_loose(v);
+    ASSERT_TRUE(strstr(canon, "rows=3 cols=2 [a b]") != NULL);
+    glyph_free(canon);
+    glyph_value_free(v);
+}
+
 TEST(tabular_sparse_keys_no_tabular) {
     /* [{a:1}, {b:2}, {c:3}] - less than 50% common keys */
     glyph_value_t *v = glyph_list_new();
@@ -382,6 +400,100 @@ TEST(json_roundtrip) {
     glyph_value_free(v2);
 }
 
+TEST(json_rejects_trailing_data) {
+    glyph_value_t *v = glyph_from_json("{\"name\":\"test\"} trailing");
+    ASSERT_TRUE(v == NULL);
+}
+
+TEST(json_rejects_excessive_nesting) {
+    const size_t depth = 129;
+    char *json = malloc(depth * 2 + 2);
+    ASSERT_TRUE(json != NULL);
+    for (size_t i = 0; i < depth; i++) {
+        json[i] = '[';
+    }
+    json[depth] = '0';
+    for (size_t i = 0; i < depth; i++) {
+        json[depth + 1 + i] = ']';
+    }
+    json[depth * 2 + 1] = '\0';
+
+    glyph_value_t *v = glyph_from_json(json);
+    ASSERT_TRUE(v == NULL);
+    free(json);
+}
+
+/* ============================================================
+ * Decimal / Schema / Validator Regression Tests
+ * ============================================================ */
+
+TEST(decimal_int64_min_roundtrip) {
+    decimal128_t d = decimal128_from_int(INT64_MIN);
+    ASSERT_TRUE(decimal128_to_int(&d) == INT64_MIN);
+
+    char *s = decimal128_to_string(&d);
+    ASSERT_TRUE(s != NULL);
+    ASSERT_STR_EQ("-9223372036854775808", s);
+    free(s);
+}
+
+TEST(schema_version_schema_free_embedded_fields) {
+    version_schema_t *schema = version_schema_new("test", "1.0");
+    ASSERT_TRUE(schema != NULL);
+
+    evolving_field_config_t config = {
+        .type = FIELD_TYPE_STR,
+        .required = true,
+        .default_value = field_value_str("fallback"),
+        .added_in = "1.0",
+        .deprecated_in = NULL,
+        .renamed_from = NULL,
+        .validation = NULL,
+    };
+    evolving_field_t *field = evolving_field_new("name", &config);
+    ASSERT_TRUE(field != NULL);
+
+    version_schema_add_field(schema, field);
+    version_schema_free(schema);
+    field_value_free(&config.default_value);
+
+    ASSERT_TRUE(true);
+}
+
+TEST(stream_validator_rejects_excessive_depth) {
+    tool_registry_t *registry = tool_registry_default();
+    ASSERT_TRUE(registry != NULL);
+
+    streaming_validator_t *validator = streaming_validator_new(registry);
+    ASSERT_TRUE(validator != NULL);
+
+    const size_t depth = 129;
+    char *payload = malloc(64 + depth * 2 + 1);
+    ASSERT_TRUE(payload != NULL);
+
+    size_t pos = 0;
+    pos += (size_t)snprintf(payload + pos, 64, "{action=\"search\" query=");
+    for (size_t i = 0; i < depth; i++) {
+        payload[pos++] = '[';
+    }
+    payload[pos++] = '_';
+    for (size_t i = 0; i < depth; i++) {
+        payload[pos++] = ']';
+    }
+    payload[pos++] = '}';
+    payload[pos] = '\0';
+
+    validation_result_t *result = streaming_validator_push_token(validator, payload);
+    ASSERT_TRUE(result != NULL);
+    ASSERT_TRUE(result->valid == false);
+    ASSERT_TRUE(result->errors_count > 0);
+
+    validation_result_free(result);
+    free(payload);
+    streaming_validator_free(validator);
+    tool_registry_free(registry);
+}
+
 /* ============================================================
  * Main
  * ============================================================ */
@@ -427,6 +539,7 @@ int main(void) {
 
     printf("\nTabular Mode Tests:\n");
     RUN_TEST(tabular_homogeneous);
+    RUN_TEST(tabular_columns_sorted);
     RUN_TEST(tabular_sparse_keys_no_tabular);
     RUN_TEST(tabular_empty_objects_no_tabular);
 
@@ -438,6 +551,13 @@ int main(void) {
     RUN_TEST(json_parse_array);
     RUN_TEST(json_parse_object);
     RUN_TEST(json_roundtrip);
+    RUN_TEST(json_rejects_trailing_data);
+    RUN_TEST(json_rejects_excessive_nesting);
+
+    printf("\nRegression Tests:\n");
+    RUN_TEST(decimal_int64_min_roundtrip);
+    RUN_TEST(schema_version_schema_free_embedded_fields);
+    RUN_TEST(stream_validator_rejects_excessive_depth);
 
     printf("\n===================\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

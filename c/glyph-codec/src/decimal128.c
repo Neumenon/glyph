@@ -103,9 +103,10 @@ decimal128_t decimal128_from_int(int64_t value) {
     decimal128_t d;
     d.scale = 0;
     if (value < 0) {
+        uint64_t magnitude = ((uint64_t)(-(value + 1))) + 1;
         d.negative = true;
         d.coef_high = 0;
-        d.coef_low = (uint64_t)(-value);
+        d.coef_low = magnitude;
     } else {
         d.negative = false;
         d.coef_high = 0;
@@ -206,8 +207,13 @@ int64_t decimal128_to_int(const decimal128_t *d) {
     }
 
     /* Check if fits in int64 */
-    if (h != 0 || l > INT64_MAX) {
+    if (h != 0 || (!d->negative && l > INT64_MAX) ||
+        (d->negative && l > (uint64_t)INT64_MAX + 1ULL)) {
         return d->negative ? INT64_MIN : INT64_MAX;
+    }
+
+    if (d->negative && l == (uint64_t)INT64_MAX + 1ULL) {
+        return INT64_MIN;
     }
 
     return d->negative ? -(int64_t)l : (int64_t)l;
@@ -241,6 +247,7 @@ char *decimal128_to_string(const decimal128_t *d) {
         }
         /* Build 0.000... */
         char *result = malloc(d->scale + 3);
+        if (!result) return NULL;
         result[0] = '0';
         result[1] = '.';
         for (int i = 0; i < d->scale; i++) {
@@ -262,6 +269,7 @@ char *decimal128_to_string(const decimal128_t *d) {
     if (d->scale == 0) {
         size_t result_len = digit_count + (d->negative ? 1 : 0) + 1;
         char *result = malloc(result_len);
+        if (!result) return NULL;
         if (d->negative) {
             result[0] = '-';
             strcpy(result + 1, digit_str);
@@ -277,6 +285,7 @@ char *decimal128_to_string(const decimal128_t *d) {
         /* 0.00...XXX */
         size_t result_len = 2 + (-int_digits) + digit_count + (d->negative ? 1 : 0) + 1;
         char *result = malloc(result_len);
+        if (!result) return NULL;
         char *p = result;
         if (d->negative) *p++ = '-';
         *p++ = '0';
@@ -291,6 +300,7 @@ char *decimal128_to_string(const decimal128_t *d) {
     /* Normal case: XXX.YYY */
     size_t result_len = digit_count + 1 + (d->negative ? 1 : 0) + 1;
     char *result = malloc(result_len);
+    if (!result) return NULL;
     char *p = result;
     if (d->negative) *p++ = '-';
     memcpy(p, digit_str, int_digits);

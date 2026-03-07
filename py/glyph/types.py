@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Union
-import copy
 
 
 class GType(Enum):
@@ -242,14 +241,14 @@ class GValue:
         raise TypeError("not a number")
 
     def get(self, key: str) -> Optional["GValue"]:
-        """Get field from struct or map by key."""
+        """Get field from struct or map by key using last-write-wins semantics."""
         if self._type == GType.STRUCT:
-            for f in self._struct.fields:  # type: ignore
+            for f in reversed(self._struct.fields):  # type: ignore
                 if f.key == key:
                     return f.value
             return None
         if self._type == GType.MAP:
-            for e in self._map:  # type: ignore
+            for e in reversed(self._map):  # type: ignore
                 if e.key == key:
                     return e.value
             return None
@@ -280,16 +279,10 @@ class GValue:
     def set(self, key: str, value: "GValue") -> None:
         """Set field on struct or map."""
         if self._type == GType.STRUCT:
-            for i, f in enumerate(self._struct.fields):  # type: ignore
-                if f.key == key:
-                    self._struct.fields[i].value = value  # type: ignore
-                    return
+            self._struct.fields = [f for f in self._struct.fields if f.key != key]  # type: ignore
             self._struct.fields.append(MapEntry(key, value))  # type: ignore
         elif self._type == GType.MAP:
-            for i, e in enumerate(self._map):  # type: ignore
-                if e.key == key:
-                    self._map[i].value = value  # type: ignore
-                    return
+            self._map = [e for e in self._map if e.key != key]  # type: ignore
             self._map.append(MapEntry(key, value))  # type: ignore
         else:
             raise TypeError("cannot set on non-struct/map")
