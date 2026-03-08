@@ -471,6 +471,7 @@ static void write_canon_map(strbuf_t *buf, const glyph_map_entry_t *entries,
     /* Sort entries by key */
     glyph_map_entry_t *sorted = NULL;
     if (count > 0) {
+        if (count > SIZE_MAX / sizeof(glyph_map_entry_t)) return;
         sorted = malloc(count * sizeof(glyph_map_entry_t));
         if (sorted) {
             memcpy(sorted, entries, count * sizeof(glyph_map_entry_t));
@@ -498,6 +499,7 @@ static bool check_homogeneous(glyph_value_t **items, size_t count,
 
     /* Collect all keys */
     size_t all_keys_cap = 64;
+    if (all_keys_cap > SIZE_MAX / sizeof(char *)) return false;
     char **all_keys = malloc(all_keys_cap * sizeof(char *));
     if (!all_keys) return false;
     size_t all_keys_count = 0;

@@ -2,10 +2,22 @@ package stream
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Neumenon/glyph/glyph"
 )
+
+const maxGlyphEventInt = 1<<63 - 1
+
+func glyphUintField(key string, value uint64) glyph.MapEntry {
+	if value > maxGlyphEventInt {
+		return glyph.MapEntry{Key: key, Value: glyph.Str(strconv.FormatUint(value, 10))}
+	}
+
+	// #nosec G115 -- bounded by maxGlyphEventInt above.
+	return glyph.MapEntry{Key: key, Value: glyph.Int(int64(value))}
+}
 
 // ============================================================
 // Standard UI Event Types
@@ -93,8 +105,8 @@ func Artifact(mime, ref, name string) *glyph.GValue {
 // Payload: ResyncRequest@(sid 1 seq 42 want "sha256:..." reason "BASE_MISMATCH")
 func ResyncRequest(sid, seq uint64, want string, reason string) *glyph.GValue {
 	return glyph.Struct("ResyncRequest",
-		glyph.MapEntry{Key: "sid", Value: glyph.Int(int64(sid))},
-		glyph.MapEntry{Key: "seq", Value: glyph.Int(int64(seq))},
+		glyphUintField("sid", sid),
+		glyphUintField("seq", seq),
 		glyph.MapEntry{Key: "want", Value: glyph.Str(want)},
 		glyph.MapEntry{Key: "reason", Value: glyph.Str(reason)},
 	)
@@ -139,8 +151,8 @@ func Error(code, msg string, sid, seq uint64) *glyph.GValue {
 	return glyph.Struct("Error",
 		glyph.MapEntry{Key: "code", Value: glyph.Str(code)},
 		glyph.MapEntry{Key: "msg", Value: glyph.Str(msg)},
-		glyph.MapEntry{Key: "sid", Value: glyph.Int(int64(sid))},
-		glyph.MapEntry{Key: "seq", Value: glyph.Int(int64(seq))},
+		glyphUintField("sid", sid),
+		glyphUintField("seq", seq),
 	)
 }
 
