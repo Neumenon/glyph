@@ -21,10 +21,13 @@ export function parsePacked(input: string, schema: Schema): GValue {
   return parser.parse();
 }
 
+const MAX_PARSE_DEPTH = 256;
+
 class PackedParser {
   private input: string;
   private pos: number = 0;
   private schema: Schema;
+  private depth: number = 0;
 
   constructor(input: string, schema: Schema) {
     this.input = input;
@@ -172,6 +175,18 @@ class PackedParser {
   }
 
   private parseValue(typeHint?: string): GValue {
+    this.depth++;
+    if (this.depth > MAX_PARSE_DEPTH) {
+      throw new Error(`maximum nesting depth exceeded (${MAX_PARSE_DEPTH})`);
+    }
+    try {
+      return this.parseValueInner(typeHint);
+    } finally {
+      this.depth--;
+    }
+  }
+
+  private parseValueInner(typeHint?: string): GValue {
     this.skipWhitespace();
     const c = this.peek();
     

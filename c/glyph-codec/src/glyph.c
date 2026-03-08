@@ -191,6 +191,10 @@ glyph_value_t *glyph_list_new(void) {
 void glyph_list_append(glyph_value_t *list, glyph_value_t *item) {
     if (!list || list->type != GLYPH_LIST || !item) return;
 
+    if (list->list_val.count >= SIZE_MAX / sizeof(glyph_value_t *) - 1) {
+        glyph_value_free(item);
+        return;
+    }
     size_t new_count = list->list_val.count + 1;
     glyph_value_t **new_items = realloc(list->list_val.items,
                                         new_count * sizeof(glyph_value_t *));
@@ -222,6 +226,11 @@ void glyph_map_set(glyph_value_t *map, const char *key, glyph_value_t *value) {
         return;
     }
 
+    if (map->map_val.count >= SIZE_MAX / sizeof(glyph_map_entry_t) - 1) {
+        free(key_copy);
+        glyph_value_free(value);
+        return;
+    }
     size_t new_count = map->map_val.count + 1;
     glyph_map_entry_t *new_entries = realloc(map->map_val.entries,
                                               new_count * sizeof(glyph_map_entry_t));
@@ -260,6 +269,11 @@ void glyph_struct_set(glyph_value_t *s, const char *key, glyph_value_t *value) {
         return;
     }
 
+    if (s->struct_val.fields_count >= SIZE_MAX / sizeof(glyph_map_entry_t) - 1) {
+        free(key_copy);
+        glyph_value_free(value);
+        return;
+    }
     size_t new_count = s->struct_val.fields_count + 1;
     glyph_map_entry_t *new_fields = realloc(s->struct_val.fields,
                                              new_count * sizeof(glyph_map_entry_t));
@@ -531,6 +545,10 @@ static bool check_homogeneous(glyph_value_t **items, size_t count,
             }
             if (!found) {
                 if (all_keys_count >= all_keys_cap) {
+                    if (all_keys_cap > SIZE_MAX / (2 * sizeof(char *))) {
+                        free(all_keys);
+                        return false;
+                    }
                     all_keys_cap *= 2;
                     char **new_all_keys = realloc(all_keys, all_keys_cap * sizeof(char *));
                     if (!new_all_keys) {
