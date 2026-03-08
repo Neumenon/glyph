@@ -28,6 +28,11 @@ func uint16FromInt(v int) uint16 {
 	return uint16(v)
 }
 
+func uint64FromPositiveInt(v int) uint64 {
+	// #nosec G115 -- callers only pass validated non-negative values.
+	return uint64(v)
+}
+
 // StreamDict is a streaming-optimized dictionary for multi-frame sessions.
 type StreamDict struct {
 	mu         sync.RWMutex
@@ -342,7 +347,7 @@ type StreamSession struct {
 	dict      *StreamDict
 	frameSeq  uint64 // Next frame sequence number
 	learning  bool   // Whether we're still learning keys
-	learnMax  int    // Max frames for learning phase
+	learnMax  uint64 // Max frames for learning phase
 }
 
 // SessionOptions configures a streaming session.
@@ -377,7 +382,7 @@ func NewStreamSession(opts SessionOptions) *StreamSession {
 		dict:      dict,
 		frameSeq:  0,
 		learning:  true,
-		learnMax:  opts.LearnFrames,
+		learnMax:  uint64FromPositiveInt(opts.LearnFrames),
 	}
 }
 
@@ -399,7 +404,7 @@ func (s *StreamSession) NextSeq() uint64 {
 	s.frameSeq++
 
 	// End learning phase after learnMax frames
-	if s.learning && s.frameSeq >= uint64(s.learnMax) {
+	if s.learning && s.frameSeq >= s.learnMax {
 		s.learning = false
 		s.dict.Freeze()
 	}
