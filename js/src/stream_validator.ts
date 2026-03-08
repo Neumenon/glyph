@@ -524,6 +524,7 @@ export class StreamingValidator {
 
     const argSchema = hasOwn(schema.args, key) ? schema.args[key] : undefined;
     if (!argSchema) {
+      this.addError(ErrorCode.UnknownTool, `Unknown argument: ${key}`, key);
       return;
     }
 

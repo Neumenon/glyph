@@ -608,7 +608,13 @@ impl StreamingValidator {
 
         let arg_schema = match schema.args.get(key).cloned() {
             Some(s) => s,
-            None => return,
+            None => {
+                self.add_error(
+                    ValidationError::new(ErrorCode::UnknownTool, &format!("Unknown argument: {}", key))
+                        .with_field(key),
+                );
+                return;
+            }
         };
 
         if !Self::type_matches(&arg_schema, value) {
