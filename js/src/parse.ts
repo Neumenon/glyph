@@ -22,6 +22,8 @@ export function parsePacked(input: string, schema: Schema): GValue {
 }
 
 const MAX_PARSE_DEPTH = 256;
+const MAX_COLLECTION_LEN = 10_000_000;  // 10M elements
+const MAX_STRING_LEN = 500_000_000;     // 500MB
 
 class PackedParser {
   private input: string;
@@ -328,18 +330,25 @@ class PackedParser {
     if (numStr.includes('.') || numStr.includes('e') || numStr.includes('E')) {
       return GValue.float(num);
     }
-    return GValue.int(parseInt(numStr, 10));
+    const intVal = parseInt(numStr, 10);
+    if (!Number.isSafeInteger(intVal)) {
+      throw new Error(`integer exceeds safe range at pos ${start}: ${numStr}`);
+    }
+    return GValue.int(intVal);
   }
 
   private parseQuotedString(): GValue {
     this.expect('"');
     let result = '';
-    
+
     while (this.pos < this.input.length) {
       const c = this.input[this.pos];
       if (c === '"') {
         this.pos++;
         return GValue.str(result);
+      }
+      if (result.length >= MAX_STRING_LEN) {
+        throw new Error(`string exceeds maximum length (${MAX_STRING_LEN})`);
       }
       if (c === '\\' && this.pos + 1 < this.input.length) {
         this.pos++;
@@ -406,12 +415,15 @@ class PackedParser {
   private parseList(): GValue {
     this.expect('[');
     const items: GValue[] = [];
-    
+
     while (true) {
       this.skipWhitespace();
       if (this.peek() === ']') {
         this.pos++;
         return GValue.list(...items);
+      }
+      if (items.length >= MAX_COLLECTION_LEN) {
+        throw new Error(`list exceeds maximum length (${MAX_COLLECTION_LEN})`);
       }
       items.push(this.parseValue());
     }
@@ -420,18 +432,21 @@ class PackedParser {
   private parseMap(): GValue {
     this.expect('{');
     const entries: { key: string; value: GValue }[] = [];
-    
+
     while (true) {
       this.skipWhitespace();
       if (this.peek() === '}') {
         this.pos++;
         return GValue.map(...entries);
       }
-      
+      if (entries.length >= MAX_COLLECTION_LEN) {
+        throw new Error(`map exceeds maximum length (${MAX_COLLECTION_LEN})`);
+      }
+
       // Parse key
       const key = this.parseValue().asStr();
       this.skipWhitespace();
-      
+
       if (this.peek() !== ':' && this.peek() !== '=') {
         throw new Error(`expected ':' or '=' after map key`);
       }
@@ -832,7 +847,11 @@ function parseScalarValue(s: string): GValue {
     if (s.includes('.') || s.includes('e') || s.includes('E')) {
       return GValue.float(parseFloat(s));
     }
-    return GValue.int(parseInt(s, 10));
+    const intVal = parseInt(s, 10);
+    if (!Number.isSafeInteger(intVal)) {
+      throw new Error(`integer exceeds safe range: ${s}`);
+    }
+    return GValue.int(intVal);
   }
   
   // List
