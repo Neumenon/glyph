@@ -11,7 +11,7 @@
 //!
 //! let data = json!({"action": "search", "query": "weather"});
 //! let gvalue = from_json(&data);
-//! let glyph = canonicalize_loose(&gvalue);
+//! let glyph = canonicalize_loose(&gvalue).unwrap();
 //! assert_eq!(glyph, "{action=search query=weather}");
 //! ```
 

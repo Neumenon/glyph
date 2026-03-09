@@ -461,8 +461,8 @@ static void write_canon_string(strbuf_t *buf, const char *s) {
     }
 }
 
-/* Forward declaration */
-static void write_canon_value(strbuf_t *buf, const glyph_value_t *v,
+/* Forward declaration — returns false if value contains NaN/Inf */
+static bool write_canon_value(strbuf_t *buf, const glyph_value_t *v,
                               const glyph_canon_opts_t *opts);
 
 /* Compare entries by canonical key for sorting */
@@ -478,14 +478,14 @@ static int compare_key_strings(const void *a, const void *b) {
     return strcmp(*ka, *kb);
 }
 
-static void write_canon_map(strbuf_t *buf, const glyph_map_entry_t *entries,
+static bool write_canon_map(strbuf_t *buf, const glyph_map_entry_t *entries,
                             size_t count, const glyph_canon_opts_t *opts) {
     strbuf_append_char(buf, '{');
 
     /* Sort entries by key */
     glyph_map_entry_t *sorted = NULL;
     if (count > 0) {
-        if (count > SIZE_MAX / sizeof(glyph_map_entry_t)) return;
+        if (count > SIZE_MAX / sizeof(glyph_map_entry_t)) return true;
         sorted = malloc(count * sizeof(glyph_map_entry_t));
         if (sorted) {
             memcpy(sorted, entries, count * sizeof(glyph_map_entry_t));
@@ -498,11 +498,15 @@ static void write_canon_map(strbuf_t *buf, const glyph_map_entry_t *entries,
         if (i > 0) strbuf_append_char(buf, ' ');
         write_canon_string(buf, use_entries[i].key);
         strbuf_append_char(buf, '=');
-        write_canon_value(buf, use_entries[i].value, opts);
+        if (!write_canon_value(buf, use_entries[i].value, opts)) {
+            free(sorted);
+            return false;
+        }
     }
 
     free(sorted);
     strbuf_append_char(buf, '}');
+    return true;
 }
 
 /* Check if items have at least 50% common keys */
@@ -620,7 +624,7 @@ static bool check_homogeneous(glyph_value_t **items, size_t count,
     return true;
 }
 
-static void write_tabular(strbuf_t *buf, glyph_value_t **items, size_t count,
+static bool write_tabular(strbuf_t *buf, glyph_value_t **items, size_t count,
                           char **cols, size_t col_count,
                           const glyph_canon_opts_t *opts) {
     /* Header */
@@ -658,7 +662,7 @@ static void write_tabular(strbuf_t *buf, glyph_value_t **items, size_t count,
                 }
             }
             if (cell_val) {
-                write_canon_value(buf, cell_val, opts);
+                if (!write_canon_value(buf, cell_val, opts)) return false;
             } else {
                 strbuf_append(buf, canon_null(opts->null_style));
             }
@@ -667,35 +671,37 @@ static void write_tabular(strbuf_t *buf, glyph_value_t **items, size_t count,
         strbuf_append_char(buf, '\n');
     }
     strbuf_append(buf, "@end");
+    return true;
 }
 
-static void write_canon_list(strbuf_t *buf, glyph_value_t **items, size_t count,
+static bool write_canon_list(strbuf_t *buf, glyph_value_t **items, size_t count,
                              const glyph_canon_opts_t *opts) {
     /* Try tabular */
     if (opts->auto_tabular) {
         char **cols = NULL;
         size_t col_count = 0;
         if (check_homogeneous(items, count, &cols, &col_count, opts)) {
-            write_tabular(buf, items, count, cols, col_count, opts);
+            bool ok = write_tabular(buf, items, count, cols, col_count, opts);
             for (size_t i = 0; i < col_count; i++) free(cols[i]);
             free(cols);
-            return;
+            return ok;
         }
     }
 
     strbuf_append_char(buf, '[');
     for (size_t i = 0; i < count; i++) {
         if (i > 0) strbuf_append_char(buf, ' ');
-        write_canon_value(buf, items[i], opts);
+        if (!write_canon_value(buf, items[i], opts)) return false;
     }
     strbuf_append_char(buf, ']');
+    return true;
 }
 
-static void write_canon_value(strbuf_t *buf, const glyph_value_t *v,
+static bool write_canon_value(strbuf_t *buf, const glyph_value_t *v,
                               const glyph_canon_opts_t *opts) {
     if (!v) {
         strbuf_append(buf, canon_null(opts->null_style));
-        return;
+        return true;
     }
 
     switch (v->type) {
@@ -716,24 +722,22 @@ static void write_canon_value(strbuf_t *buf, const glyph_value_t *v,
 
         case GLYPH_FLOAT: {
             double f = v->float_val;
-            if (isnan(f)) {
-                strbuf_append(buf, "NaN");
-            } else if (isinf(f)) {
-                strbuf_append(buf, f > 0 ? "Inf" : "-Inf");
-            } else {
-                /* Handle negative zero */
-                if (f == 0.0) f = 0.0;
+            /* NaN/Inf are rejected in text canonicalization (allowed in binary only) */
+            if (isnan(f) || isinf(f)) {
+                return false;
+            }
+            /* Handle negative zero */
+            if (f == 0.0) f = 0.0;
 
-                /* Check if whole number */
-                if (f == floor(f) && fabs(f) < 1e15) {
-                    char num[32];
-                    snprintf(num, sizeof(num), "%ld", (long)f);
-                    strbuf_append(buf, num);
-                } else {
-                    char num[64];
-                    snprintf(num, sizeof(num), "%.15g", f);
-                    strbuf_append(buf, num);
-                }
+            /* Check if whole number */
+            if (f == floor(f) && fabs(f) < 1e15) {
+                char num[32];
+                snprintf(num, sizeof(num), "%ld", (long)f);
+                strbuf_append(buf, num);
+            } else {
+                char num[64];
+                snprintf(num, sizeof(num), "%.15g", f);
+                strbuf_append(buf, num);
             }
             break;
         }
@@ -786,27 +790,32 @@ static void write_canon_value(strbuf_t *buf, const glyph_value_t *v,
             break;
 
         case GLYPH_LIST:
-            write_canon_list(buf, v->list_val.items, v->list_val.count, opts);
+            if (!write_canon_list(buf, v->list_val.items, v->list_val.count, opts))
+                return false;
             break;
 
         case GLYPH_MAP:
-            write_canon_map(buf, v->map_val.entries, v->map_val.count, opts);
+            if (!write_canon_map(buf, v->map_val.entries, v->map_val.count, opts))
+                return false;
             break;
 
         case GLYPH_STRUCT:
             strbuf_append(buf, v->struct_val.type_name ? v->struct_val.type_name : "");
-            write_canon_map(buf, v->struct_val.fields, v->struct_val.fields_count, opts);
+            if (!write_canon_map(buf, v->struct_val.fields, v->struct_val.fields_count, opts))
+                return false;
             break;
 
         case GLYPH_SUM:
             strbuf_append(buf, v->sum_val.tag ? v->sum_val.tag : "");
             strbuf_append_char(buf, '(');
             if (v->sum_val.value) {
-                write_canon_value(buf, v->sum_val.value, opts);
+                if (!write_canon_value(buf, v->sum_val.value, opts))
+                    return false;
             }
             strbuf_append_char(buf, ')');
             break;
     }
+    return true;
 }
 
 /* ============================================================
@@ -832,7 +841,11 @@ char *glyph_canonicalize_loose_with_opts(const glyph_value_t *v,
         default_opts = glyph_canon_opts_default();
         opts = &default_opts;
     }
-    write_canon_value(&buf, v, opts);
+    if (!write_canon_value(&buf, v, opts)) {
+        /* NaN/Inf rejected in text canonicalization */
+        free(buf.data);
+        return NULL;
+    }
     return strbuf_finish(&buf);
 }
 

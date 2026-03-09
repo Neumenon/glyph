@@ -3,6 +3,7 @@
 //! Provides deterministic canonical string representation for GValues
 //! in schema-optional mode. Used for hashing, comparison, and deduplication.
 
+use crate::error::GlyphError;
 use crate::types::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use sha2::{Sha256, Digest};
@@ -68,61 +69,74 @@ impl LooseCanonOpts {
     }
 }
 
-/// Canonicalize a GValue to GLYPH string with default options
-pub fn canonicalize_loose(v: &GValue) -> String {
+/// Canonicalize a GValue to GLYPH string with default options.
+///
+/// Returns `Err(GlyphError::InvalidFloat)` if the value tree contains NaN or Inf.
+pub fn canonicalize_loose(v: &GValue) -> Result<String, GlyphError> {
     canonicalize_loose_with_opts(v, &LooseCanonOpts::default())
 }
 
-/// Canonicalize without tabular mode
-pub fn canonicalize_loose_no_tabular(v: &GValue) -> String {
+/// Canonicalize without tabular mode.
+///
+/// Returns `Err(GlyphError::InvalidFloat)` if the value tree contains NaN or Inf.
+pub fn canonicalize_loose_no_tabular(v: &GValue) -> Result<String, GlyphError> {
     canonicalize_loose_with_opts(v, &LooseCanonOpts::no_tabular())
 }
 
-/// Canonicalize with custom options
-pub fn canonicalize_loose_with_opts(v: &GValue, opts: &LooseCanonOpts) -> String {
+/// Canonicalize with custom options.
+///
+/// Returns `Err(GlyphError::InvalidFloat)` if the value tree contains NaN or Inf.
+pub fn canonicalize_loose_with_opts(v: &GValue, opts: &LooseCanonOpts) -> Result<String, GlyphError> {
     let mut buf = String::new();
-    write_canon_loose(&mut buf, v, opts);
-    buf
+    write_canon_loose(&mut buf, v, opts)?;
+    Ok(buf)
 }
 
-/// Get fingerprint (canonical form) of a GValue
-pub fn fingerprint_loose(v: &GValue) -> String {
+/// Get fingerprint (canonical form) of a GValue.
+///
+/// Returns `Err(GlyphError::InvalidFloat)` if the value tree contains NaN or Inf.
+pub fn fingerprint_loose(v: &GValue) -> Result<String, GlyphError> {
     canonicalize_loose(v)
 }
 
-/// Get SHA-256 hash of canonical form (first 16 hex chars)
-pub fn hash_loose(v: &GValue) -> String {
-    let canonical = canonicalize_loose(v);
+/// Get SHA-256 hash of canonical form (first 16 hex chars).
+///
+/// Returns `Err(GlyphError::InvalidFloat)` if the value tree contains NaN or Inf.
+pub fn hash_loose(v: &GValue) -> Result<String, GlyphError> {
+    let canonical = canonicalize_loose(v)?;
     let mut hasher = Sha256::new();
     hasher.update(canonical.as_bytes());
     let result = hasher.finalize();
-    hex::encode(&result[..8])
+    Ok(hex::encode(&result[..8]))
 }
 
-/// Check if two GValues are semantically equal
-pub fn equal_loose(a: &GValue, b: &GValue) -> bool {
-    canonicalize_loose(a) == canonicalize_loose(b)
+/// Check if two GValues are semantically equal.
+///
+/// Returns `Err(GlyphError::InvalidFloat)` if either value tree contains NaN or Inf.
+pub fn equal_loose(a: &GValue, b: &GValue) -> Result<bool, GlyphError> {
+    Ok(canonicalize_loose(a)? == canonicalize_loose(b)?)
 }
 
 // ============================================================
 // Internal canonicalization
 // ============================================================
 
-fn write_canon_loose(buf: &mut String, v: &GValue, opts: &LooseCanonOpts) {
+fn write_canon_loose(buf: &mut String, v: &GValue, opts: &LooseCanonOpts) -> Result<(), GlyphError> {
     match v {
         GValue::Null => buf.push_str(canon_null(opts.null_style)),
         GValue::Bool(b) => buf.push(if *b { 't' } else { 'f' }),
         GValue::Int(n) => buf.push_str(&canon_int(*n)),
-        GValue::Float(f) => buf.push_str(&canon_float(*f)),
+        GValue::Float(f) => buf.push_str(&canon_float(*f)?),
         GValue::Str(s) => buf.push_str(&canon_string(s)),
         GValue::Bytes(data) => write_canon_bytes(buf, data),
         GValue::Time(t) => buf.push_str(&t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
         GValue::Id(ref_id) => write_canon_ref(buf, ref_id),
-        GValue::List(items) => write_canon_list(buf, items, opts),
-        GValue::Map(entries) => write_canon_map(buf, entries, opts),
-        GValue::Struct(s) => write_canon_struct(buf, s, opts),
-        GValue::Sum(s) => write_canon_sum(buf, s, opts),
+        GValue::List(items) => write_canon_list(buf, items, opts)?,
+        GValue::Map(entries) => write_canon_map(buf, entries, opts)?,
+        GValue::Struct(s) => write_canon_struct(buf, s, opts)?,
+        GValue::Sum(s) => write_canon_sum(buf, s, opts)?,
     }
+    Ok(())
 }
 
 fn canon_null(style: NullStyle) -> &'static str {
@@ -136,12 +150,14 @@ fn canon_int(n: i64) -> String {
     n.to_string()
 }
 
-fn canon_float(f: f64) -> String {
+fn canon_float(f: f64) -> Result<String, GlyphError> {
     if f.is_nan() {
-        return "NaN".to_string();
+        return Err(GlyphError::InvalidFloat("NaN is not allowed in glyph text canonicalization".to_string()));
     }
     if f.is_infinite() {
-        return if f > 0.0 { "Inf".to_string() } else { "-Inf".to_string() };
+        return Err(GlyphError::InvalidFloat(
+            format!("{}Inf is not allowed in glyph text canonicalization", if f > 0.0 { "" } else { "-" })
+        ));
     }
 
     // Handle negative zero
@@ -149,14 +165,14 @@ fn canon_float(f: f64) -> String {
 
     // Check if it's a whole number
     if f.fract() == 0.0 && f.abs() < 1e15 {
-        return format!("{}", f as i64);
+        return Ok(format!("{}", f as i64));
     }
 
     // Use shortest representation
     let abs = f.abs();
     let exp = abs.log10().floor() as i32;
 
-    if exp < -4 || exp >= 15 {
+    Ok(if exp < -4 || exp >= 15 {
         // Use exponential notation
         let mantissa = f / 10f64.powi(exp);
         if exp >= 0 {
@@ -167,7 +183,7 @@ fn canon_float(f: f64) -> String {
     } else {
         // Use decimal notation
         format_decimal(f)
-    }
+    })
 }
 
 fn format_mantissa(m: f64) -> String {
@@ -267,12 +283,12 @@ fn is_ref_bare_safe(s: &str) -> bool {
     })
 }
 
-fn write_canon_list(buf: &mut String, items: &[GValue], opts: &LooseCanonOpts) {
+fn write_canon_list(buf: &mut String, items: &[GValue], opts: &LooseCanonOpts) -> Result<(), GlyphError> {
     // Try tabular if enabled
     if opts.auto_tabular {
-        if let Some(tabular) = try_emit_tabular(items, opts) {
+        if let Some(tabular) = try_emit_tabular(items, opts)? {
             buf.push_str(&tabular);
-            return;
+            return Ok(());
         }
     }
 
@@ -281,12 +297,13 @@ fn write_canon_list(buf: &mut String, items: &[GValue], opts: &LooseCanonOpts) {
         if i > 0 {
             buf.push(' ');
         }
-        write_canon_loose(buf, item, opts);
+        write_canon_loose(buf, item, opts)?;
     }
     buf.push(']');
+    Ok(())
 }
 
-fn write_canon_map(buf: &mut String, entries: &[MapEntry], opts: &LooseCanonOpts) {
+fn write_canon_map(buf: &mut String, entries: &[MapEntry], opts: &LooseCanonOpts) -> Result<(), GlyphError> {
     buf.push('{');
 
     // Sort entries by canonical key
@@ -299,12 +316,13 @@ fn write_canon_map(buf: &mut String, entries: &[MapEntry], opts: &LooseCanonOpts
         }
         buf.push_str(&canon_string(&entry.key));
         buf.push('=');
-        write_canon_loose(buf, &entry.value, opts);
+        write_canon_loose(buf, &entry.value, opts)?;
     }
     buf.push('}');
+    Ok(())
 }
 
-fn write_canon_struct(buf: &mut String, s: &StructValue, opts: &LooseCanonOpts) {
+fn write_canon_struct(buf: &mut String, s: &StructValue, opts: &LooseCanonOpts) -> Result<(), GlyphError> {
     buf.push_str(&s.type_name);
     buf.push('{');
 
@@ -318,27 +336,29 @@ fn write_canon_struct(buf: &mut String, s: &StructValue, opts: &LooseCanonOpts) 
         }
         buf.push_str(&canon_string(&field.key));
         buf.push('=');
-        write_canon_loose(buf, &field.value, opts);
+        write_canon_loose(buf, &field.value, opts)?;
     }
     buf.push('}');
+    Ok(())
 }
 
-fn write_canon_sum(buf: &mut String, s: &SumValue, opts: &LooseCanonOpts) {
+fn write_canon_sum(buf: &mut String, s: &SumValue, opts: &LooseCanonOpts) -> Result<(), GlyphError> {
     buf.push_str(&s.tag);
     buf.push('(');
     if let Some(ref value) = s.value {
-        write_canon_loose(buf, value, opts);
+        write_canon_loose(buf, value, opts)?;
     }
     buf.push(')');
+    Ok(())
 }
 
 // ============================================================
 // Auto-tabular detection and emission
 // ============================================================
 
-fn try_emit_tabular(items: &[GValue], opts: &LooseCanonOpts) -> Option<String> {
+fn try_emit_tabular(items: &[GValue], opts: &LooseCanonOpts) -> Result<Option<String>, GlyphError> {
     if items.len() < opts.min_rows {
-        return None;
+        return Ok(None);
     }
 
     // Collect keys from all items
@@ -346,7 +366,10 @@ fn try_emit_tabular(items: &[GValue], opts: &LooseCanonOpts) -> Option<String> {
     let mut row_keys: Vec<HashSet<String>> = Vec::new();
 
     for item in items {
-        let keys = get_object_keys(item)?;
+        let keys = match get_object_keys(item) {
+            Some(k) => k,
+            None => return Ok(None),
+        };
         let key_set: HashSet<String> = keys.into_iter().collect();
         all_keys.extend(key_set.clone());
         row_keys.push(key_set);
@@ -354,7 +377,7 @@ fn try_emit_tabular(items: &[GValue], opts: &LooseCanonOpts) -> Option<String> {
 
     // Don't use tabular for empty objects or too many columns
     if all_keys.is_empty() || all_keys.len() > opts.max_cols {
-        return None;
+        return Ok(None);
     }
 
     // Check homogeneity
@@ -363,7 +386,7 @@ fn try_emit_tabular(items: &[GValue], opts: &LooseCanonOpts) -> Option<String> {
         let first_keys = &row_keys[0];
         for keys in &row_keys[1..] {
             if keys != first_keys {
-                return None;
+                return Ok(None);
             }
         }
     } else {
@@ -375,7 +398,7 @@ fn try_emit_tabular(items: &[GValue], opts: &LooseCanonOpts) -> Option<String> {
 
         // If less than half the keys are common, don't use tabular
         if common_keys.len() * 2 < all_keys.len() {
-            return None;
+            return Ok(None);
         }
     }
 
@@ -396,11 +419,14 @@ fn try_emit_tabular(items: &[GValue], opts: &LooseCanonOpts) -> Option<String> {
         buf.push('|');
         let values = get_object_values(item);
         for col in &cols {
-            let cell = values.get(col).map(|v| {
-                let mut cell_buf = String::new();
-                write_canon_loose(&mut cell_buf, v, opts);
-                cell_buf.replace('|', "\\|")
-            }).unwrap_or_else(|| canon_null(opts.null_style).to_string());
+            let cell = match values.get(col) {
+                Some(v) => {
+                    let mut cell_buf = String::new();
+                    write_canon_loose(&mut cell_buf, v, opts)?;
+                    cell_buf.replace('|', "\\|")
+                }
+                None => canon_null(opts.null_style).to_string(),
+            };
             buf.push_str(&cell);
             buf.push('|');
         }
@@ -408,7 +434,7 @@ fn try_emit_tabular(items: &[GValue], opts: &LooseCanonOpts) -> Option<String> {
     }
     buf.push_str("@end");
 
-    Some(buf)
+    Ok(Some(buf))
 }
 
 fn get_object_keys(v: &GValue) -> Option<Vec<String>> {

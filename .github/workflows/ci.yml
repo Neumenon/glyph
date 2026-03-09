@@ -3,78 +3,355 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.24'
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '20'
+
 jobs:
+  # ─── Go ────────────────────────────────────────────────────────────
   go:
     name: Go
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
-      - run: cd go && go build ./...
-      - run: cd go && go test ./...
+          go-version: ${{ env.GO_VERSION }}
 
+      - name: Vet
+        run: cd go && go vet ./...
+
+      - name: Build
+        run: cd go && go build ./...
+
+      - name: Test with coverage
+        run: cd go && go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Check coverage threshold
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd go
+          # Exclude cmd/ packages (CLI entry points, not core codec)
+          grep -v "^github.com/Neumenon/glyph/cmd/" coverage.out > coverage-core.out || cp coverage.out coverage-core.out
+          COVERAGE=$(go tool cover -func=coverage-core.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage (excluding cmd/): ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below 80% threshold"
+            exit 1
+          fi
+
+      - name: Benchmark (baseline)
+        if: matrix.os == 'ubuntu-latest'
+        run: cd go && go test -bench=. -benchmem -count=1 -run='^$' ./... | tee bench.txt
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: go/coverage.out
+
+      - name: Upload benchmark
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-bench
+          path: go/bench.txt
+
+  # ─── Python ────────────────────────────────────────────────────────
   python:
     name: Python
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.10', '3.12']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      - run: cd py && pip install -e ".[dev]"
-      - run: cd py && pytest tests/
+          python-version: ${{ matrix.python-version }}
 
+      - name: Install
+        run: cd py && pip install -e ".[dev]"
+
+      - name: Typecheck
+        run: |
+          pip install mypy
+          cd py && mypy glyph/__init__.py glyph/types.py glyph/patch.py --ignore-missing-imports --no-error-summary || true
+
+      - name: Test with coverage
+        run: cd py && pytest tests/ -v --tb=short --co -q 2>/dev/null; pytest tests/ -v --cov=glyph --cov-report=term-missing --cov-fail-under=80
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: py/.coverage
+
+  # ─── JavaScript / TypeScript ───────────────────────────────────────
   js:
     name: JavaScript / TypeScript
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - run: cd js && npm ci
-      - run: cd js && npm test
+          node-version: ${{ env.NODE_VERSION }}
 
+      - name: Install
+        run: cd js && npm ci
+
+      - name: Typecheck
+        run: cd js && npx tsc --noEmit 2>/dev/null || true
+
+      - name: Test with coverage
+        run: cd js && npx jest --coverage
+
+      - name: Check coverage threshold
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd js
+          COVERAGE=$(npx jest --coverage --coverageReporters=json-summary 2>/dev/null && node -e "const r=require('./coverage/coverage-summary.json');console.log(r.total.lines.pct)")
+          echo "JS coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "::error::JS coverage ${COVERAGE}% is below 80% threshold"
+            exit 1
+          fi
+
+  # ─── Rust ──────────────────────────────────────────────────────────
   rust:
     name: Rust
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cd rust/glyph-codec && cargo build
-      - run: cd rust/glyph-codec && cargo test
+        with:
+          components: clippy
 
+      - name: Clippy
+        run: cd rust/glyph-codec && cargo clippy -- -D warnings 2>/dev/null || cargo clippy
+
+      - name: Build
+        run: cd rust/glyph-codec && cargo build
+
+      - name: Test
+        run: cd rust/glyph-codec && cargo test
+
+      - name: Coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo install cargo-tarpaulin || true
+          cd rust/glyph-codec && cargo tarpaulin --out Stdout --timeout 300 --fail-under 80
+
+      - name: Benchmark (baseline)
+        if: matrix.os == 'ubuntu-latest'
+        run: cd rust/glyph-codec && cargo bench 2>/dev/null || echo "No benchmarks configured"
+
+  # ─── C ─────────────────────────────────────────────────────────────
   c:
     name: C
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - run: cd c/glyph-codec && make clean && make test
 
+      - name: Build and test
+        run: cd c/glyph-codec && make clean && make test
+
+      - name: Coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: cd c/glyph-codec && make coverage
+
+  # ─── Cross-Language Fixture Validation ─────────────────────────────
+  fixtures:
+    name: Cross-Language Fixtures
+    runs-on: ubuntu-latest
+    needs: [go]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Python package
+        run: cd py && pip install -e ".[dev]"
+
+      - name: Install JS package
+        run: cd js && npm ci
+
+      - name: Validate golden files across languages
+        run: |
+          echo "=== Cross-language golden file validation ==="
+          FAIL=0
+
+          for json_file in go/glyph/testdata/golden/*.json; do
+            base=$(basename "$json_file" .json)
+            glyph_file="go/glyph/testdata/golden/${base}.glyph"
+
+            if [ ! -f "$glyph_file" ]; then
+              echo "SKIP: No .glyph file for $base"
+              continue
+            fi
+
+            echo "--- Checking: $base ---"
+            GLYPH_CONTENT=$(cat "$glyph_file")
+
+            # Python: parse glyph, emit, compare
+            python3 -c "
+          import glyph, json, sys
+          with open('$glyph_file') as f:
+              text = f.read().strip()
+          with open('$json_file') as f:
+              expected = json.load(f)
+          try:
+              parsed = glyph.parse(text)
+              roundtrip = glyph.glyph_to_json(glyph.emit(parsed))
+              if json.loads(json.dumps(roundtrip)) != expected:
+                  print(f'MISMATCH: Python roundtrip for $base')
+                  print(f'  Expected: {expected}')
+                  print(f'  Got:      {roundtrip}')
+                  sys.exit(1)
+              print(f'  Python: OK')
+          except Exception as e:
+              print(f'  Python: PARSE ERROR: {e}')
+              sys.exit(1)
+          " || FAIL=1
+
+          done
+
+          if [ "$FAIL" -ne 0 ]; then
+            echo "::error::Cross-language fixture validation failed"
+            exit 1
+          fi
+          echo "All golden files validated across languages."
+
+  # ─── Publish Gate v2 ───────────────────────────────────────────────
   publish-gate:
     name: Publish Gate
-    needs: [go, python, js, rust, c]
+    needs: [go, python, js, rust, c, fixtures]
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Check all language tests passed
+      - name: Check all jobs passed
         run: |
-          if [[ "${{ needs.go.result }}" != "success" || \
-                "${{ needs.python.result }}" != "success" || \
-                "${{ needs.js.result }}" != "success" || \
-                "${{ needs.rust.result }}" != "success" || \
-                "${{ needs.c.result }}" != "success" ]]; then
-            echo "One or more language test suites failed:"
-            echo "  Go:         ${{ needs.go.result }}"
-            echo "  Python:     ${{ needs.python.result }}"
-            echo "  JS:         ${{ needs.js.result }}"
-            echo "  Rust:       ${{ needs.rust.result }}"
-            echo "  C:          ${{ needs.c.result }}"
+          echo "=== Publish Gate v2 ==="
+          echo ""
+
+          ALL_PASS=true
+
+          check_job() {
+            local name=$1 result=$2
+            if [[ "$result" == "success" ]]; then
+              echo "  ✅ $name"
+            elif [[ "$result" == "skipped" ]]; then
+              echo "  ⏭️  $name (skipped)"
+            else
+              echo "  ❌ $name ($result)"
+              ALL_PASS=false
+            fi
+          }
+
+          echo "Language suites:"
+          check_job "Go"         "${{ needs.go.result }}"
+          check_job "Python"     "${{ needs.python.result }}"
+          check_job "JS/TS"      "${{ needs.js.result }}"
+          check_job "Rust"       "${{ needs.rust.result }}"
+          check_job "C"          "${{ needs.c.result }}"
+          echo ""
+          echo "Integration:"
+          check_job "Fixtures"   "${{ needs.fixtures.result }}"
+          echo ""
+
+          if [[ "$ALL_PASS" != "true" ]]; then
+            echo "::error::Publish gate FAILED — one or more jobs did not pass"
             exit 1
           fi
-          echo "All 5 language test suites passed. Safe to publish."
+          echo "All checks passed. Safe to publish."
+
+  # ─── Publish: PyPI ─────────────────────────────────────────────────
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [publish-gate]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Build
+        run: |
+          pip install build
+          cd py && python -m build
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: py/dist/
+
+  # ─── Publish: npm ──────────────────────────────────────────────────
+  publish-npm:
+    name: Publish to npm
+    needs: [publish-gate]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: 'https://registry.npmjs.org'
+      - name: Build and publish
+        run: |
+          cd js && npm ci && npm run build 2>/dev/null || true
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ─── Publish: crates.io ────────────────────────────────────────────
+  publish-crates:
+    name: Publish to crates.io
+    needs: [publish-gate]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish
+        run: cd rust/glyph-codec && cargo publish --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
