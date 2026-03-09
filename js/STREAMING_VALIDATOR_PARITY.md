@@ -54,13 +54,13 @@ The streaming validator enables incremental validation of GLYPH tool calls as to
 | CONSTRAINT_LEN | ✓ | ✓ | ✓ | |
 | CONSTRAINT_PATTERN | ✓ | ✓ | ✓ | |
 | CONSTRAINT_ENUM | ✓ | ✓ | ✓ | |
-| INVALID_TYPE | ✓ | - | ✓ | |
-| LIMIT_EXCEEDED | ✓ | - | ✓ | |
+| INVALID_TYPE | ✓ | ✓ | ✓ | Python: strict type checking |
+| LIMIT_EXCEEDED | ✓ | ✓ | ✓ | Added to all 3 |
 | **DoS Protection** | | | | |
-| maxBufferSize | ✓ | - | ✓ | 1MB default |
-| maxFieldCount | ✓ | - | ✓ | 1000 default |
-| maxErrorCount | ✓ | - | ✓ | 100 default |
-| withLimits() | ✓ | - | ✓ | |
+| maxBufferSize | ✓ | ✓ | ✓ | 1MB default |
+| maxFieldCount | ✓ | ✓ | ✓ | 1000 default |
+| maxErrorCount | ✓ | ✓ | ✓ | 100 default |
+| withLimits() | ✓ | ✓ | ✓ | Python: constructor args |
 | **Timing Instrumentation** | | | | |
 | tokenCount | ✓ | ✓ | ✓ | |
 | charCount | ✓ | ✓ | ✓ | |
@@ -220,6 +220,11 @@ All implementations have comprehensive test coverage including:
 
 ## Version History
 
+- **v0.4.0** (all): Parity sync
+  - Go/Python: Added ErrCodeLimitExceeded error reporting in DoS limits
+  - Go: Added ErrCodeUnknownTool error on unknown arguments
+  - Python: DoS protection documented (was present but unmarked)
+  - Corrected parity matrix for Python DoS protection (was present since v1.0)
 - **v0.3.0** (JS): Full feature parity with Go implementation
   - Added DoS protection (buffer/field/error limits)
   - Added `toolDetectedAtChar` timing field
