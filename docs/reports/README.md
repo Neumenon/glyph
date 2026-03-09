@@ -1,6 +1,8 @@
 # GLYPH Research & Benchmark Reports
 
-**Performance analysis, benchmarks, and research findings.**
+These reports are dated research snapshots.
+
+They are useful for historical context, benchmarking notes, and earlier experiments, but they are not authoritative API or installation docs. Package names, examples, and positioning may have drifted since some of these reports were written.
 
 ---
 

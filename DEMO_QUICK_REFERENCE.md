@@ -1,5 +1,7 @@
 # GLYPH Demo: Quick Reference Card
 
+> Status: legacy demo quick reference. Keep for historical/demo context, not as the primary repo guide.
+
 ## The Four Ways GLYPH Wins
 
 ### 1️⃣ Token Size: 30-50% Smaller

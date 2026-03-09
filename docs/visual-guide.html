@@ -678,7 +678,7 @@
 validator = StreamingValidator(tool_registry)
 
 <span style="color: #c678dd;">for</span> token <span style="color: #c678dd;">in</span> llm_stream:
-    result = validator.push(token)
+    result = validator.push_token(token)
     <span style="color: #c678dd;">if</span> result.should_cancel:
         cancel_generation()  <span style="color: #888;"># Stop bleeding tokens</span>
         <span style="color: #c678dd;">break</span>
@@ -917,19 +917,19 @@ doc_3 0.72
       <div class="install-grid">
         <div class="install-box">
           <div class="lang">Python</div>
-          <code>pip install glyph-serial</code>
+          <code>pip install glyph-py</code>
         </div>
         <div class="install-box">
           <div class="lang">JavaScript</div>
-          <code>npm install glyph-codec</code>
+          <code>npm install cowrie-glyph</code>
         </div>
         <div class="install-box">
           <div class="lang">Go</div>
-          <code>go get github.com/anthropics/glyph</code>
+          <code>go get github.com/Neumenon/glyph</code>
         </div>
         <div class="install-box">
           <div class="lang">Rust</div>
-          <code>cargo add glyph-codec</code>
+          <code>cargo add glyph-rs</code>
         </div>
       </div>
 
@@ -942,7 +942,7 @@ data = glyph.parse(<span style="color: #98c379;">'{action=search query="weather"
 <span style="color: #888;"># → {"action": "search", "query": "weather"}</span>
 
 <span style="color: #888;"># Emit</span>
-text = glyph.emit({<span style="color: #98c379;">"action"</span>: <span style="color: #98c379;">"search"</span>, <span style="color: #98c379;">"query"</span>: <span style="color: #98c379;">"weather"</span>})
+text = glyph.json_to_glyph({<span style="color: #98c379;">"action"</span>: <span style="color: #98c379;">"search"</span>, <span style="color: #98c379;">"query"</span>: <span style="color: #98c379;">"weather"</span>})
 <span style="color: #888;"># → {action=search query=weather}</span>
       </div>
     </section>
@@ -950,7 +950,7 @@ text = glyph.emit({<span style="color: #98c379;">"action"</span>: <span style="c
 
   <footer>
     <p>
-      <a href="https://github.com/anthropics/glyph">GitHub</a> &middot;
+      <a href="https://github.com/Neumenon/glyph">GitHub</a> &middot;
       <a href="./COOKBOOK.md">Cookbook</a> &middot;
       <a href="../AGENT.md">Agent Guide</a> &middot;
       Apache 2.0 License

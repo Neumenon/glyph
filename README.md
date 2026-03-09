@@ -1,247 +1,96 @@
 # GLYPH
 
-**Token-efficient serialization for AI agents. 50%+ fewer tokens, streaming validation, human-readable.**
+GLYPH is a codec-first structured text format and streaming substrate for AI and ML systems.
 
-> **Tokens cost money. Tokens are context. Every token matters.**
+The core value is lower in the stack than “agent framework”:
+- deterministic loose-mode canonicalization
+- JSON bridges
+- fingerprinting for state verification
+- schema-driven packed, tabular, and patch encodings
+- GS1 framing for multiplexed streams
+- cross-language implementations in Go, Python, JavaScript, Rust, and C
 
-```
-JSON:   {"messages":[{"role":"user","content":"Hi"},{"role":"assistant","content":"Hello!"}],"model":"gpt-4"}
-GLYPH:  {msgs:[{r:u c:Hi} {r:a c:Hello!}] mdl:gpt-4}
-```
+## Why This Repo Exists
 
-**30 tokens → 16 tokens** (47% reduction)
+JSON is a fine interchange format, but it is noisy for repeated structured data and weak as a codec substrate for long-running LLM workflows. GLYPH focuses on:
 
----
+- **Compact text**: fewer tokens than JSON for many structured payloads
+- **Determinism**: canonical output suitable for hashing and equality
+- **Patchability**: explicit delta-friendly representations
+- **Streaming**: frame-oriented transport and incremental validation
+- **Parity**: the same semantics across multiple runtimes
 
-## Why GLYPH?
+If you are evaluating `glyph`, start from the codec and spec layer first. Higher-level agent patterns in this repo are examples, not the product center.
 
-JSON wastes tokens on redundant syntax. Every `"`, `:`, and `,` consumes context window. GLYPH eliminates the waste:
+## Install
 
-**1. 40-60% Token Reduction**: No quotes, no colons, no commas, abbreviated keys
-**2. Scales with Data**: Larger datasets = bigger savings (50 rows → 62% savings)
-**3. Streaming Validation**: Detect errors mid-stream, cancel immediately
-**4. Human-Readable**: Still debuggable, unlike binary formats
+| Language | Package | Docs |
+|----------|---------|------|
+| Python | `pip install glyph-py` | [Python README](./py/README.md) |
+| Go | `go get github.com/Neumenon/glyph` | [Go README](./go/README.md) |
+| JavaScript / TypeScript | `npm install cowrie-glyph` | [JS README](./js/README.md) |
+| Rust | `cargo add glyph-rs` | [Rust README](./rust/glyph-codec/README.md) |
+| C | build from source | [C README](./c/glyph-codec/README.md) |
 
----
-
-## Key Features
-
-### 🎯 **40-60% Token Savings** *(tokens, not bytes)*
-
-Tokens are what matter for LLM costs and context windows.
-
-| Data Shape | JSON Tokens | GLYPH Tokens | Savings |
-|------------|-------------|--------------|---------|
-| LLM message | 10 | 6 | **40%** |
-| Tool call | 26 | 15 | **42%** |
-| Conversation (25 msgs) | 264 | 134 | **49%** |
-| Search results (25 rows) | 456 | 220 | **52%** |
-| Search results (50 rows) | 919 | 439 | **52%** |
-| Tool results (50 items) | 562 | 214 | **62%** |
-
-**Average: 50%+ token savings on real-world data.**
-
-### ⚡ **Streaming Validation**
-Detect errors as they stream, cancel immediately—not after full generation.
-
-```glyph
-{tool=unknown...  ← Cancel mid-stream, save the remaining tokens
-```
-
-**Why it matters**: Catch bad tool names, missing params, constraint violations as they appear. Save tokens, save money, reduce latency.
-
-### 📊 **Auto-Tabular Mode**
-Homogeneous lists compress to tables automatically:
-
-```glyph
-@tab _ [name age city]
-Alice 28 NYC
-Bob 32 SF
-Carol 25 Austin
-@end
-```
-
-**50-62% fewer tokens** than JSON arrays. Scales linearly—more rows = more savings.
-
-### 🔒 **State Fingerprinting**
-SHA-256 hashing prevents concurrent modification conflicts. Enables checkpoint/resume workflows.
-
-### 🔄 **JSON Interoperability**
-Drop-in replacement. Bidirectional conversion. One-line change.
-
----
-
-## Quick Start
-
-### Install
-
-| Language | Installation | Documentation |
-|----------|--------------|---------------|
-| **Python** | `pip install glyph-py` | [Python Guide →](py/README.md) |
-| **Go** | `go get github.com/Neumenon/glyph` | [Go Guide →](go/README.md) |
-| **JavaScript** | `npm install cowrie-glyph` | [JS Guide →](js/README.md) |
-| **Rust** | `cargo add glyph-rs` | [Rust Guide →](rust/README.md) |
-| **C** | `make` | [C Guide →](c/README.md) |
-
-### Example: Python
+## Quick Example
 
 ```python
 import glyph
 
-# JSON to GLYPH
-data = {"action": "search", "query": "AI agents", "limit": 5}
-glyph_str = glyph.json_to_glyph(data)
-# Result: {action=search limit=5 query="AI agents"}
+data = {"action": "search", "query": "glyph codec", "limit": 5}
 
-# GLYPH to JSON
-original = glyph.glyph_to_json(glyph_str)
+text = glyph.json_to_glyph(data)
+# {action=search limit=5 query="glyph codec"}
 
-# Parse and access
-result = glyph.parse('{name=Alice age=30}')
-print(result.get("name").as_str())  # Alice
+value = glyph.parse(text)
+query = value.get("query").as_str()
+
+fingerprint = glyph.fingerprint_loose(glyph.from_json(data))
 ```
 
-### Example: Go
+## Documentation Map
 
-```go
-import "github.com/Neumenon/glyph/glyph"
+### Start Here
+- [Quickstart](./docs/QUICKSTART.md)
+- [Documentation Index](./docs/README.md)
 
-text := `{action=search query=weather limit=10}`
-val, _ := glyph.Parse([]byte(text))
-action := val.Get("action").String()  // "search"
-```
+### Authoritative Specs
+- [Loose Mode Spec](./docs/LOOSE_MODE_SPEC.md)
+- [GS1 Spec](./docs/GS1_SPEC.md)
 
-### Example: JavaScript
+### API / Language Docs
+- [API Reference](./docs/API_REFERENCE.md)
+- [Python](./py/README.md)
+- [Go](./go/README.md)
+- [JavaScript / TypeScript](./js/README.md)
+- [Rust](./rust/glyph-codec/README.md)
+- [C](./c/glyph-codec/README.md)
 
-```typescript
-import { parse, emit, fromJSON } from 'glyph-js';
+### Example / Historical Material
+- [Agent Patterns](./docs/AGENTS.md) — optional higher-level examples
+- [Research Reports](./docs/reports/README.md) — dated snapshots, not current API docs
+- [Archive](./docs/archive/README.md) — historical material
 
-const value = parse('{action=search query=test}');
-console.log(value.get('action'));  // 'search'
+## Repo Layout
 
-const text = emit(fromJSON({ name: 'Alice', scores: [95, 87, 92] }));
-// {name=Alice scores=[95 87 92]}
-```
-
-**More examples**: [5-Minute Tutorial →](docs/QUICKSTART.md)
-
----
-
-## When to Use GLYPH
-
-### ✅ Use GLYPH:
-- LLMs **reading** structured data (tool responses, state, batch data)
-- Streaming validation needed (real-time error detection)
-- Token budgets are tight
-- Multi-agent systems with state management
-
-### ⚠️ Use JSON:
-- LLMs **generating** output (they're trained on JSON)
-- Existing JSON-only system integrations
-
-**Best Practice**: Hybrid—LLMs generate JSON, serialize to GLYPH for storage/transmission.
-
----
-
-## Format Reference
-
-```
-Null:    _ (default) or ∅  List:    [1 2 3]
-Bool:    t / f           Map:     {a=1 b=2}
-Int:     42, -7          Struct:  Team{name=Arsenal}
-Float:   3.14, 1e-10     Sum:     Some(42) / None()
-String:  hello           Ref:     ^user:abc123
-Bytes:   b64"SGVsbG8="   Time:    2025-01-13T12:00:00Z
-```
-
-**vs JSON**: No commas · `=` not `:` · bare strings · `t`/`f` bools · `_` null (∅ also accepted)
-
----
-
-## Documentation
-
-### 📚 Getting Started
-- [5-Minute Quickstart](docs/QUICKSTART.md) - Get running fast
-- [Comprehensive Guide](docs/GUIDE.md) - Features and patterns *(coming soon)*
-- [AI Agent Patterns](docs/AGENTS.md) - LLM integration recipes
-
-### 🔧 Reference
-- [Technical Specifications](docs/SPECIFICATIONS.md) - Loose Mode, GS1, type system *(coming soon)*
-- [API Reference](docs/API_REFERENCE.md) - Per-language API docs *(coming soon)*
-- [Visual Guide](docs/visual-guide.html) - Interactive examples
-
-### 📊 Research & Benchmarks
-- [LLM Accuracy Report](docs/LLM_ACCURACY_REPORT.md) - How LLMs handle GLYPH
-- [Performance Benchmarks](docs/CODEC_BENCHMARK_REPORT.md) - Speed and token metrics
-- [Cookbook](docs/COOKBOOK.md) - 10 practical recipes
-- [All Reports →](docs/)
-
----
-
-## Use Cases
-
-**Tool Calling**: Define tools in GLYPH (40% fewer tokens in system prompts), validate during streaming and cancel bad requests immediately.
-
-**Agent State**: Store conversation history with 49% fewer tokens. Patch with base hashes for concurrent safety.
-
-**Batch Data**: Auto-tabular mode for embeddings, search results, logs (50-62% token reduction). Eligible when rows are homogeneous and share ≥50% keys. 50 search results? 919 → 439 tokens.
-
-[More Examples →](docs/QUICKSTART.md)
-
----
-
-## Advanced Features
-
-**Loose Mode**: Schema-optional, JSON-compatible. [Spec →](docs/LOOSE_MODE_SPEC.md)
-
-**GS1 Streaming**: Frame protocol with CRC-32 and SHA-256 verification. [Spec →](docs/GS1_SPEC.md)
-
-**Agent Patterns**: Tool definitions, state patches, ReAct loops, multi-agent coordination. [Guide →](docs/AGENTS.md)
-
----
-
-## Performance
-
-**Codec Speed** (Go implementation):
-- Canonicalization: 2M+ ops/sec
-- Parsing: 1.5M+ ops/sec
-
-[Full Benchmarks →](docs/CODEC_BENCHMARK_REPORT.md)
-
----
-
-## Project Structure
-
-```
+```text
 glyph/
-├── README.md              ← You are here
-├── docs/                  ← Documentation
-│   ├── QUICKSTART.md
-│   ├── AGENTS.md
-│   ├── COOKBOOK.md
-│   └── ...
-├── go/                    ← Go implementation
-├── py/                    ← Python implementation
-├── js/                    ← JavaScript/TypeScript
-├── rust/                  ← Rust implementation
-├── c/                     ← C implementation
-└── tests/                 ← Cross-language tests
+├── docs/                  authoritative specs, quickstart, index
+├── go/                    Go implementation
+├── py/                    Python implementation
+├── js/                    JavaScript / TypeScript implementation
+├── rust/                  Rust implementation
+├── c/                     C implementation
+└── tests/                 cross-implementation parity scripts
 ```
 
----
+## Current Positioning
 
-## Contributing
+The codec layer is the product:
+- format contract
+- canonicalization
+- schema / packed / tabular / patch behavior
+- streaming transport
+- parity and correctness
 
-Contributions welcome! Please see:
-- [Issues](https://github.com/Neumenon/glyph/issues) - Bug reports and feature requests
-- [Discussions](https://github.com/Neumenon/glyph/discussions) - Questions and ideas
-
----
-
-## License
-
-Apache 2.0 - See [LICENSE](LICENSE) for details.
-
----
-
-**Built by [Neumenon](https://neumenon.ai)** · Making AI agents more efficient, one token at a time.
+The demo and agent-oriented material in this repo should be read as examples built on top of that substrate.

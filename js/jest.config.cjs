@@ -7,4 +7,7 @@ module.exports = {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.jest.json' }],
   },
   moduleFileExtensions: ['ts', 'js', 'json'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.test.ts'],
+  coverageProvider: 'v8',
+  coverageReporters: ['text', 'text-summary'],
 };

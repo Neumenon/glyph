@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-GLYPH Demo Server - Web UI connected to live demo execution
-Serves the UI and provides API endpoints to run the demo
+GLYPH Demo Server - showcase UI backed by real demo execution.
+
+Serves:
+- the new agent control room showcase
+- the legacy oracle demo
+- JSON APIs for both surfaces
 """
 
 import json
@@ -10,9 +14,16 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import os
 import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+PY_DIR = ROOT / "py"
+if str(PY_DIR) not in sys.path:
+    sys.path.insert(0, str(PY_DIR))
 
 # Import demo components
 from glyph.loose import json_to_glyph, fingerprint_loose, from_json_loose
+from agent_showcase import build_showcase_payload
 
 # ============================================================================
 # DEMO DATA GENERATION
@@ -238,9 +249,18 @@ class DemoHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(data).encode())
             return
+
+        if parsed.path == "/api/agent-showcase":
+            query = parse_qs(parsed.query)
+            config = _config_from_query(query)
+            data = build_showcase_payload(config)
+            self._write_json(200, data)
+            return
         
         # Serve static files
         if parsed.path == '/' or parsed.path == '':
+            self.path = '/agent-showcase.html'
+        elif parsed.path == '/legacy':
             self.path = '/demo-ui.html'
         
         try:
@@ -248,6 +268,25 @@ class DemoHandler(SimpleHTTPRequestHandler):
         except:
             self.send_response(404)
             self.end_headers()
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+
+        if parsed.path != "/api/agent-showcase":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            data = json.loads(raw.decode("utf-8") or "{}")
+        except json.JSONDecodeError as exc:
+            self._write_json(400, {"error": f"Invalid JSON body: {exc}"})
+            return
+
+        payload = build_showcase_payload(data if isinstance(data, dict) else {})
+        self._write_json(200, payload)
     
     def do_OPTIONS(self):
         self.send_response(200)
@@ -260,6 +299,28 @@ class DemoHandler(SimpleHTTPRequestHandler):
         """Suppress default logging"""
         pass
 
+    def _write_json(self, status: int, payload: dict):
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(payload).encode())
+
+
+def _config_from_query(query: dict[str, list[str]]) -> dict:
+    def first(name: str, default: str) -> str:
+        return query.get(name, [default])[0]
+
+    return {
+        "task": first("task", ""),
+        "max_rounds": first("max_rounds", "1"),
+        "arbitration_mode": first("arbitration_mode", "majority"),
+        "require_consensus": first("require_consensus", "false").lower() == "true",
+        "min_confidence": first("min_confidence", "0.6"),
+        "enable_tools": first("enable_tools", "true").lower() == "true",
+        "include_arbiter": first("include_arbiter", "true").lower() == "true",
+    }
+
 # ============================================================================
 # SERVER
 # ============================================================================
@@ -270,13 +331,15 @@ if __name__ == '__main__':
     
     print()
     print("█" * 80)
-    print("  GLYPH Oracle Demo Server")
+    print("  GLYPH Demo Server")
     print("█" * 80)
     print()
     print(f"  ✓ Server running at: http://localhost:{port}")
     print(f"  ✓ Open in browser:   http://localhost:{port}/")
+    print(f"  ✓ Legacy demo:       http://localhost:{port}/legacy")
     print()
     print(f"  API Endpoints:")
+    print(f"    • http://localhost:{port}/api/agent-showcase")
     print(f"    • http://localhost:{port}/api/demo?turn=1")
     print(f"    • http://localhost:{port}/api/demo?turn=2")
     print(f"    • http://localhost:{port}/api/demo?turn=3")

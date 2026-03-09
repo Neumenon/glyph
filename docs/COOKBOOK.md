@@ -33,31 +33,31 @@ from anthropic import AsyncAnthropic
 # Define your tools with constraints
 registry = glyph.ToolRegistry()
 
-registry.register(
-    name="search",
-    description="Search the web",
-    args={
+registry.add_tool(
+    "search",
+    {
         "query": {"type": "str", "required": True, "min_len": 1, "max_len": 500},
         "max_results": {"type": "int", "min": 1, "max": 20, "default": 10},
-    }
+    },
+    description="Search the web",
 )
 
-registry.register(
-    name="calculate",
-    description="Evaluate a math expression",
-    args={
+registry.add_tool(
+    "calculate",
+    {
         "expression": {"type": "str", "required": True},
         "precision": {"type": "int", "min": 0, "max": 15, "default": 2},
-    }
+    },
+    description="Evaluate a math expression",
 )
 
-registry.register(
-    name="get_weather",
-    description="Get weather for a location",
-    args={
+registry.add_tool(
+    "get_weather",
+    {
         "location": {"type": "str", "required": True},
         "units": {"type": "str", "enum": ["celsius", "fahrenheit"], "default": "celsius"},
-    }
+    },
+    description="Get weather for a location",
 )
 
 
@@ -65,17 +65,14 @@ async def stream_with_validation(prompt: str):
     client = AsyncAnthropic()
     validator = glyph.StreamingValidator(registry)
 
-    collected_tokens = []
-
     async with client.messages.stream(
-        model="claude-sonnet-4-20250514",
+        model="your-model",
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
         system="Respond with tool calls in GLYPH format: ToolName{arg=value ...}"
     ) as stream:
         async for token in stream.text_stream:
-            collected_tokens.append(token)
-            result = validator.push(token)
+            result = validator.push_token(token)
 
             # Tool name detected
             if result.tool_name and result.tool_detected_at_token:
@@ -88,14 +85,14 @@ async def stream_with_validation(prompt: str):
                     return None
 
             # Validation error - cancel
-            if result.should_stop():
+            if result.should_cancel:
                 print(f"[CANCEL] Validation error: {result.errors}")
                 await stream.close()
                 return None
 
     # Stream complete - execute if valid
-    final = validator.finalize()
-    if final.valid:
+    final = validator.push_token("")
+    if final.complete and final.valid:
         print(f"[OK] Executing: {final.tool_name}")
         print(f"     Args: {final.fields}")
         return execute_tool(final.tool_name, final.fields)

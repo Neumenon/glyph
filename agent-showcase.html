@@ -1,0 +1,1571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLYPH Agent Control Room</title>
+  <style>
+    :root {
+      --paper: #f5efe3;
+      --paper-strong: #efe5d3;
+      --ink: #102033;
+      --ink-soft: #516174;
+      --ink-muted: #7f8b97;
+      --panel: rgba(255, 251, 244, 0.76);
+      --panel-strong: rgba(255, 248, 238, 0.9);
+      --line: rgba(16, 32, 51, 0.12);
+      --line-strong: rgba(16, 32, 51, 0.2);
+      --accent: #0b7a75;
+      --accent-bright: #23a8a0;
+      --accent-deep: #0a3d4b;
+      --signal: #cf6a2f;
+      --signal-soft: rgba(207, 106, 47, 0.16);
+      --success: #1a8f5a;
+      --danger: #bf3c3c;
+      --shadow: 0 20px 60px rgba(13, 26, 40, 0.12);
+      --shadow-soft: 0 12px 30px rgba(13, 26, 40, 0.08);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --body: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+      --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      --mono: "SFMono-Regular", "JetBrains Mono", "Consolas", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--body);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(35, 168, 160, 0.17), transparent 32%),
+        radial-gradient(circle at top right, rgba(207, 106, 47, 0.16), transparent 24%),
+        linear-gradient(180deg, #fbf7f0 0%, var(--paper) 52%, #f0e5d3 100%);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(16, 32, 51, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 32, 51, 0.03) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: radial-gradient(circle at center, black 45%, transparent 90%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .app-shell {
+      width: min(1500px, calc(100vw - 32px));
+      margin: 16px auto;
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .sidebar,
+    .panel,
+    .hero,
+    .strip-card {
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 16px;
+      padding: 22px;
+      border-radius: var(--radius-xl);
+      background:
+        linear-gradient(180deg, rgba(11, 122, 117, 0.1), transparent 18%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 248, 238, 0.8));
+    }
+
+    .brand {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+
+    .brand-mark {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--accent-deep), var(--accent-bright));
+      color: white;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      box-shadow: 0 16px 32px rgba(11, 122, 117, 0.24);
+    }
+
+    .brand-copy h1 {
+      margin: 0;
+      font: 600 1.75rem/1 var(--display);
+      letter-spacing: -0.03em;
+    }
+
+    .brand-copy p {
+      margin: 8px 0 0;
+      font-size: 0.94rem;
+      color: var(--ink-soft);
+      line-height: 1.45;
+    }
+
+    .sidebar-section {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(16, 32, 51, 0.08);
+    }
+
+    .sidebar-section h2 {
+      margin: 0 0 14px;
+      font-size: 0.86rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 14px;
+      font-size: 0.92rem;
+      color: var(--ink-soft);
+    }
+
+    textarea,
+    select,
+    input[type="range"] {
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    textarea,
+    select {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.78);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--ink);
+      outline: none;
+      transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    textarea:focus,
+    select:focus {
+      border-color: rgba(11, 122, 117, 0.4);
+      box-shadow: 0 0 0 4px rgba(35, 168, 160, 0.1);
+      transform: translateY(-1px);
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 14px 0;
+      font-size: 0.95rem;
+    }
+
+    .toggle {
+      position: relative;
+      width: 54px;
+      height: 32px;
+      flex: 0 0 auto;
+    }
+
+    .toggle input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .toggle-track {
+      width: 100%;
+      height: 100%;
+      border-radius: 999px;
+      background: rgba(16, 32, 51, 0.12);
+      border: 1px solid rgba(16, 32, 51, 0.08);
+      transition: background 180ms ease;
+    }
+
+    .toggle-thumb {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 4px 14px rgba(16, 32, 51, 0.18);
+      transition: transform 180ms ease;
+    }
+
+    .toggle input:checked + .toggle-track {
+      background: linear-gradient(135deg, var(--accent), var(--accent-bright));
+    }
+
+    .toggle input:checked ~ .toggle-thumb {
+      transform: translateX(22px);
+    }
+
+    input[type="range"] {
+      accent-color: var(--signal);
+    }
+
+    .range-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      border-radius: 999px;
+      font: 600 0.96rem/1 var(--body);
+      transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: wait;
+      transform: none;
+    }
+
+    .primary-btn {
+      padding: 14px 16px;
+      color: white;
+      background: linear-gradient(135deg, var(--accent-deep), var(--accent));
+      box-shadow: 0 14px 28px rgba(11, 122, 117, 0.24);
+    }
+
+    .ghost-btn {
+      padding: 14px 16px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+    }
+
+    .sidebar-note {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: var(--radius-md);
+      background: rgba(11, 122, 117, 0.08);
+      color: var(--ink-soft);
+      line-height: 1.5;
+      font-size: 0.9rem;
+    }
+
+    .main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: calc(var(--radius-xl) + 6px);
+      padding: 28px;
+      background:
+        radial-gradient(circle at top right, rgba(35, 168, 160, 0.22), transparent 34%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.84), rgba(255, 249, 242, 0.86));
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -70px;
+      bottom: -90px;
+      width: 340px;
+      height: 340px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(207, 106, 47, 0.18), transparent 64%);
+      pointer-events: none;
+    }
+
+    .hero-topline {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(16, 32, 51, 0.05);
+      color: var(--ink-soft);
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .hero h2 {
+      margin: 16px 0 12px;
+      font: 600 clamp(2.8rem, 4vw, 4.7rem)/0.94 var(--display);
+      letter-spacing: -0.05em;
+      max-width: 13ch;
+    }
+
+    .hero p {
+      max-width: 64ch;
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: 1.03rem;
+      line-height: 1.7;
+    }
+
+    .hero-bottom {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 14px;
+      align-items: end;
+    }
+
+    .mission-card,
+    .status-card,
+    .panel,
+    .strip-card {
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      padding: 18px 20px;
+    }
+
+    .mission-card h3,
+    .panel h3 {
+      margin: 0;
+      font-size: 0.84rem;
+      letter-spacing: 0.16em;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+    }
+
+    .mission-copy {
+      margin-top: 12px;
+      font-size: 1.14rem;
+      line-height: 1.6;
+    }
+
+    .status-card {
+      display: grid;
+      gap: 10px;
+      align-self: stretch;
+    }
+
+    .status-pill {
+      width: fit-content;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      background: rgba(11, 122, 117, 0.1);
+      color: var(--accent-deep);
+    }
+
+    .status-pill.error {
+      background: rgba(191, 60, 60, 0.12);
+      color: var(--danger);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      font-size: 0.92rem;
+    }
+
+    .meta-grid span {
+      display: block;
+      color: var(--ink-muted);
+      font-size: 0.8rem;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .metrics-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .strip-card {
+      position: relative;
+      overflow: hidden;
+      min-height: 118px;
+    }
+
+    .strip-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(11, 122, 117, 0.08), transparent 65%);
+      pointer-events: none;
+    }
+
+    .metric-value {
+      margin-top: 22px;
+      font: 600 2.1rem/1 var(--display);
+      letter-spacing: -0.04em;
+    }
+
+    .metric-label {
+      margin-top: 8px;
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+    }
+
+    .savings-bar {
+      margin-top: 14px;
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(16, 32, 51, 0.08);
+      overflow: hidden;
+    }
+
+    .savings-fill {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--signal), var(--accent-bright));
+      transition: width 700ms ease;
+    }
+
+    .grid-two {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+    }
+
+    .grid-three {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .panel-head p {
+      margin: 8px 0 0;
+      color: var(--ink-soft);
+      line-height: 1.55;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(16, 32, 51, 0.05);
+      color: var(--ink-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 0.76rem;
+    }
+
+    .onboarding-grid,
+    .persona-grid,
+    .plan-grid,
+    .timeline-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .onboarding-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .step-card {
+      padding: 18px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.56);
+      min-height: 180px;
+      position: relative;
+    }
+
+    .step-number {
+      font: 600 2.4rem/1 var(--display);
+      color: rgba(16, 32, 51, 0.18);
+      letter-spacing: -0.06em;
+    }
+
+    .step-card h4,
+    .persona-card h4,
+    .plan-card h4 {
+      margin: 10px 0 8px;
+      font-size: 1.08rem;
+    }
+
+    .step-card p,
+    .persona-card p,
+    .plan-card p,
+    .timeline-item p {
+      margin: 0;
+      color: var(--ink-soft);
+      line-height: 1.55;
+      font-size: 0.94rem;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      margin-top: 14px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(16, 32, 51, 0.06);
+      color: var(--ink-muted);
+    }
+
+    .status-chip.active {
+      background: rgba(35, 168, 160, 0.14);
+      color: var(--accent-deep);
+    }
+
+    .status-chip.complete {
+      background: rgba(26, 143, 90, 0.14);
+      color: var(--success);
+    }
+
+    .status-chip.blocked {
+      background: rgba(191, 60, 60, 0.14);
+      color: var(--danger);
+    }
+
+    .persona-grid {
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    .persona-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 252, 247, 0.72));
+      display: grid;
+      gap: 14px;
+    }
+
+    .persona-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .persona-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(11, 122, 117, 0.12);
+      color: var(--accent-deep);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .tool-tags,
+    .detail-list {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tool-tag {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(16, 32, 51, 0.06);
+      color: var(--ink-soft);
+      font-size: 0.78rem;
+    }
+
+    .artifact-summary {
+      padding: 14px;
+      border-radius: var(--radius-md);
+      background: rgba(11, 122, 117, 0.08);
+      border: 1px solid rgba(11, 122, 117, 0.14);
+    }
+
+    .artifact-summary strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 1rem;
+    }
+
+    .detail-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .detail-pill {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid var(--line);
+      font-size: 0.88rem;
+      color: var(--ink-soft);
+    }
+
+    .plan-grid {
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    }
+
+    .plan-card {
+      min-height: 190px;
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.66);
+      border: 1px solid var(--line);
+    }
+
+    .plan-owner {
+      margin-top: 14px;
+      color: var(--signal);
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .timeline-list {
+      max-height: 540px;
+      overflow: auto;
+      padding-right: 8px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 82px 1fr;
+      gap: 14px;
+      padding: 14px 0;
+      border-top: 1px solid rgba(16, 32, 51, 0.08);
+    }
+
+    .timeline-item:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .timeline-meta {
+      color: var(--ink-muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .timeline-item strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .state-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .tab-btn {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(16, 32, 51, 0.05);
+      color: var(--ink-soft);
+      border: 1px solid transparent;
+    }
+
+    .tab-btn.active {
+      background: rgba(11, 122, 117, 0.12);
+      color: var(--accent-deep);
+      border-color: rgba(11, 122, 117, 0.14);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+      animation: fadeUp 260ms ease;
+    }
+
+    .code-shell {
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #102033;
+      color: #ecf3f8;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .code-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      color: rgba(236, 243, 248, 0.8);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .code-shell pre {
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      max-height: 540px;
+      font: 0.84rem/1.6 var(--mono);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .patch-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .patch-card {
+      padding: 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .patch-card header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .patch-card strong {
+      font-size: 1rem;
+    }
+
+    .patch-card small {
+      color: var(--ink-muted);
+    }
+
+    .patch-hashes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+      font-size: 0.82rem;
+      color: var(--ink-soft);
+    }
+
+    .patch-hashes code,
+    .inline-code {
+      font-family: var(--mono);
+      background: rgba(16, 32, 51, 0.06);
+      padding: 2px 6px;
+      border-radius: 8px;
+    }
+
+    .error-banner {
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      background: rgba(191, 60, 60, 0.12);
+      color: var(--danger);
+      border: 1px solid rgba(191, 60, 60, 0.16);
+      margin-bottom: 16px;
+    }
+
+    .footer-note {
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      background: rgba(16, 32, 51, 0.9);
+      color: rgba(255, 251, 244, 0.82);
+      line-height: 1.6;
+    }
+
+    .footer-note strong {
+      color: white;
+    }
+
+    .split-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .empty-state {
+      padding: 22px;
+      border-radius: var(--radius-md);
+      border: 1px dashed var(--line-strong);
+      color: var(--ink-soft);
+      background: rgba(255, 255, 255, 0.45);
+      text-align: center;
+    }
+
+    .mobile-toggle {
+      display: none;
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 20;
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent-deep), var(--signal));
+      color: white;
+      box-shadow: var(--shadow);
+    }
+
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 1180px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+      }
+
+      .grid-two,
+      .hero-bottom {
+        grid-template-columns: 1fr;
+      }
+
+      .metrics-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .onboarding-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 780px) {
+      .app-shell {
+        width: min(100vw - 12px, 100%);
+        margin: 6px auto 90px;
+        padding: 6px;
+      }
+
+      .hero,
+      .sidebar,
+      .panel,
+      .strip-card {
+        border-radius: 22px;
+      }
+
+      .hero h2 {
+        max-width: 100%;
+        font-size: 2.7rem;
+      }
+
+      .metrics-strip,
+      .meta-grid,
+      .grid-three,
+      .onboarding-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: fixed;
+        inset: 10px 10px 80px 10px;
+        z-index: 19;
+        overflow: auto;
+        transform: translateY(110%);
+        transition: transform 220ms ease;
+      }
+
+      .sidebar.open {
+        transform: translateY(0);
+      }
+
+      .mobile-toggle {
+        display: grid;
+        place-items: center;
+      }
+
+      .timeline-item,
+      .patch-hashes {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div style="display:flex; gap:14px;">
+          <div class="brand-mark">GL</div>
+          <div class="brand-copy">
+            <h1>Control Room</h1>
+            <p>Showcase the Python-first persona runtime with visible planning, state, and checkpointing.</p>
+          </div>
+        </div>
+      </div>
+
+      <form id="settings-form">
+        <div class="sidebar-section" style="margin-top:0; padding-top:0; border-top:none;">
+          <h2>Mission</h2>
+          <label>
+            Task
+            <textarea id="task-input" name="task">Design an elite onboarding and control room for the GLYPH persona agent SDK.</textarea>
+          </label>
+        </div>
+
+        <div class="sidebar-section">
+          <h2>Session Policy</h2>
+          <label>
+            Arbitration mode
+            <select id="arbitration-mode" name="arbitration_mode">
+              <option value="majority">Majority</option>
+              <option value="unanimous">Unanimous</option>
+              <option value="confidence_threshold">Confidence threshold</option>
+            </select>
+          </label>
+
+          <label>
+            Debate rounds
+            <select id="max-rounds" name="max_rounds">
+              <option value="1">1 round</option>
+              <option value="2">2 rounds</option>
+              <option value="3">3 rounds</option>
+            </select>
+          </label>
+
+          <div class="toggle-row">
+            <span>Enable tools</span>
+            <label class="toggle" aria-label="Enable tools">
+              <input type="checkbox" id="enable-tools" checked>
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <span>Include arbiter</span>
+            <label class="toggle" aria-label="Include arbiter">
+              <input type="checkbox" id="include-arbiter" checked>
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <span>Require consensus</span>
+            <label class="toggle" aria-label="Require consensus">
+              <input type="checkbox" id="require-consensus">
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+
+          <label>
+            Minimum confidence
+            <div class="range-row">
+              <span>Arbiter floor</span>
+              <strong id="confidence-value">0.60</strong>
+            </div>
+            <input type="range" id="min-confidence" min="0" max="1" step="0.05" value="0.6">
+          </label>
+
+          <div class="actions">
+            <button class="primary-btn" type="submit" id="run-btn">Run control room</button>
+            <button class="ghost-btn" type="button" id="reset-btn">Reset defaults</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="sidebar-section">
+        <h2>What This Shows</h2>
+        <div class="sidebar-note">
+          The page drives the real Python agent runtime: persona presets, validated tool loops, patch history, checkpoint export, and debate arbitration. It is not a static mockup.
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h2>Navigation</h2>
+        <div class="split-actions">
+          <button class="ghost-btn" type="button" data-jump="#onboarding">Onboarding</button>
+          <button class="ghost-btn" type="button" data-jump="#personas">Personas</button>
+          <button class="ghost-btn" type="button" data-jump="#state">State</button>
+          <button class="ghost-btn" type="button" onclick="window.location.href='/legacy'">Legacy demo</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="hero">
+        <span class="hero-topline">Persona orchestration · validated tools · resumable state</span>
+        <h2 id="hero-title">Build the runtime into the interface.</h2>
+        <p id="hero-subtitle">The control room makes GLYPH legible as a product surface: operators can frame a task, tune session policy, watch specialist personas work, and inspect the state changes that make the system trustworthy.</p>
+
+        <div class="hero-bottom">
+          <div class="mission-card">
+            <h3>Live Mission</h3>
+            <div class="mission-copy" id="mission-copy">Waiting for the first run.</div>
+          </div>
+
+          <div class="status-card">
+            <div class="status-pill" id="status-pill">Idle</div>
+            <div class="meta-grid">
+              <div>
+                <span>Session</span>
+                <strong id="session-id">Not started</strong>
+              </div>
+              <div>
+                <span>Generated</span>
+                <strong id="generated-at">-</strong>
+              </div>
+              <div>
+                <span>Mode</span>
+                <strong id="mode-label">Majority</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="metrics-strip" id="metrics-strip">
+        <article class="strip-card">
+          <div class="eyebrow">Trace Savings</div>
+          <div class="metric-value" id="metric-savings">0%</div>
+          <div class="metric-label">GLYPH chars vs compact JSON</div>
+          <div class="savings-bar"><div class="savings-fill" id="savings-fill"></div></div>
+        </article>
+        <article class="strip-card">
+          <div class="eyebrow">Tool Calls</div>
+          <div class="metric-value" id="metric-tools">0</div>
+          <div class="metric-label">Validated executions in this run</div>
+        </article>
+        <article class="strip-card">
+          <div class="eyebrow">Patches</div>
+          <div class="metric-value" id="metric-patches">0</div>
+          <div class="metric-label">State deltas recorded for replay</div>
+        </article>
+        <article class="strip-card">
+          <div class="eyebrow">Events</div>
+          <div class="metric-value" id="metric-events">0</div>
+          <div class="metric-label">Trace events emitted by the session</div>
+        </article>
+        <article class="strip-card">
+          <div class="eyebrow">Confidence</div>
+          <div class="metric-value" id="metric-confidence">0.00</div>
+          <div class="metric-label">Decision confidence with policy applied</div>
+        </article>
+      </section>
+
+      <section class="panel" id="onboarding">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">Onboarding</span>
+            <h3>Teach the product while it runs</h3>
+            <p>Each step should orient the operator to one runtime concept, then prove it with live session data.</p>
+          </div>
+        </div>
+        <div class="onboarding-grid" id="onboarding-grid"></div>
+      </section>
+
+      <section class="grid-two">
+        <div class="panel" id="personas">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">Persona board</span>
+              <h3>Specialists with visible roles</h3>
+              <p>Each persona should feel distinct, constrained, and accountable to the shared session state.</p>
+            </div>
+          </div>
+          <div class="persona-grid" id="persona-grid"></div>
+        </div>
+
+        <div class="panel" id="planning">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">Planning board</span>
+              <h3>Operator-facing implementation path</h3>
+              <p>The UI should make policy, process, and decision shape legible before someone reads the source.</p>
+            </div>
+          </div>
+          <div class="plan-grid" id="plan-grid"></div>
+        </div>
+      </section>
+
+      <section class="grid-two">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">Timeline</span>
+              <h3>Every major runtime event in sequence</h3>
+              <p>The debate is only trustworthy if the run can be inspected and replayed.</p>
+            </div>
+          </div>
+          <div class="timeline-list" id="timeline-list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">Checkpoint</span>
+              <h3>Resumable by default</h3>
+              <p>The checkpoint is the contract between onboarding polish and runtime seriousness.</p>
+            </div>
+          </div>
+          <div class="state-tabs">
+            <button class="tab-btn active" data-tab-target="checkpoint-glyph">Checkpoint GLYPH</button>
+            <button class="tab-btn" data-tab-target="checkpoint-json">Checkpoint JSON</button>
+          </div>
+          <div class="tab-panel active" data-tab-panel="checkpoint-glyph">
+            <div class="code-shell">
+              <div class="code-head"><span>Checkpoint</span><span>GLYPH</span></div>
+              <pre id="checkpoint-glyph"></pre>
+            </div>
+          </div>
+          <div class="tab-panel" data-tab-panel="checkpoint-json">
+            <div class="code-shell">
+              <div class="code-head"><span>Checkpoint</span><span>JSON</span></div>
+              <pre id="checkpoint-json"></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="state">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">State and trace</span>
+            <h3>One substrate, four views</h3>
+            <p>Inspect the same run as shared state, patch history, checkpoint material, or full trace export.</p>
+          </div>
+        </div>
+        <div id="error-banner"></div>
+        <div class="state-tabs">
+          <button class="tab-btn active" data-tab-target="shared-state">Shared state</button>
+          <button class="tab-btn" data-tab-target="patches">Patches</button>
+          <button class="tab-btn" data-tab-target="trace-glyph">Trace GLYPH</button>
+          <button class="tab-btn" data-tab-target="trace-json">Trace JSON</button>
+        </div>
+
+        <div class="tab-panel active" data-tab-panel="shared-state">
+          <div class="code-shell">
+            <div class="code-head"><span>Shared state</span><span>JSON</span></div>
+            <pre id="shared-state"></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-tab-panel="patches">
+          <div class="patch-list" id="patch-list"></div>
+        </div>
+
+        <div class="tab-panel" data-tab-panel="trace-glyph">
+          <div class="code-shell">
+            <div class="code-head"><span>Trace export</span><span>GLYPH</span></div>
+            <pre id="trace-glyph"></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-tab-panel="trace-json">
+          <div class="code-shell">
+            <div class="code-head"><span>Trace export</span><span>JSON</span></div>
+            <pre id="trace-json"></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="footer-note">
+        <strong>Intentional design rule:</strong> the page should feel like an operator instrument, not a docs page with metrics glued on top. The mission, session policy, persona outputs, patches, and checkpoint are all first-class surfaces because that is the real runtime story.
+      </section>
+    </main>
+  </div>
+
+  <button class="mobile-toggle" id="mobile-toggle" type="button">⚙</button>
+
+  <script>
+    const defaults = {
+      task: "Design an elite onboarding and control room for the GLYPH persona agent SDK.",
+      max_rounds: 1,
+      arbitration_mode: "majority",
+      require_consensus: false,
+      min_confidence: 0.6,
+      enable_tools: true,
+      include_arbiter: true,
+    };
+
+    const state = {
+      payload: null,
+      loading: false,
+    };
+
+    const form = document.getElementById("settings-form");
+    const taskInput = document.getElementById("task-input");
+    const modeInput = document.getElementById("arbitration-mode");
+    const roundsInput = document.getElementById("max-rounds");
+    const consensusInput = document.getElementById("require-consensus");
+    const toolsInput = document.getElementById("enable-tools");
+    const arbiterInput = document.getElementById("include-arbiter");
+    const confidenceInput = document.getElementById("min-confidence");
+    const confidenceValue = document.getElementById("confidence-value");
+    const runBtn = document.getElementById("run-btn");
+    const resetBtn = document.getElementById("reset-btn");
+    const sidebar = document.getElementById("sidebar");
+    const mobileToggle = document.getElementById("mobile-toggle");
+
+    function fmtNumber(value, digits = 0) {
+      return Number(value || 0).toFixed(digits);
+    }
+
+    function fmtDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    }
+
+    function classForStatus(status) {
+      return ["active", "complete", "blocked"].includes(status) ? status : "";
+    }
+
+    function setLoading(loading) {
+      state.loading = loading;
+      runBtn.disabled = loading;
+      runBtn.textContent = loading ? "Running..." : "Run control room";
+    }
+
+    function currentConfig() {
+      return {
+        task: taskInput.value.trim(),
+        arbitration_mode: modeInput.value,
+        max_rounds: Number(roundsInput.value),
+        require_consensus: consensusInput.checked,
+        min_confidence: Number(confidenceInput.value),
+        enable_tools: toolsInput.checked,
+        include_arbiter: arbiterInput.checked,
+      };
+    }
+
+    async function fetchPayload(config) {
+      const response = await fetch("/api/agent-showcase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Request failed with ${response.status}`);
+      }
+      return response.json();
+    }
+
+    function renderHero(payload) {
+      document.getElementById("hero-title").textContent = payload.meta.title;
+      document.getElementById("hero-subtitle").textContent = payload.meta.subtitle;
+      document.getElementById("mission-copy").textContent = payload.meta.task;
+      document.getElementById("session-id").textContent = payload.meta.session_id || "Unknown";
+      document.getElementById("generated-at").textContent = fmtDate(payload.meta.generated_at);
+      document.getElementById("mode-label").textContent = payload.settings.arbitration_mode.replaceAll("_", " ");
+
+      const pill = document.getElementById("status-pill");
+      const hasError = Boolean(payload.meta.error);
+      pill.textContent = hasError ? "Policy blocked" : (payload.metrics.consensus ? "Consensus reached" : "Decision with dissent");
+      pill.className = `status-pill${hasError ? " error" : ""}`;
+    }
+
+    function renderMetrics(payload) {
+      document.getElementById("metric-savings").textContent = `${fmtNumber(payload.metrics.savings_percent, 1)}%`;
+      document.getElementById("metric-tools").textContent = fmtNumber(payload.metrics.tool_call_count);
+      document.getElementById("metric-patches").textContent = fmtNumber(payload.metrics.patch_count);
+      document.getElementById("metric-events").textContent = fmtNumber(payload.metrics.event_count);
+      document.getElementById("metric-confidence").textContent = fmtNumber(payload.metrics.decision_confidence, 2);
+      document.getElementById("savings-fill").style.width = `${Math.max(0, Math.min(payload.metrics.savings_percent, 100))}%`;
+    }
+
+    function renderOnboarding(payload) {
+      const grid = document.getElementById("onboarding-grid");
+      grid.innerHTML = payload.onboarding.map(step => `
+        <article class="step-card">
+          <div class="step-number">${step.step}</div>
+          <h4>${step.title}</h4>
+          <p>${step.detail}</p>
+          <div class="status-chip ${classForStatus(step.status)}">${step.cue} · ${step.status}</div>
+        </article>
+      `).join("");
+    }
+
+    function renderPersonas(payload) {
+      const grid = document.getElementById("persona-grid");
+      if (!payload.personas.length) {
+        grid.innerHTML = `<div class="empty-state">No personas are active for this run.</div>`;
+        return;
+      }
+
+      grid.innerHTML = payload.personas.map(persona => {
+        const artifact = persona.artifact || null;
+        const artifactSummary = artifact
+          ? `
+            <div class="artifact-summary">
+              <strong>${artifact.output_type}</strong>
+              <div>${summaryFromArtifact(artifact)}</div>
+            </div>
+          `
+          : `<div class="artifact-summary"><strong>Waiting</strong><div>No artifact was recorded for this persona in the current run.</div></div>`;
+
+        const detailPills = artifact ? detailListForArtifact(artifact).map(item => `<div class="detail-pill">${item}</div>`).join("") : "";
+        const toolCalls = (persona.tools || []).map(tool => `<span class="tool-tag">${tool.tool_name}${tool.cached ? " · cached" : ""}</span>`).join("");
+        const toolNames = (persona.tool_names || []).map(name => `<span class="tool-tag">${name}</span>`).join("");
+
+        return `
+          <article class="persona-card">
+            <div class="persona-header">
+              <div>
+                <div class="eyebrow">${persona.output_type}</div>
+                <h4>${persona.name}</h4>
+                <p>${persona.objective}</p>
+              </div>
+              <div class="persona-badge">${persona.name.slice(0, 1)}</div>
+            </div>
+            <div>${persona.role}</div>
+            <div class="tool-tags">${toolNames || `<span class="tool-tag">No tools</span>`}</div>
+            ${artifactSummary}
+            <div class="detail-list">${detailPills}</div>
+            <div class="tool-tags">${toolCalls || `<span class="tool-tag">No tool executions</span>`}</div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function summaryFromArtifact(artifact) {
+      const payload = artifact.payload || {};
+      return payload.answer || payload.summary || payload.rationale || "Artifact recorded";
+    }
+
+    function detailListForArtifact(artifact) {
+      const payload = artifact.payload || {};
+      const items = [];
+      Object.entries(payload).forEach(([key, value]) => {
+        if (["summary", "answer", "rationale"].includes(key)) return;
+        if (Array.isArray(value) && value.length) {
+          items.push(`<strong>${titleize(key)}:</strong> ${value.slice(0, 2).join(" · ")}`);
+        } else if (typeof value === "boolean") {
+          items.push(`<strong>${titleize(key)}:</strong> ${value ? "true" : "false"}`);
+        } else if (typeof value === "number") {
+          items.push(`<strong>${titleize(key)}:</strong> ${value.toFixed(2)}`);
+        } else if (typeof value === "string" && value) {
+          items.push(`<strong>${titleize(key)}:</strong> ${value}`);
+        }
+      });
+      return items.slice(0, 3);
+    }
+
+    function renderPlanning(payload) {
+      const grid = document.getElementById("plan-grid");
+      grid.innerHTML = payload.planning.phases.map(phase => `
+        <article class="plan-card">
+          <div class="status-chip ${classForStatus(phase.status)}">${phase.status}</div>
+          <h4>${phase.title}</h4>
+          <p>${phase.detail}</p>
+          <div class="plan-owner">${phase.owner}</div>
+        </article>
+      `).join("");
+    }
+
+    function renderTimeline(payload) {
+      const list = document.getElementById("timeline-list");
+      if (!payload.timeline.length) {
+        list.innerHTML = `<div class="empty-state">No timeline events were emitted.</div>`;
+        return;
+      }
+      list.innerHTML = payload.timeline.map(item => `
+        <article class="timeline-item">
+          <div class="timeline-meta">${item.kind}<br>${item.agent_id}</div>
+          <div>
+            <strong>${item.summary}</strong>
+            <p>${fmtDate(item.created_at)}</p>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderState(payload) {
+      document.getElementById("shared-state").textContent = JSON.stringify(payload.shared_state, null, 2);
+      document.getElementById("trace-glyph").textContent = payload.trace.glyph;
+      document.getElementById("trace-json").textContent = payload.trace.json;
+      document.getElementById("checkpoint-glyph").textContent = payload.checkpoint.glyph;
+      document.getElementById("checkpoint-json").textContent = payload.checkpoint.json;
+
+      const patchList = document.getElementById("patch-list");
+      if (!payload.patches.length) {
+        patchList.innerHTML = `<div class="empty-state">No patches were recorded for this run.</div>`;
+      } else {
+        patchList.innerHTML = payload.patches.map(patch => `
+          <article class="patch-card">
+            <header>
+              <div>
+                <strong>Revision ${patch.revision}</strong><br>
+                <small>${patch.author_id} · ${patch.reason}</small>
+              </div>
+              <small>${fmtDate(patch.created_at)}</small>
+            </header>
+            <div class="code-shell">
+              <div class="code-head"><span>Patch delta</span><span>JSON</span></div>
+              <pre>${JSON.stringify(patch.patch, null, 2)}</pre>
+            </div>
+            <div class="patch-hashes">
+              <div><strong>Base</strong><br><code>${patch.base_fingerprint}</code></div>
+              <div><strong>Result</strong><br><code>${patch.result_fingerprint}</code></div>
+            </div>
+          </article>
+        `).join("");
+      }
+
+      const banner = document.getElementById("error-banner");
+      if (payload.meta.error) {
+        banner.innerHTML = `<div class="error-banner"><strong>Policy blocked the run.</strong> ${payload.meta.error}</div>`;
+      } else {
+        banner.innerHTML = "";
+      }
+    }
+
+    function render(payload) {
+      state.payload = payload;
+      renderHero(payload);
+      renderMetrics(payload);
+      renderOnboarding(payload);
+      renderPersonas(payload);
+      renderPlanning(payload);
+      renderTimeline(payload);
+      renderState(payload);
+    }
+
+    function titleize(value) {
+      return value.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    async function run(config = currentConfig()) {
+      try {
+        setLoading(true);
+        const payload = await fetchPayload(config);
+        render(payload);
+      } catch (error) {
+        document.getElementById("error-banner").innerHTML = `<div class="error-banner"><strong>Request failed.</strong> ${error.message}</div>`;
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function resetForm() {
+      taskInput.value = defaults.task;
+      modeInput.value = defaults.arbitration_mode;
+      roundsInput.value = String(defaults.max_rounds);
+      consensusInput.checked = defaults.require_consensus;
+      toolsInput.checked = defaults.enable_tools;
+      arbiterInput.checked = defaults.include_arbiter;
+      confidenceInput.value = defaults.min_confidence;
+      confidenceValue.textContent = defaults.min_confidence.toFixed(2);
+    }
+
+    confidenceInput.addEventListener("input", () => {
+      confidenceValue.textContent = Number(confidenceInput.value).toFixed(2);
+    });
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      run();
+      if (window.innerWidth <= 780) {
+        sidebar.classList.remove("open");
+      }
+    });
+
+    resetBtn.addEventListener("click", () => {
+      resetForm();
+      run(defaults);
+    });
+
+    mobileToggle.addEventListener("click", () => {
+      sidebar.classList.toggle("open");
+    });
+
+    document.querySelectorAll("[data-jump]").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelector(button.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (window.innerWidth <= 780) {
+          sidebar.classList.remove("open");
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-tab-target]").forEach(button => {
+      button.addEventListener("click", () => {
+        const target = button.dataset.tabTarget;
+        const group = button.closest(".panel") || button.parentElement;
+        group.querySelectorAll("[data-tab-target]").forEach(item => item.classList.remove("active"));
+        group.querySelectorAll("[data-tab-panel]").forEach(panel => panel.classList.remove("active"));
+        button.classList.add("active");
+        group.querySelector(`[data-tab-panel="${target}"]`)?.classList.add("active");
+      });
+    });
+
+    resetForm();
+    run(defaults);
+  </script>
+</body>
+</html>

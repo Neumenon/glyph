@@ -1,6 +1,9 @@
 # GLYPH Documentation Archive
 
-**Historical documentation and advanced specifications.**
+This directory is historical.
+
+Do not treat archived files as the current API or package-name source of truth.
+For active docs, start at [../README.md](../README.md), [../QUICKSTART.md](../QUICKSTART.md), and [../LOOSE_MODE_SPEC.md](../LOOSE_MODE_SPEC.md).
 
 ---
 

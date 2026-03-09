@@ -5,7 +5,41 @@ Quick patterns for using GLYPH in agent systems.
 **TL;DR:**
 1. Define tools in GLYPH (40% fewer tokens in system prompt)
 2. Validate tool calls as tokens stream (detect errors and cancel immediately—not after full generation)
-3. Sync state with verified patches (cryptographic proof of consistency)
+3. Run persona agents on verified state with checkpoint / resume and patch history
+
+---
+
+## Python Agent SDK
+
+Python now ships a first-class runtime layer above the codec and validator:
+
+```python
+import asyncio
+import glyph
+
+
+class DemoModel:
+    async def stream(self, prompt: str, *, agent, state, session_id):
+        return iter([
+            'Explanation{summary="Keep tool loops validated and state compact." '
+            'key_points=["streaming validation" "fingerprints"] '
+            'assumptions=["shared state is JSON-compatible"] confidence=0.83}'
+        ])
+
+
+async def main():
+    session = glyph.create_debate_session([glyph.feynman_agent(DemoModel())])
+    outcome = await glyph.run_turn(session, "Explain how GLYPH helps agent runtimes")
+    print(outcome.answer)
+    print(glyph.export_trace(session))
+
+
+asyncio.run(main())
+```
+
+For a debate trio, combine `glyph.feynman_agent(...)`,
+`glyph.von_neumann_agent(...)`, `glyph.einstein_agent(...)`, and optionally
+`glyph.arbiter_agent(...)`.
 
 ---
 
@@ -33,23 +67,18 @@ args = tool_call.fields     # {"query": "weather NYC", "max_results": 10}
 ```python
 registry = glyph.ToolRegistry()
 
-registry.register("search", {
+registry.add_tool("search", {
     "query": {"type": "str", "required": True, "min_len": 1},
     "max_results": {"type": "int", "min": 1, "max": 100, "default": 10},
 })
 
-registry.register("calculate", {
+registry.add_tool("calculate", {
     "expression": {"type": "str", "required": True},
 })
 
-registry.register("browse", {
+registry.add_tool("browse", {
     "url": {"type": "str", "required": True, "pattern": r"^https?://"},
 })
-
-# Validate before execution
-result = registry.validate(tool_call)
-if not result.valid:
-    return f"Invalid tool call: {result.errors}"
 ```
 
 ### System Prompt Pattern
@@ -83,11 +112,11 @@ Detect invalid tool calls **before generation completes**. Save tokens and laten
 validator = glyph.StreamingValidator(registry)
 
 async for token in llm_stream:
-    result = validator.push(token)
+    result = validator.push_token(token)
 
     # Tool name detected early
     if result.tool_name:
-        print(f"Tool: {result.tool_name} at token {result.token_index}")
+        print(f"Tool: {result.tool_name} at token {result.tool_detected_at_token}")
 
         # Unknown tool? Cancel immediately
         if not result.tool_allowed:
@@ -95,7 +124,7 @@ async for token in llm_stream:
             raise ToolNotFoundError(result.tool_name)
 
     # Constraint violation? Cancel
-    if result.should_stop():
+    if result.should_cancel:
         await cancel_generation()
         raise ValidationError(result.errors)
 
@@ -121,12 +150,16 @@ if result.complete and result.valid:
 
 ```python
 # Agent state as GLYPH
-state = glyph.struct("AgentState",
-    goal="Find weather in NYC",
-    memory=[
-        {"query": "NYC weather", "result": "72F sunny"},
-    ],
-    turn=3,
+from glyph import field, g
+
+state = g.struct(
+    "AgentState",
+    field("goal", g.str("Find weather in NYC")),
+    field(
+        "memory",
+        g.list(glyph.from_json({"query": "NYC weather", "result": "72F sunny"})),
+    ),
+    field("turn", g.int(3)),
 )
 
 # Include in context
@@ -138,52 +171,33 @@ Continue toward the goal.
 """
 ```
 
-### Advanced: Patches with Verification
+### Advanced: Verified State Patches
 
-For long-running agents, send patches instead of full state.
+For long-running Python agents, use fingerprint-verified state patches.
 
 ```python
-from glyph import stream
+before = {
+    "turn": 3,
+    "memory": [{"query": "NYC weather", "result": "72F sunny"}],
+}
+after = {
+    "turn": 4,
+    "memory": [
+        {"query": "NYC weather", "result": "72F sunny"},
+        {"query": "tomorrow", "result": "68F cloudy"},
+    ],
+}
 
-# Initial state
-writer.write_frame(sid=1, seq=0, kind="doc", payload=glyph.emit(state))
-
-# After each action, send patch
-patch = glyph.patch([
-    ("=", "turn", 4),                           # Set value
-    ("+", "memory", new_memory_entry),          # Append
-    ("~", "token_count", tokens_used),          # Increment
-])
-
-# Include base hash for safety
-base_hash = stream.state_hash(current_state)
-writer.write_frame(
-    sid=1,
-    seq=1,
-    kind="patch",
-    payload=patch,
-    base=base_hash,  # Receiver rejects if state diverged
+patch = glyph.create_state_patch(
+    before,
+    after,
+    author_id="planner",
+    revision=1,
+    reason="append_observation",
 )
-```
 
-### Receiver Side
-
-```python
-handler = stream.FrameHandler()
-
-@handler.on_patch
-def handle_patch(sid, seq, payload, state):
-    # Base hash already verified
-    patch = glyph.parse_patch(payload)
-    new_state = apply_patch(state.value, patch)
-    handler.cursor.set_state(sid, new_state)
-    return new_state
-
-@handler.on_base_mismatch
-def handle_mismatch(sid, frame):
-    # State diverged - request full resync
-    logger.warning(f"State mismatch on {sid}")
-    request_full_state(sid)
+restored = glyph.apply_state_patch(before, patch)
+assert restored == after
 ```
 
 ---
@@ -198,7 +212,7 @@ async def react_loop(goal: str, max_turns: int = 10):
 
     for turn in range(max_turns):
         # Format state as GLYPH (compact)
-        state_glyph = glyph.from_json(state)
+        state_glyph = glyph.emit(glyph.from_json(state))
 
         prompt = f"""
 State: {state_glyph}
@@ -210,15 +224,17 @@ Think step by step, then either:
 
         response = await llm.generate(prompt)
         parsed = glyph.parse(response)
+        payload = glyph.to_json(parsed)
+        kind = payload.pop("$type", "")
 
-        if parsed.type_name == "Answer":
-            return parsed.fields["result"]
+        if kind == "Answer":
+            return payload["result"]
 
         # Execute tool
-        result = await execute_tool(parsed.type_name, parsed.fields)
+        result = await execute_tool(kind, payload)
         state["observations"].append({
-            "tool": parsed.type_name,
-            "args": parsed.fields,
+            "tool": kind,
+            "args": payload,
             "result": result,
         })
         state["turn"] += 1
@@ -241,10 +257,7 @@ writer.write_frame(
     sid=EXECUTOR_SID,
     seq=0,
     kind="doc",
-    payload=glyph.emit(glyph.struct("Task",
-        action="search",
-        query="latest AI news",
-    ))
+    payload='Task{action=search query="latest AI news"}',
 )
 
 # Executor sends result
@@ -252,11 +265,7 @@ writer.write_frame(
     sid=PLANNER_SID,
     seq=0,
     kind="doc",
-    payload=glyph.emit(glyph.struct("Result",
-        task_id=1,
-        status="complete",
-        data=search_results,
-    ))
+    payload='Result{task_id=1 status=complete data={...}}',
 )
 
 # Critic sends feedback
@@ -264,24 +273,20 @@ writer.write_frame(
     sid=EXECUTOR_SID,
     seq=1,
     kind="doc",
-    payload=glyph.emit(glyph.struct("Feedback",
-        task_id=1,
-        score=0.8,
-        suggestion="Include source URLs",
-    ))
+    payload='Feedback{task_id=1 score=0.8 suggestion="Include source URLs"}',
 )
 ```
 
 ### Checkpoint / Resume
 
 ```python
-def save_checkpoint(agent_state, path: str):
+def save_checkpoint(agent_state: dict, path: str):
     with open(path, "w") as f:
-        f.write(glyph.emit(agent_state))
+        f.write(glyph.json_to_glyph(agent_state))
 
 def load_checkpoint(path: str):
     with open(path) as f:
-        return glyph.parse(f.read()).value
+        return glyph.glyph_to_json(f.read())
 
 # Save periodically
 if turn % 5 == 0:
@@ -299,19 +304,15 @@ writer.write_frame(
     sid=1,
     seq=seq,
     kind="ui",
-    payload=glyph.emit(glyph.struct("Progress",
-        pct=0.45,
-        msg="Processing batch 9 of 20",
-        eta_seconds=120,
-    ))
+    payload='Progress{pct=0.45 msg="Processing batch 9 of 20" eta_seconds=120}',
 )
 
 # Client handles UI updates
 @handler.on_ui
 def handle_ui(sid, seq, payload, state):
-    event = glyph.parse(payload)
-    if event.type_name == "Progress":
-        update_progress_bar(event.fields["pct"], event.fields["msg"])
+    event = glyph.to_json(glyph.parse(payload))
+    if event.get("$type") == "Progress":
+        update_progress_bar(event["pct"], event["msg"])
 ```
 
 ---
@@ -334,12 +335,13 @@ result = glyph.parse(response)
 # BAD - wastes tokens on invalid calls
 response = await llm.generate(prompt)  # 50 tokens
 result = glyph.parse(response)
-if result.type_name not in allowed_tools:  # Discovered too late
+tool_name = glyph.to_json(result).get("$type", "")
+if tool_name not in allowed_tools:  # Discovered too late
     raise Error()
 
 # GOOD - validate as tokens arrive
 async for token in llm.stream(prompt):
-    result = validator.push(token)
+    result = validator.push_token(token)
     if result.tool_name and not result.tool_allowed:
         await cancel()  # Stop at token 5
         break
@@ -353,8 +355,17 @@ state["observations"].append(new_obs)
 send_full_state(state)  # Gets bigger every turn
 
 # GOOD - O(1) patches
-patch = glyph.patch([("+", "observations", new_obs)])
-send_patch(patch, base_hash=current_hash)
+before = {"observations": observations}
+after = {"observations": observations + [new_obs]}
+
+patch = glyph.create_state_patch(
+    before,
+    after,
+    author_id="planner",
+    revision=7,
+    reason="append_observation",
+)
+send_patch(patch)
 ```
 
 ### Don't: Inline Large Data
@@ -363,14 +374,14 @@ send_patch(patch, base_hash=current_hash)
 # BAD - bloats context
 state = {"embeddings": [[0.1, 0.2, ...] * 1536] * 100}  # Huge
 
-# GOOD - use blob references
+# GOOD - use an external reference descriptor
 state = {
-    "embeddings_ref": glyph.blob(
-        cid="sha256:abc123...",
-        mime="application/octet-stream",
-        bytes=614400,
-        caption="100 embeddings, 1536-dim each",
-    )
+    "embeddings_ref": {
+        "cid": "sha256:abc123...",
+        "mime": "application/octet-stream",
+        "bytes": 614400,
+        "caption": "100 embeddings, 1536-dim each",
+    }
 }
 ```
 

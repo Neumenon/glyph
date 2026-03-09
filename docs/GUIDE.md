@@ -146,23 +146,26 @@ from glyph import StreamingValidator, ToolRegistry
 
 # Define tools
 registry = ToolRegistry()
-registry.register(
-    name="search",
-    args={"query": "str", "limit": "int<1,100>"}
+registry.add_tool(
+    "search",
+    {
+        "query": {"type": "str", "required": True, "min_len": 1},
+        "limit": {"type": "int", "min": 1, "max": 100, "default": 10},
+    },
 )
 
 validator = StreamingValidator(registry)
 
 # Feed tokens as they arrive
 for token in llm_stream:
-    result = validator.push(token)
+    result = validator.push_token(token)
 
     if result.tool_name and not result.tool_allowed:
         # Cancel immediately
         cancel_generation()
         break
 
-    if result.has_errors():
+    if result.should_cancel:
         # Constraint violation - cancel immediately
         cancel_generation()
         break

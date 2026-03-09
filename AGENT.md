@@ -1,5 +1,8 @@
 # GLYPH for Agents
 
+> Status: legacy positioning note. Useful as an example-oriented document, but not the primary codec-first entry point for this repo.
+> Start with [README.md](./README.md) and [docs/README.md](./docs/README.md) for current package names and active docs.
+
 > The serialization format designed for how AI agents actually work.
 
 ---
@@ -83,7 +86,7 @@ registry.add_tool("search", {
 validator = StreamingValidator(registry)
 
 for token in llm_stream:
-    result = validator.push(token)
+    result = validator.push_token(token)
     if result.should_cancel:
         cancel_generation()  # Stop bleeding tokens
         break
@@ -313,13 +316,13 @@ Migrate incrementally. Run both formats during transition.
 ### ReAct Loop with Compressed State
 
 ```python
-state = AgentState(memory=[], step=0)
+state = {"memory": [], "step": 0}
 
 while not done:
     # State in context is GLYPH-compressed
     prompt = f"""
 Current state:
-{glyph.emit(state)}
+{glyph.json_to_glyph(state)}
 
 Think step by step, then respond with either:
 - Thought{{content="..."}}
@@ -329,11 +332,13 @@ Think step by step, then respond with either:
 
     response = llm(prompt)
     parsed = glyph.parse(response)
+    payload = glyph.to_json(parsed)
+    kind = payload.pop("$type", "")
 
-    if parsed.type == "Action":
-        result = execute_tool(parsed.tool, parsed.args)
-        state.memory.append(Observation(content=result))
-        state.step += 1
+    if kind == "Action":
+        result = execute_tool(payload["tool"], payload["args"])
+        state["memory"].append({"content": result})
+        state["step"] += 1
 ```
 
 ### Streaming Tool Validation
@@ -345,16 +350,16 @@ async def validated_tool_call(llm_stream, registry):
 
     async for token in llm_stream:
         tokens.append(token)
-        result = validator.push(token)
+        result = validator.push_token(token)
 
         if result.should_cancel:
             await llm_stream.cancel()
             raise InvalidToolCall(
-                f"Rejected at token {len(tokens)}: {result.reason}"
+                f"Rejected at token {len(tokens)}: {'; '.join(result.errors)}"
             )
 
         if result.complete:
-            return validator.get_parsed()
+            return {"tool_name": result.tool_name, "fields": result.fields}
 
     raise IncompleteToolCall()
 ```
@@ -366,7 +371,7 @@ import glyph
 import hashlib
 
 def checkpoint(agent_state, checkpoint_id):
-    encoded = glyph.emit(agent_state)
+    encoded = glyph.json_to_glyph(agent_state)
     state_hash = hashlib.sha256(encoded.encode()).hexdigest()[:12]
 
     save_to_storage(checkpoint_id, {
@@ -472,11 +477,11 @@ GLYPH has identical implementations in 5 languages:
 
 | Language | Package | Install |
 |----------|---------|---------|
-| **Go** | `github.com/anthropics/glyph` | `go get` |
-| **Python** | `glyph-serial` | `pip install glyph-serial` |
-| **TypeScript** | `glyph-codec` | `npm install glyph-codec` |
-| **Rust** | `glyph-codec` | `cargo add glyph-codec` |
-| **C** | `glyph-codec` | Build from source |
+| **Go** | `github.com/Neumenon/glyph` | `go get github.com/Neumenon/glyph` |
+| **Python** | `glyph-py` | `pip install glyph-py` |
+| **TypeScript** | `cowrie-glyph` | `npm install cowrie-glyph` |
+| **Rust** | `glyph-rs` | `cargo add glyph-rs` |
+| **C** | source build | Build from source |
 
 All implementations produce identical output for the same input. Cross-language tests verify parity.
 
@@ -533,18 +538,18 @@ import glyph
 
 # Parse
 data = glyph.parse('{action=search query="test"}')
-# → {"action": "search", "query": "test"}
+# → GValue representing {action=search query=test}
 
 # Emit
-text = glyph.emit({"action": "search", "query": "test"})
+text = glyph.json_to_glyph({"action": "search", "query": "test"})
 # → {action=search query=test}
 
-# With type name
-text = glyph.emit(data, type_name="SearchTool")
-# → SearchTool{action=search query=test}
+# Convert back to JSON-compatible Python data
+payload = glyph.to_json(data)
+# → {"action": "search", "query": "test"}
 
 # JSON bridge
-glyph_text = glyph.from_json(json_data)
+glyph_text = glyph.json_to_glyph(json_data)
 json_data = glyph.to_json(glyph.parse(glyph_text))
 
 # Canonicalize (deterministic output)

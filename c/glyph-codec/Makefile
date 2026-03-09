@@ -14,7 +14,7 @@ OBJS = $(BUILD_DIR)/glyph.o $(BUILD_DIR)/json.o $(BUILD_DIR)/decimal128.o $(BUIL
 LIB = $(BUILD_DIR)/libglyph.a
 TEST = $(BUILD_DIR)/test_glyph
 
-.PHONY: all clean test
+.PHONY: all clean test coverage
 
 all: $(LIB)
 
@@ -44,6 +44,16 @@ $(TEST): test/test_glyph.c $(LIB)
 
 test: $(TEST)
 	./$(TEST)
+
+coverage: CFLAGS = -Wall -Wextra -std=c11 -O0 -I./include -fprofile-arcs -ftest-coverage
+coverage: LDFLAGS += -lgcov
+coverage: clean $(TEST)
+	./$(TEST)
+	@echo ""
+	@echo "=== Coverage Report ==="
+	@gcov -n $(BUILD_DIR)/*.gcda 2>/dev/null | grep -E "^(File|Lines)" | grep -v test_glyph
+	@TOTAL=$$(gcov -n $(BUILD_DIR)/*.gcda 2>/dev/null | grep "Lines executed" | grep -v test_glyph | awk -F'[:%]' '{s+=$$2; n++} END {printf "%.1f", s/n}'); \
+	echo ""; echo "Total source coverage: $${TOTAL}%"
 
 clean:
 	rm -rf $(BUILD_DIR)

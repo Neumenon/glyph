@@ -145,8 +145,8 @@ gv = glyph.json_to_glyph(json_str)
 ```
 
 ```typescript
-import { fromJSON } from 'glyph-js';
-const gv = fromJSON(jsonData);
+import { fromJsonLoose } from 'cowrie-glyph';
+const gv = fromJsonLoose(jsonData);
 ```
 
 - Accepts any valid JSON
@@ -164,7 +164,8 @@ json_str = glyph.glyph_to_json(glyph_text)
 ```
 
 ```typescript
-const jsonData = toJSON(glyphValue);
+import { toJsonLoose } from 'cowrie-glyph';
+const jsonData = toJsonLoose(glyphValue);
 ```
 
 - Produces valid JSON

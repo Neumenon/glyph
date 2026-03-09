@@ -1,5 +1,8 @@
 # GLYPH Oracle Demo: Production-Grade Agent Scenario
 
+> Status: legacy demo documentation. This is an example showcase, not the primary documentation path for the codec.
+> For current docs, start with [README.md](./README.md) and [docs/README.md](./docs/README.md).
+
 ## Overview
 
 This sophisticated demo showcases GLYPH in a **real-world AI agent workload**—a customer service agent handling a refund request with streaming validation, state checkpointing, and knowledge base queries.

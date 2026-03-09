@@ -533,7 +533,7 @@ def to_json_loose(v: GValue) -> Any:
         return result
     elif t == GType.SUM:
         sm = v.as_sum()
-        return {"$tag": sm.tag, "$value": to_json_loose(sm.value) if sm.value else None}
+        return {"$tag": sm.tag, "$value": to_json_loose(sm.value) if sm.value is not None else None}
 
     return None
 

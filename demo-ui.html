@@ -873,11 +873,11 @@ refund_ok=f}</pre>
             <span class="code-label glyph">Streaming Validation</span>
           </div>
           <div class="code-content">
-            <pre>validator = StreamValidator()
+            <pre>validator = StreamingValidator(toolRegistry)
 
 for token in llm_stream:
-  result = validator.push(token)
-  if not result['allowed']:
+  result = validator.push_token(token)
+  if result.tool_name and not result.tool_allowed:
     cancel_generation()
     # Reject at token 3!</pre>
           </div>
