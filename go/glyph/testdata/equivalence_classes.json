@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "description": "Groups of semantically equivalent inputs that must produce identical canonical output",
+  "classes": [
+    {
+      "id": "whitespace_variants",
+      "description": "Different whitespace around key-value pairs",
+      "inputs": [
+        "key value",
+        "key  value",
+        "key\tvalue",
+        "key   value",
+        " key value ",
+        "key value\n"
+      ],
+      "canonical": "key value"
+    },
+    {
+      "id": "key_order_invariance",
+      "description": "Object keys are sorted in canonical output",
+      "inputs": [
+        "{\"b\":2,\"a\":1}",
+        "{\"a\":1,\"b\":2}"
+      ],
+      "canonical": "a 1\nb 2"
+    },
+    {
+      "id": "number_integer_forms",
+      "description": "Various representations of integer 1",
+      "inputs_json": [1, 1.0, 1e0, 10e-1],
+      "canonical_value": "1"
+    },
+    {
+      "id": "number_hundred",
+      "description": "Various representations of 100",
+      "inputs_json": [100, 1e2, 100.0, 10e1, 1000e-1],
+      "canonical_value": "100"
+    },
+    {
+      "id": "number_negative_zero",
+      "description": "-0.0 normalizes to 0",
+      "inputs_json": [-0.0, 0, 0.0],
+      "canonical_value": "0"
+    },
+    {
+      "id": "number_fraction",
+      "description": "Various representations of 0.5",
+      "inputs_json": [0.5, 5e-1, 50e-2],
+      "canonical_value": "0.5"
+    },
+    {
+      "id": "escape_variants_string",
+      "description": "Different escape forms for the same string",
+      "inputs_json": ["hello\tworld", "hello\\tworld"],
+      "note": "These are actually different strings - tab vs literal backslash-t"
+    },
+    {
+      "id": "null_forms",
+      "description": "All forms that represent null",
+      "inputs_json": [null],
+      "canonical_value": "_"
+    },
+    {
+      "id": "bool_true_forms",
+      "description": "Boolean true canonical form",
+      "inputs_json": [true],
+      "canonical_value": "t"
+    },
+    {
+      "id": "bool_false_forms",
+      "description": "Boolean false canonical form",
+      "inputs_json": [false],
+      "canonical_value": "f"
+    },
+    {
+      "id": "empty_array",
+      "description": "Empty array canonical form",
+      "inputs_json": [[]],
+      "canonical_value": "[]"
+    },
+    {
+      "id": "empty_object",
+      "description": "Empty object canonical form",
+      "inputs_json": [{}],
+      "canonical_value": "{}"
+    },
+    {
+      "id": "nested_number_normalization",
+      "description": "Numbers normalize inside nested structures",
+      "inputs_json": [
+        {"x": 1.0, "y": 2e0},
+        {"x": 1, "y": 2}
+      ],
+      "canonical": "{x=1 y=2}"
+    },
+    {
+      "id": "string_bare_safe",
+      "description": "Safe identifiers are bare (unquoted)",
+      "test_strings": ["hello", "foo_bar", "x123", "a-b", "path/to/file"],
+      "expect_bare": true
+    },
+    {
+      "id": "string_must_quote",
+      "description": "Strings with special chars must be quoted",
+      "test_strings": ["hello world", "has\"quote", "", "123starts_with_digit", "true", "false", "null"],
+      "expect_bare": false
+    }
+  ]
+}

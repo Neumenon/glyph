@@ -258,6 +258,29 @@ jobs:
           fi
           echo "All golden files validated across languages."
 
+  # ─── Robustness Tests ─────────────────────────────────────────────
+  robustness:
+    name: Robustness
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python deps
+        run: cd py && pip install -e ".[dev]"
+
+      - name: Go robustness tests
+        run: cd go && go test -run "TruthTable|Equivalence|PerfCliff" -v -timeout 10m ./glyph/...
+
+      - name: Python robustness tests
+        run: cd py && pytest tests/test_truth_table.py tests/test_hypothesis.py -v --tb=short -x
+
   # ─── Publish Gate v2 ───────────────────────────────────────────────
   publish-gate:
     name: Publish Gate
