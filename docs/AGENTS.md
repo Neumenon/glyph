@@ -1,5 +1,11 @@
 # GLYPH for AI Agents
 
+## Testing Philosophy (VITAL)
+
+**`../../../docs/TESTING_PHILOSOPHY.md`** is the canonical testing guide for all projects in this workspace. Read it before writing or reviewing tests. Particularly relevant: Class 4 (overflow), Class 5 (resource exhaustion), Class 6 (cross-language parity), Class 9 (parser edge cases), Class 10 (limits bypass).
+
+---
+
 Quick patterns for using GLYPH in agent systems.
 
 **TL;DR:**

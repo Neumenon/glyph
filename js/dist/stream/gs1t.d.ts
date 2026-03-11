@@ -21,6 +21,8 @@ export declare function encodeFrames(frames: Frame[], options?: WriterOptions): 
 export interface ReaderOptions {
     /** Maximum payload size (default: 64 MiB) */
     maxPayload?: number;
+    /** Maximum header size in bytes before newline (default: 8 KiB) */
+    maxHeaderBytes?: number;
     /** Whether to verify CRC (default: true) */
     verifyCRC?: boolean;
 }
@@ -32,6 +34,7 @@ export declare class Reader {
     private buffer;
     private offset;
     private readonly maxPayload;
+    private readonly maxHeaderBytes;
     private readonly verifyCRC;
     constructor(options?: ReaderOptions);
     /**
@@ -51,6 +54,9 @@ export declare class Reader {
     private findNewline;
     private parseHeader;
     private tokenize;
+    private parseUnsignedInt;
+    private parseUnsignedBigInt;
+    private parseHexInt;
 }
 /**
  * Decode frames from a complete byte buffer.

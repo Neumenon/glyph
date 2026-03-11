@@ -1,5 +1,9 @@
 # GLYPH for Agents
 
+## Testing Philosophy (VITAL)
+
+**`../../docs/TESTING_PHILOSOPHY.md`** is the canonical testing guide for all projects in this workspace. Read it before writing or reviewing tests.
+
 > Status: legacy positioning note. Useful as an example-oriented document, but not the primary codec-first entry point for this repo.
 > Start with [README.md](./README.md) and [docs/README.md](./docs/README.md) for current package names and active docs.
 

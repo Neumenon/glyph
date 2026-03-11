@@ -46,6 +46,17 @@ exports.parseJsonLoose = parseJsonLoose;
 exports.stringifyJsonLoose = stringifyJsonLoose;
 exports.jsonEqual = jsonEqual;
 const types_1 = require("./types");
+// Security limits (Class 5: Resource Exhaustion, Class 10: Limits Bypass)
+const MAX_JSON_DEPTH = 128;
+const MAX_COLLECTION_LEN = 1000000; // 1M elements
+const MAX_STRING_LEN = 10 * 1024 * 1024; // 10MB
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+function hasOwn(obj, key) {
+    return hasOwnProperty.call(obj, key);
+}
+function createJsonObject() {
+    return Object.create(null);
+}
 /**
  * Default options for loose canonicalization with smart auto-tabular ENABLED.
  * Lists of 3+ homogeneous objects are automatically emitted as @tab blocks.
@@ -130,6 +141,12 @@ function canonInt(n) {
     return String(Math.floor(n));
 }
 function canonFloat(f) {
+    if (Number.isNaN(f))
+        return 'NaN';
+    if (f === Infinity)
+        return 'Inf';
+    if (f === -Infinity)
+        return '-Inf';
     if (f === 0)
         return '0';
     if (Object.is(f, -0))
@@ -563,7 +580,11 @@ function parseTabularLooseHeaderWithMeta(line) {
             if (end === -1) {
                 throw new Error('invalid rows= value');
             }
-            meta.rows = parseInt(rest.slice(0, end), 10);
+            const rowsVal = parseInt(rest.slice(0, end), 10);
+            if (!Number.isFinite(rowsVal) || rowsVal > Number.MAX_SAFE_INTEGER) {
+                throw new Error('rows= value overflows safe integer range');
+            }
+            meta.rows = rowsVal;
             rest = rest.slice(end).trim();
         }
         else if (rest.startsWith('cols=')) {
@@ -572,7 +593,11 @@ function parseTabularLooseHeaderWithMeta(line) {
             if (end === -1) {
                 throw new Error('invalid cols= value');
             }
-            meta.cols = parseInt(rest.slice(0, end), 10);
+            const colsVal = parseInt(rest.slice(0, end), 10);
+            if (!Number.isFinite(colsVal) || colsVal > Number.MAX_SAFE_INTEGER) {
+                throw new Error('cols= value overflows safe integer range');
+            }
+            meta.cols = colsVal;
             rest = rest.slice(end).trim();
         }
         else {
@@ -707,6 +732,13 @@ function parseLooseValue(s) {
         return true;
     if (s === 'f')
         return false;
+    // Float special values
+    if (s === 'NaN')
+        return NaN;
+    if (s === 'Inf')
+        return Infinity;
+    if (s === '-Inf')
+        return -Infinity;
     // Quoted string
     if (s.startsWith('"') && s.endsWith('"')) {
         return unquoteString(s);
@@ -797,12 +829,16 @@ function parseLooseMap(s) {
         return {};
     const result = {};
     let i = 0;
+    let entryCount = 0;
     while (i < inner.length) {
         // Skip whitespace
         while (i < inner.length && /\s/.test(inner[i]))
             i++;
         if (i >= inner.length)
             break;
+        if (entryCount >= MAX_COLLECTION_LEN) {
+            throw new Error(`map too large (>${MAX_COLLECTION_LEN} entries)`);
+        }
         // Parse key
         let key;
         if (inner[i] === '"') {
@@ -817,7 +853,7 @@ function parseLooseMap(s) {
             key = inner.slice(i, end);
             i = end;
         }
-        // Skip = 
+        // Skip =
         while (i < inner.length && /\s/.test(inner[i]))
             i++;
         if (i >= inner.length || inner[i] !== '=') {
@@ -832,6 +868,7 @@ function parseLooseMap(s) {
         const valueStr = inner.slice(i, valueEnd);
         result[key] = parseLooseValue(valueStr);
         i = valueEnd;
+        entryCount++;
     }
     return result;
 }
@@ -850,6 +887,9 @@ function parseLooseList(s) {
             i++;
         if (i >= inner.length)
             break;
+        if (result.length >= MAX_COLLECTION_LEN) {
+            throw new Error(`list too large (>${MAX_COLLECTION_LEN} elements)`);
+        }
         const valueEnd = findValueEnd(inner, i);
         const valueStr = inner.slice(i, valueEnd);
         result.push(parseLooseValue(valueStr));
@@ -1061,7 +1101,10 @@ function parseSchemaHeader(line) {
  * Convert JSON value to GValue using loose mode.
  * Rejects NaN and Infinity for JSON compatibility.
  */
-function fromJsonLoose(json, opts = {}) {
+function fromJsonLoose(json, opts = {}, _depth = 0) {
+    if (_depth > MAX_JSON_DEPTH) {
+        throw new Error(`maximum nesting depth exceeded (${MAX_JSON_DEPTH})`);
+    }
     if (json === null || json === undefined) {
         return types_1.GValue.null();
     }
@@ -1080,22 +1123,33 @@ function fromJsonLoose(json, opts = {}) {
         return types_1.GValue.float(json);
     }
     if (typeof json === 'string') {
+        if (json.length > MAX_STRING_LEN) {
+            throw new Error(`string too large (${json.length} > ${MAX_STRING_LEN})`);
+        }
         return types_1.GValue.str(json);
     }
     if (Array.isArray(json)) {
-        const items = json.map(item => fromJsonLoose(item, opts));
+        if (json.length > MAX_COLLECTION_LEN) {
+            throw new Error(`list too large (${json.length} > ${MAX_COLLECTION_LEN})`);
+        }
+        const items = json.map(item => fromJsonLoose(item, opts, _depth + 1));
         return types_1.GValue.list(...items);
     }
     if (typeof json === 'object') {
         const obj = json;
         // Check for extended markers
-        if (opts.extended && typeof obj.$glyph === 'string') {
-            return fromGlyphMarker(obj.$glyph, obj);
+        const glyphMarker = hasOwn(obj, '$glyph') ? obj.$glyph : undefined;
+        if (opts.extended && typeof glyphMarker === 'string') {
+            return fromGlyphMarker(glyphMarker, obj);
         }
         // Regular object/map
+        const keys = Object.keys(obj);
+        if (keys.length > MAX_COLLECTION_LEN) {
+            throw new Error(`map too large (${keys.length} > ${MAX_COLLECTION_LEN})`);
+        }
         const entries = [];
         for (const [key, val] of Object.entries(obj)) {
-            entries.push({ key, value: fromJsonLoose(val, opts) });
+            entries.push({ key, value: fromJsonLoose(val, opts, _depth + 1) });
         }
         return types_1.GValue.map(...entries);
     }
@@ -1172,14 +1226,20 @@ function toJsonLoose(gv, opts = {}) {
         case 'bytes': {
             const b64 = bytesToBase64(gv.asBytes());
             if (opts.extended) {
-                return { $glyph: 'bytes', base64: b64 };
+                const result = createJsonObject();
+                result.$glyph = 'bytes';
+                result.base64 = b64;
+                return result;
             }
             return b64;
         }
         case 'time': {
             const iso = gv.asTime().toISOString();
             if (opts.extended) {
-                return { $glyph: 'time', value: iso };
+                const result = createJsonObject();
+                result.$glyph = 'time';
+                result.value = iso;
+                return result;
             }
             return iso;
         }
@@ -1187,14 +1247,17 @@ function toJsonLoose(gv, opts = {}) {
             const ref = gv.asId();
             const refStr = `^${ref.prefix ? ref.prefix + ':' : ''}${ref.value}`;
             if (opts.extended) {
-                return { $glyph: 'id', value: refStr };
+                const result = createJsonObject();
+                result.$glyph = 'id';
+                result.value = refStr;
+                return result;
             }
             return refStr;
         }
         case 'list':
             return gv.asList().map(v => toJsonLoose(v, opts));
         case 'map': {
-            const result = {};
+            const result = createJsonObject();
             for (const entry of gv.asMap()) {
                 result[entry.key] = toJsonLoose(entry.value, opts);
             }
@@ -1203,7 +1266,7 @@ function toJsonLoose(gv, opts = {}) {
         case 'struct': {
             // Structs become objects
             const sv = gv.asStruct();
-            const result = {};
+            const result = createJsonObject();
             for (const field of sv.fields) {
                 result[field.key] = toJsonLoose(field.value, opts);
             }
@@ -1212,7 +1275,9 @@ function toJsonLoose(gv, opts = {}) {
         case 'sum': {
             // Sums become { tag: value }
             const sum = gv.asSum();
-            return { [sum.tag]: sum.value ? toJsonLoose(sum.value, opts) : null };
+            const result = createJsonObject();
+            result[sum.tag] = sum.value ? toJsonLoose(sum.value, opts) : null;
+            return result;
         }
     }
 }
@@ -1262,7 +1327,7 @@ function jsonValueEqual(a, b) {
         if (keysA.length !== keysB.length)
             return false;
         for (const key of keysA) {
-            if (!(key in objB))
+            if (!hasOwn(objB, key))
                 return false;
             if (!jsonValueEqual(objA[key], objB[key]))
                 return false;

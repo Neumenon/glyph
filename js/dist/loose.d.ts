@@ -194,7 +194,7 @@ export interface BridgeOpts {
  * Convert JSON value to GValue using loose mode.
  * Rejects NaN and Infinity for JSON compatibility.
  */
-export declare function fromJsonLoose(json: unknown, opts?: BridgeOpts): GValue;
+export declare function fromJsonLoose(json: unknown, opts?: BridgeOpts, _depth?: number): GValue;
 /**
  * Convert GValue to JSON-compatible value using loose mode.
  * Rejects NaN and Infinity.

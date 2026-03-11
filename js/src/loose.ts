@@ -24,6 +24,11 @@
 
 import { GValue, MapEntry } from './types';
 
+// Security limits (Class 5: Resource Exhaustion, Class 10: Limits Bypass)
+const MAX_JSON_DEPTH = 128;
+const MAX_COLLECTION_LEN = 1_000_000;  // 1M elements
+const MAX_STRING_LEN = 10 * 1024 * 1024;  // 10MB
+
 const hasOwnProperty = Object.prototype.hasOwnProperty;
 
 function hasOwn(obj: object, key: string): boolean {
@@ -688,7 +693,11 @@ export function parseTabularLooseHeaderWithMeta(line: string): TabularMetadata {
       if (end === -1) {
         throw new Error('invalid rows= value');
       }
-      meta.rows = parseInt(rest.slice(0, end), 10);
+      const rowsVal = parseInt(rest.slice(0, end), 10);
+      if (!Number.isFinite(rowsVal) || rowsVal > Number.MAX_SAFE_INTEGER) {
+        throw new Error('rows= value overflows safe integer range');
+      }
+      meta.rows = rowsVal;
       rest = rest.slice(end).trim();
     } else if (rest.startsWith('cols=')) {
       rest = rest.slice(5);
@@ -696,7 +705,11 @@ export function parseTabularLooseHeaderWithMeta(line: string): TabularMetadata {
       if (end === -1) {
         throw new Error('invalid cols= value');
       }
-      meta.cols = parseInt(rest.slice(0, end), 10);
+      const colsVal = parseInt(rest.slice(0, end), 10);
+      if (!Number.isFinite(colsVal) || colsVal > Number.MAX_SAFE_INTEGER) {
+        throw new Error('cols= value overflows safe integer range');
+      }
+      meta.cols = colsVal;
       rest = rest.slice(end).trim();
     } else {
       // Skip unknown attributes
@@ -926,15 +939,20 @@ function unquoteString(s: string): string {
 function parseLooseMap(s: string): Record<string, unknown> {
   const inner = s.slice(1, -1).trim();
   if (inner.length === 0) return {};
-  
+
   const result: Record<string, unknown> = {};
   let i = 0;
-  
+  let entryCount = 0;
+
   while (i < inner.length) {
     // Skip whitespace
     while (i < inner.length && /\s/.test(inner[i])) i++;
     if (i >= inner.length) break;
-    
+
+    if (entryCount >= MAX_COLLECTION_LEN) {
+      throw new Error(`map too large (>${MAX_COLLECTION_LEN} entries)`);
+    }
+
     // Parse key
     let key: string;
     if (inner[i] === '"') {
@@ -947,24 +965,25 @@ function parseLooseMap(s: string): Record<string, unknown> {
       key = inner.slice(i, end);
       i = end;
     }
-    
-    // Skip = 
+
+    // Skip =
     while (i < inner.length && /\s/.test(inner[i])) i++;
     if (i >= inner.length || inner[i] !== '=') {
       throw new Error('expected = after key');
     }
     i++;
-    
+
     // Skip whitespace after =
     while (i < inner.length && /\s/.test(inner[i])) i++;
-    
+
     // Parse value
     const valueEnd = findValueEnd(inner, i);
     const valueStr = inner.slice(i, valueEnd);
     result[key] = parseLooseValue(valueStr);
     i = valueEnd;
+    entryCount++;
   }
-  
+
   return result;
 }
 
@@ -974,21 +993,25 @@ function parseLooseMap(s: string): Record<string, unknown> {
 function parseLooseList(s: string): unknown[] {
   const inner = s.slice(1, -1).trim();
   if (inner.length === 0) return [];
-  
+
   const result: unknown[] = [];
   let i = 0;
-  
+
   while (i < inner.length) {
     // Skip whitespace
     while (i < inner.length && /\s/.test(inner[i])) i++;
     if (i >= inner.length) break;
-    
+
+    if (result.length >= MAX_COLLECTION_LEN) {
+      throw new Error(`list too large (>${MAX_COLLECTION_LEN} elements)`);
+    }
+
     const valueEnd = findValueEnd(inner, i);
     const valueStr = inner.slice(i, valueEnd);
     result.push(parseLooseValue(valueStr));
     i = valueEnd;
   }
-  
+
   return result;
 }
 
@@ -1231,15 +1254,19 @@ export interface BridgeOpts {
  * Convert JSON value to GValue using loose mode.
  * Rejects NaN and Infinity for JSON compatibility.
  */
-export function fromJsonLoose(json: unknown, opts: BridgeOpts = {}): GValue {
+export function fromJsonLoose(json: unknown, opts: BridgeOpts = {}, _depth: number = 0): GValue {
+  if (_depth > MAX_JSON_DEPTH) {
+    throw new Error(`maximum nesting depth exceeded (${MAX_JSON_DEPTH})`);
+  }
+
   if (json === null || json === undefined) {
     return GValue.null();
   }
-  
+
   if (typeof json === 'boolean') {
     return GValue.bool(json);
   }
-  
+
   if (typeof json === 'number') {
     // Reject NaN and Infinity in Loose mode
     if (!Number.isFinite(json)) {
@@ -1251,33 +1278,43 @@ export function fromJsonLoose(json: unknown, opts: BridgeOpts = {}): GValue {
     }
     return GValue.float(json);
   }
-  
+
   if (typeof json === 'string') {
+    if (json.length > MAX_STRING_LEN) {
+      throw new Error(`string too large (${json.length} > ${MAX_STRING_LEN})`);
+    }
     return GValue.str(json);
   }
-  
+
   if (Array.isArray(json)) {
-    const items = json.map(item => fromJsonLoose(item, opts));
+    if (json.length > MAX_COLLECTION_LEN) {
+      throw new Error(`list too large (${json.length} > ${MAX_COLLECTION_LEN})`);
+    }
+    const items = json.map(item => fromJsonLoose(item, opts, _depth + 1));
     return GValue.list(...items);
   }
-  
+
   if (typeof json === 'object') {
     const obj = json as Record<string, unknown>;
-    
+
     // Check for extended markers
     const glyphMarker = hasOwn(obj, '$glyph') ? obj.$glyph : undefined;
     if (opts.extended && typeof glyphMarker === 'string') {
       return fromGlyphMarker(glyphMarker, obj);
     }
-    
+
     // Regular object/map
+    const keys = Object.keys(obj);
+    if (keys.length > MAX_COLLECTION_LEN) {
+      throw new Error(`map too large (${keys.length} > ${MAX_COLLECTION_LEN})`);
+    }
     const entries: MapEntry[] = [];
     for (const [key, val] of Object.entries(obj)) {
-      entries.push({ key, value: fromJsonLoose(val, opts) });
+      entries.push({ key, value: fromJsonLoose(val, opts, _depth + 1) });
     }
     return GValue.map(...entries);
   }
-  
+
   throw new Error(`Unsupported JSON value type: ${typeof json}`);
 }
 

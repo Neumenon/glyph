@@ -21,6 +21,7 @@ const crc_1 = require("./crc");
 const hash_1 = require("./hash");
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const DEFAULT_MAX_HEADER_BYTES = 8 * 1024;
 /**
  * Encode a frame as GS1-T bytes.
  *
@@ -84,6 +85,7 @@ class Reader {
         this.buffer = new Uint8Array(0);
         this.offset = 0;
         this.maxPayload = options.maxPayload ?? types_1.MAX_PAYLOAD_SIZE;
+        this.maxHeaderBytes = options.maxHeaderBytes ?? DEFAULT_MAX_HEADER_BYTES;
         this.verifyCRC = options.verifyCRC ?? true;
     }
     /**
@@ -109,7 +111,13 @@ class Reader {
         // Find header line ending
         const headerEnd = this.findNewline(this.offset);
         if (headerEnd < 0) {
+            if (this.buffer.length - this.offset > this.maxHeaderBytes) {
+                throw new types_1.ParseError(`header too large: > ${this.maxHeaderBytes}`);
+            }
             return null; // Need more data
+        }
+        if (headerEnd - this.offset > this.maxHeaderBytes) {
+            throw new types_1.ParseError(`header too large: > ${this.maxHeaderBytes}`);
         }
         const headerLine = decoder.decode(this.buffer.slice(this.offset, headerEnd));
         // Parse header
@@ -119,7 +127,6 @@ class Reader {
         }
         // Check if we have enough data for payload + trailing newline
         const payloadStart = headerEnd + 1;
-        const frameEnd = payloadStart + header.payloadLen + 1;
         if (this.buffer.length < payloadStart + header.payloadLen) {
             return null; // Need more data
         }
@@ -180,6 +187,9 @@ class Reader {
         if (endIdx < 0) {
             throw new types_1.ParseError('missing closing }');
         }
+        if (endIdx !== line.length - 1) {
+            throw new types_1.ParseError('trailing data after header');
+        }
         const content = line.slice(7, endIdx);
         const pairs = this.tokenize(content);
         const header = {
@@ -197,19 +207,19 @@ class Reader {
             const val = pair.slice(eqIdx + 1);
             switch (key) {
                 case 'v':
-                    header.version = parseInt(val, 10);
+                    header.version = this.parseUnsignedInt(val, 'v');
                     break;
                 case 'sid':
-                    header.sid = BigInt(val);
+                    header.sid = this.parseUnsignedBigInt(val, 'sid');
                     break;
                 case 'seq':
-                    header.seq = BigInt(val);
+                    header.seq = this.parseUnsignedBigInt(val, 'seq');
                     break;
                 case 'kind':
                     header.kind = (0, types_1.parseKind)(val);
                     break;
                 case 'len':
-                    header.payloadLen = parseInt(val, 10);
+                    header.payloadLen = this.parseUnsignedInt(val, 'len');
                     break;
                 case 'crc':
                     header.crc = (0, crc_1.parseCRC)(val) ?? undefined;
@@ -221,7 +231,7 @@ class Reader {
                     header.final = val === 'true' || val === '1';
                     break;
                 case 'flags':
-                    header.flags = parseInt(val, 16);
+                    header.flags = this.parseHexInt(val, 'flags');
                     break;
             }
         }
@@ -251,6 +261,33 @@ class Reader {
             tokens.push(current);
         }
         return tokens;
+    }
+    parseUnsignedInt(raw, field) {
+        if (!/^\d+$/.test(raw)) {
+            throw new types_1.ParseError(`invalid ${field}`);
+        }
+        const value = Number(raw);
+        if (!Number.isSafeInteger(value)) {
+            throw new types_1.ParseError(`${field} out of range`);
+        }
+        return value;
+    }
+    parseUnsignedBigInt(raw, field) {
+        if (!/^\d+$/.test(raw)) {
+            throw new types_1.ParseError(`invalid ${field}`);
+        }
+        return BigInt(raw);
+    }
+    parseHexInt(raw, field) {
+        const normalized = raw.replace(/^0x/i, '');
+        if (!/^[0-9a-fA-F]+$/.test(normalized)) {
+            throw new types_1.ParseError(`invalid ${field}`);
+        }
+        const value = parseInt(normalized, 16);
+        if (!Number.isSafeInteger(value)) {
+            throw new types_1.ParseError(`${field} out of range`);
+        }
+        return value;
     }
 }
 exports.Reader = Reader;

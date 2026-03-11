@@ -11,6 +11,13 @@ exports.parseJson = parseJson;
 exports.stringifyJson = stringifyJson;
 exports.normalizeJson = normalizeJson;
 const types_1 = require("./types");
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+function hasOwn(obj, key) {
+    return hasOwnProperty.call(obj, key);
+}
+function createJsonObject() {
+    return Object.create(null);
+}
 /**
  * Convert JSON value to GValue
  */
@@ -62,10 +69,15 @@ function convertValue(v, schema, typeName, parseDates, parseRefs) {
     // Object
     if (typeof v === 'object') {
         const obj = v;
+        const typeMarker = hasOwn(obj, '$type') ? obj.$type : undefined;
+        const refMarker = hasOwn(obj, '$ref') ? obj.$ref : undefined;
+        const timeMarker = hasOwn(obj, '$time') ? obj.$time : undefined;
+        const bytesMarker = hasOwn(obj, '$bytes') ? obj.$bytes : undefined;
+        const tagMarker = hasOwn(obj, '$tag') ? obj.$tag : undefined;
         // Check for special type markers
-        if ('$type' in obj && typeof obj.$type === 'string') {
+        if (typeof typeMarker === 'string') {
             // Typed struct: { $type: "TypeName", field1: ..., field2: ... }
-            const structTypeName = obj.$type;
+            const structTypeName = typeMarker;
             const td = schema?.getType(structTypeName);
             const fields = [];
             for (const [key, val] of Object.entries(obj)) {
@@ -82,8 +94,8 @@ function convertValue(v, schema, typeName, parseDates, parseRefs) {
             return types_1.GValue.struct(structTypeName, ...fields);
         }
         // Check for ref marker
-        if ('$ref' in obj && typeof obj.$ref === 'string') {
-            const ref = obj.$ref;
+        if (typeof refMarker === 'string') {
+            const ref = refMarker;
             const colonIdx = ref.indexOf(':');
             if (colonIdx > 0) {
                 return types_1.GValue.id(ref.slice(0, colonIdx), ref.slice(colonIdx + 1));
@@ -91,19 +103,19 @@ function convertValue(v, schema, typeName, parseDates, parseRefs) {
             return types_1.GValue.id('', ref);
         }
         // Check for time marker
-        if ('$time' in obj && typeof obj.$time === 'string') {
-            return types_1.GValue.time(new Date(obj.$time));
+        if (typeof timeMarker === 'string') {
+            return types_1.GValue.time(new Date(timeMarker));
         }
         // Check for bytes marker
-        if ('$bytes' in obj && typeof obj.$bytes === 'string') {
-            return types_1.GValue.bytes(base64ToBytes(obj.$bytes));
+        if (typeof bytesMarker === 'string') {
+            return types_1.GValue.bytes(base64ToBytes(bytesMarker));
         }
         // Check for sum type marker
-        if ('$tag' in obj && typeof obj.$tag === 'string') {
-            const value = '$value' in obj
+        if (typeof tagMarker === 'string') {
+            const value = hasOwn(obj, '$value')
                 ? convertValue(obj.$value, schema, undefined, parseDates, parseRefs)
                 : null;
-            return types_1.GValue.sum(obj.$tag, value);
+            return types_1.GValue.sum(tagMarker, value);
         }
         // Regular object -> struct with typeName or map
         if (typeName) {
@@ -169,14 +181,18 @@ function convertToJson(gv, includeTypeMarkers, compactRefs, formatDates, useWire
         case 'bytes': {
             const bytes = gv.asBytes();
             const b64 = bytesToBase64(bytes);
-            return { $bytes: b64 };
+            const result = createJsonObject();
+            result.$bytes = b64;
+            return result;
         }
         case 'time': {
             const date = gv.asTime();
             if (formatDates) {
                 return date.toISOString();
             }
-            return { $time: date.toISOString() };
+            const result = createJsonObject();
+            result.$time = date.toISOString();
+            return result;
         }
         case 'id': {
             const ref = gv.asId();
@@ -184,13 +200,15 @@ function convertToJson(gv, includeTypeMarkers, compactRefs, formatDates, useWire
             if (compactRefs) {
                 return `^${refStr}`;
             }
-            return { $ref: refStr };
+            const result = createJsonObject();
+            result.$ref = refStr;
+            return result;
         }
         case 'list': {
             return gv.asList().map(item => convertToJson(item, includeTypeMarkers, compactRefs, formatDates, useWireKeys, schema));
         }
         case 'map': {
-            const result = {};
+            const result = createJsonObject();
             for (const entry of gv.asMap()) {
                 result[entry.key] = convertToJson(entry.value, includeTypeMarkers, compactRefs, formatDates, useWireKeys, schema);
             }
@@ -198,7 +216,7 @@ function convertToJson(gv, includeTypeMarkers, compactRefs, formatDates, useWire
         }
         case 'struct': {
             const sv = gv.asStruct();
-            const result = {};
+            const result = createJsonObject();
             if (includeTypeMarkers) {
                 result.$type = sv.typeName;
             }
@@ -217,13 +235,13 @@ function convertToJson(gv, includeTypeMarkers, compactRefs, formatDates, useWire
         }
         case 'sum': {
             const sum = gv.asSum();
+            const result = createJsonObject();
+            result.$tag = sum.tag;
             if (sum.value === null) {
-                return { $tag: sum.tag };
+                return result;
             }
-            return {
-                $tag: sum.tag,
-                $value: convertToJson(sum.value, includeTypeMarkers, compactRefs, formatDates, useWireKeys, schema),
-            };
+            result.$value = convertToJson(sum.value, includeTypeMarkers, compactRefs, formatDates, useWireKeys, schema);
+            return result;
         }
     }
 }

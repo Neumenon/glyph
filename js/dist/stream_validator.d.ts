@@ -109,6 +109,7 @@ export declare class StreamingValidator {
     private hasKey;
     private toolName;
     private fields;
+    private fieldCount;
     private errors;
     private tokenCount;
     private charCount;
@@ -149,6 +150,7 @@ export declare class StreamingValidator {
     private finishField;
     private parseValue;
     private validateField;
+    private isValidType;
     private validateComplete;
     /**
      * Get the current validation result.

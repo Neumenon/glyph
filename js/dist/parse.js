@@ -13,9 +13,13 @@ function parsePacked(input, schema) {
     const parser = new PackedParser(input, schema);
     return parser.parse();
 }
+const MAX_PARSE_DEPTH = 256;
+const MAX_COLLECTION_LEN = 10000000; // 10M elements
+const MAX_STRING_LEN = 500000000; // 500MB
 class PackedParser {
     constructor(input, schema) {
         this.pos = 0;
+        this.depth = 0;
         this.input = input;
         this.schema = schema;
     }
@@ -42,6 +46,10 @@ class PackedParser {
             value = this.parseDenseValues(typeName);
         }
         this.expect(')');
+        this.skipWhitespace();
+        if (this.pos !== this.input.length) {
+            throw new Error(`trailing garbage at pos ${this.pos}`);
+        }
         return value;
     }
     parseTypeName() {
@@ -129,6 +137,18 @@ class PackedParser {
         return types_1.GValue.struct(typeName, ...entries);
     }
     parseValue(typeHint) {
+        this.depth++;
+        if (this.depth > MAX_PARSE_DEPTH) {
+            throw new Error(`maximum nesting depth exceeded (${MAX_PARSE_DEPTH})`);
+        }
+        try {
+            return this.parseValueInner(typeHint);
+        }
+        finally {
+            this.depth--;
+        }
+    }
+    parseValueInner(typeHint) {
         this.skipWhitespace();
         const c = this.peek();
         // Null
@@ -219,47 +239,42 @@ class PackedParser {
         const start = this.pos;
         while (this.pos < this.input.length) {
             const c = this.input[this.pos];
-            if (c === ' ' || c === ')' || c === ']' || c === '}' || c === '\n') {
+            if (this.isTokenBoundary(c)) {
                 break;
             }
             this.pos++;
         }
         const timeStr = this.input.slice(start, this.pos);
-        return types_1.GValue.time(new Date(timeStr));
+        const date = new Date(timeStr);
+        if (Number.isNaN(date.getTime())) {
+            throw new Error(`invalid time at pos ${start}`);
+        }
+        return types_1.GValue.time(date);
     }
     parseNumber() {
         const start = this.pos;
-        // Optional minus
-        if (this.input[this.pos] === '-')
-            this.pos++;
-        // Integer part
-        while (this.pos < this.input.length && this.input[this.pos] >= '0' && this.input[this.pos] <= '9') {
-            this.pos++;
+        const match = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(this.input.slice(this.pos));
+        if (!match) {
+            throw new Error(`invalid number at pos ${start}`);
         }
-        let isFloat = false;
-        // Decimal part
-        if (this.pos < this.input.length && this.input[this.pos] === '.') {
-            isFloat = true;
-            this.pos++;
-            while (this.pos < this.input.length && this.input[this.pos] >= '0' && this.input[this.pos] <= '9') {
-                this.pos++;
-            }
+        const numStr = match[0];
+        const next = this.input[this.pos + numStr.length] ?? '';
+        if (next !== '' && !this.isTokenBoundary(next)) {
+            throw new Error(`invalid numeric token at pos ${start}`);
         }
-        // Exponent
-        if (this.pos < this.input.length && (this.input[this.pos] === 'e' || this.input[this.pos] === 'E')) {
-            isFloat = true;
-            this.pos++;
-            if (this.input[this.pos] === '+' || this.input[this.pos] === '-')
-                this.pos++;
-            while (this.pos < this.input.length && this.input[this.pos] >= '0' && this.input[this.pos] <= '9') {
-                this.pos++;
-            }
+        this.pos += numStr.length;
+        const num = Number(numStr);
+        if (!Number.isFinite(num)) {
+            throw new Error(`invalid number at pos ${start}`);
         }
-        const numStr = this.input.slice(start, this.pos);
-        if (isFloat) {
-            return types_1.GValue.float(parseFloat(numStr));
+        if (numStr.includes('.') || numStr.includes('e') || numStr.includes('E')) {
+            return types_1.GValue.float(num);
         }
-        return types_1.GValue.int(parseInt(numStr, 10));
+        const intVal = parseInt(numStr, 10);
+        if (!Number.isSafeInteger(intVal)) {
+            throw new Error(`integer exceeds safe range at pos ${start}: ${numStr}`);
+        }
+        return types_1.GValue.int(intVal);
     }
     parseQuotedString() {
         this.expect('"');
@@ -269,6 +284,9 @@ class PackedParser {
             if (c === '"') {
                 this.pos++;
                 return types_1.GValue.str(result);
+            }
+            if (result.length >= MAX_STRING_LEN) {
+                throw new Error(`string exceeds maximum length (${MAX_STRING_LEN})`);
             }
             if (c === '\\' && this.pos + 1 < this.input.length) {
                 this.pos++;
@@ -345,6 +363,9 @@ class PackedParser {
                 this.pos++;
                 return types_1.GValue.list(...items);
             }
+            if (items.length >= MAX_COLLECTION_LEN) {
+                throw new Error(`list exceeds maximum length (${MAX_COLLECTION_LEN})`);
+            }
             items.push(this.parseValue());
         }
     }
@@ -356,6 +377,9 @@ class PackedParser {
             if (this.peek() === '}') {
                 this.pos++;
                 return types_1.GValue.map(...entries);
+            }
+            if (entries.length >= MAX_COLLECTION_LEN) {
+                throw new Error(`map exceeds maximum length (${MAX_COLLECTION_LEN})`);
             }
             // Parse key
             const key = this.parseValue().asStr();
@@ -379,6 +403,9 @@ class PackedParser {
     }
     peek() {
         return this.pos < this.input.length ? this.input[this.pos] : '';
+    }
+    isTokenBoundary(c) {
+        return c === '' || c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === ')' || c === ']' || c === '}';
     }
     expect(c) {
         this.skipWhitespace();
@@ -697,7 +724,11 @@ function parseScalarValue(s) {
         if (s.includes('.') || s.includes('e') || s.includes('E')) {
             return types_1.GValue.float(parseFloat(s));
         }
-        return types_1.GValue.int(parseInt(s, 10));
+        const intVal = parseInt(s, 10);
+        if (!Number.isSafeInteger(intVal)) {
+            throw new Error(`integer exceeds safe range: ${s}`);
+        }
+        return types_1.GValue.int(intVal);
     }
     // List
     if (s.startsWith('[')) {

@@ -17,6 +17,7 @@
 #define DEFAULT_MAX_ERRORS   100u
 #define DEFAULT_MAX_TIMELINE 1024u
 #define DEFAULT_MAX_DEPTH    128
+#define DEFAULT_MAX_STRING_LEN (10u * 1024u * 1024u)  /* 10MB */
 
 /* ============================================================
  * Internal Helpers
@@ -90,7 +91,7 @@ arg_schema_t *arg_schema_new(const char *name, const char *type) {
     a->min = INT64_MIN;
     a->max = INT64_MAX;
     a->min_len = 0;
-    a->max_len = SIZE_MAX;
+    a->max_len = DEFAULT_MAX_STRING_LEN;
     a->pattern = NULL;
     a->enum_values = NULL;
     a->enum_count = 0;
@@ -302,7 +303,7 @@ tool_registry_t *tool_registry_default(void) {
         goto fail;
     }
     arg_schema_set_required(query, true);
-    arg_schema_set_length(query, 1, SIZE_MAX);
+    arg_schema_set_length(query, 1, DEFAULT_MAX_STRING_LEN);
     tool_schema_add_arg(search, query);
 
     arg_schema_t *max_results = arg_schema_new("max_results", "int");

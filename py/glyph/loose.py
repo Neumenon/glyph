@@ -79,6 +79,11 @@ def no_tabular_loose_canon_opts() -> LooseCanonOpts:
 NULL_SYMBOL = "∅"
 NULL_UNDERSCORE = "_"
 
+# Security limits (Class 5: Resource Exhaustion)
+MAX_JSON_DEPTH = 128
+MAX_COLLECTION_LEN = 1_000_000  # 1M elements
+MAX_STRING_LEN = 10 * 1024 * 1024  # 10MB
+
 # Reserved words that must be quoted
 RESERVED_WORDS = {"t", "f", "true", "false", "null", "none", "nil", "_", "NaN", "Inf"}
 
@@ -465,8 +470,10 @@ def unescape_tabular_cell(s: str) -> str:
 # JSON Bridge (Loose Mode)
 # ============================================================
 
-def from_json_loose(data: Any) -> GValue:
+def from_json_loose(data: Any, _depth: int = 0) -> GValue:
     """Convert a Python/JSON value to GValue."""
+    if _depth > MAX_JSON_DEPTH:
+        raise ValueError(f"maximum nesting depth exceeded ({MAX_JSON_DEPTH})")
     if data is None:
         return GValue.null()
     elif isinstance(data, bool):
@@ -478,15 +485,21 @@ def from_json_loose(data: Any) -> GValue:
             raise ValueError("non-finite floats are not supported")
         return GValue.float_(data)
     elif isinstance(data, str):
+        if len(data) > MAX_STRING_LEN:
+            raise ValueError(f"string too large ({len(data)} > {MAX_STRING_LEN})")
         return GValue.str_(data)
     elif isinstance(data, bytes):
         return GValue.bytes_(data)
     elif isinstance(data, datetime):
         return GValue.time(data)
     elif isinstance(data, list):
-        return GValue.list_(*[from_json_loose(item) for item in data])
+        if len(data) > MAX_COLLECTION_LEN:
+            raise ValueError(f"list too large ({len(data)} > {MAX_COLLECTION_LEN})")
+        return GValue.list_(*[from_json_loose(item, _depth + 1) for item in data])
     elif isinstance(data, dict):
-        entries = [MapEntry(str(k), from_json_loose(v)) for k, v in data.items()]
+        if len(data) > MAX_COLLECTION_LEN:
+            raise ValueError(f"map too large ({len(data)} > {MAX_COLLECTION_LEN})")
+        entries = [MapEntry(str(k), from_json_loose(v, _depth + 1)) for k, v in data.items()]
         return GValue.map_(*entries)
     else:
         return GValue.str_(str(data))

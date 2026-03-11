@@ -50,6 +50,8 @@ class Token:
 
 
 DEFAULT_MAX_DEPTH = 100
+MAX_COLLECTION_LEN = 1_000_000  # 1M elements
+MAX_STRING_LEN = 10 * 1024 * 1024  # 10MB
 
 
 class Lexer:
@@ -164,6 +166,8 @@ class Lexer:
             if c == '"':
                 self.pos += 1
                 return Token(TokenType.STRING, "".join(result), start)
+            if len(result) >= MAX_STRING_LEN:
+                raise ValueError(f"string too large (>{MAX_STRING_LEN} characters)")
             if c == '\\':
                 self.pos += 1
                 if self.pos >= self.length:
@@ -466,6 +470,8 @@ class Parser:
                     self.advance()
                     continue
 
+                if len(items) >= MAX_COLLECTION_LEN:
+                    raise ValueError(f"list too large (>{MAX_COLLECTION_LEN} elements)")
                 items.append(self._parse_value())
 
             self.expect(TokenType.RBRACKET)
@@ -486,6 +492,9 @@ class Parser:
                 if self.current.type == TokenType.NEWLINE:
                     self.advance()
                     continue
+
+                if len(entries) >= MAX_COLLECTION_LEN:
+                    raise ValueError(f"map too large (>{MAX_COLLECTION_LEN} entries)")
 
                 # Parse key
                 if self.current.type == TokenType.IDENT:
@@ -527,6 +536,9 @@ class Parser:
                     if self.current.type == TokenType.NEWLINE:
                         self.advance()
                         continue
+
+                    if len(fields) >= MAX_COLLECTION_LEN:
+                        raise ValueError(f"struct too large (>{MAX_COLLECTION_LEN} fields)")
 
                     # Parse field
                     if self.current.type == TokenType.IDENT:

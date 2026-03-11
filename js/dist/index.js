@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { g, field, SchemaBuilder, t, fromJson, toJson, emitPacked, parsePacked } from 'glyph-js';
+ * import { g, field, SchemaBuilder, t, fromJson, toJson, emitPacked, parsePacked } from 'cowrie-glyph';
  *
  * // Define a schema
  * const schema = new SchemaBuilder()
