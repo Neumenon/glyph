@@ -22,5 +22,12 @@ node_modules/
 # OS
 .DS_Store
 
+# Coverage
+.coverage
+coverage/
+
+# Generated
+explainer.html
+
 # Hypothesis test database
 .hypothesis/
