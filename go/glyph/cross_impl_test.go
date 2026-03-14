@@ -56,6 +56,12 @@ func runNode(t *testing.T, args ...string) NodeResult {
 		t.Skip("Node.js not available, skipping cross-impl test")
 	}
 
+	// Check if the JS dist is built
+	jsDistPath := filepath.Join("..", "js", "dist", "index.js")
+	if _, err := os.Stat(jsDistPath); err != nil {
+		t.Skip("glyph-js not built, skipping cross-impl test")
+	}
+
 	cmdArgs := append([]string{scriptPath}, args...)
 	cmd := exec.Command("node", cmdArgs...)
 	cmd.Dir = "." // Run from glyph directory
@@ -66,6 +72,10 @@ func runNode(t *testing.T, args ...string) NodeResult {
 		if len(output) > 0 {
 			var result NodeResult
 			if jsonErr := json.Unmarshal(output, &result); jsonErr == nil {
+				// Skip if the JS module failed to import (not built)
+				if !result.Success && strings.Contains(result.Error, "Failed to import") {
+					t.Skip("glyph-js module not importable, skipping cross-impl test")
+				}
 				return result
 			}
 		}

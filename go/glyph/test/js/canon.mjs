@@ -27,7 +27,7 @@ import { readFileSync } from 'fs';
 
 // Import the built glyph-js library
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const glyphPath = join(__dirname, '..', '..', '..', 'glyph-js', 'dist', 'index.js');
+const glyphPath = join(__dirname, '..', '..', '..', '..', 'js', 'dist', 'index.js');
 
 // Dynamic import of the built module
 let glyph;
