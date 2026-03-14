@@ -1,11 +1,11 @@
-//go:build agentgo
+//go:build cogs
 
 package glyph
 
 import (
 	"time"
 
-	"github.com/phenomenon0/Agent-GO/cowrie"
+	cowrie "github.com/Neumenon/cowrie/go"
 )
 
 // ToSJSON converts a GValue to a cowrie.Value.

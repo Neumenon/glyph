@@ -2,8 +2,9 @@ module github.com/Neumenon/glyph
 
 go 1.24.0
 
-require github.com/phenomenon0/Agent-GO v0.0.0
+require (
+	github.com/Neumenon/cowrie/go v0.0.0
+	github.com/klauspost/compress v1.18.0 // indirect
+)
 
-require github.com/klauspost/compress v1.18.0 // indirect
-
-replace github.com/phenomenon0/Agent-GO => ../../Agent-GO
+replace github.com/Neumenon/cowrie/go => ../../cowrie/go
