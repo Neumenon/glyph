@@ -6,7 +6,7 @@ Rust implementation of the GLYPH codec.
 
 ```toml
 [dependencies]
-glyph-rs = "0.1"
+glyph-rs = "1.0"
 serde_json = "1"
 ```
 
