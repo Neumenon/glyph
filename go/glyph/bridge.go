@@ -5,7 +5,7 @@ package glyph
 import (
 	"time"
 
-	cowrie "github.com/Neumenon/cowrie/go"
+	cowrie "github.com/Neumenon/cowrie/go/v2"
 )
 
 // ToSJSON converts a GValue to a cowrie.Value.
