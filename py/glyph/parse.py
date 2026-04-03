@@ -49,7 +49,7 @@ class Token:
     pos: int
 
 
-DEFAULT_MAX_DEPTH = 100
+DEFAULT_MAX_DEPTH = 128  # aligned with Go, JS, C, Rust
 MAX_COLLECTION_LEN = 1_000_000  # 1M elements
 MAX_STRING_LEN = 10 * 1024 * 1024  # 10MB
 

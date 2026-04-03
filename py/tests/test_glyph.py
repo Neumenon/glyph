@@ -289,7 +289,7 @@ class TestParserHardening:
             parse(text)
 
     def test_limits_nesting_depth(self):
-        deeply_nested = "[" * 101 + "0" + "]" * 101
+        deeply_nested = "[" * 129 + "0" + "]" * 129
         with pytest.raises(ValueError, match="maximum nesting depth"):
             parse(deeply_nested)
 
@@ -613,17 +613,17 @@ class TestParseEdgeCases:
         # Should work at depth 50
         v = parse(text)
         # Now try exceeding
-        deep = "{a=" * 101 + "1" + "}" * 101
+        deep = "{a=" * 129 + "1" + "}" * 129
         with pytest.raises(ValueError, match="maximum nesting depth"):
             parse(deep)
 
     def test_nesting_depth_struct(self):
-        deep = "S{x=" * 101 + "1" + "}" * 101
+        deep = "S{x=" * 129 + "1" + "}" * 129
         with pytest.raises(ValueError, match="maximum nesting depth"):
             parse(deep)
 
     def test_nesting_depth_sum(self):
-        deep = "T(" * 101 + "1" + ")" * 101
+        deep = "T(" * 129 + "1" + ")" * 129
         with pytest.raises(ValueError, match="maximum nesting depth"):
             parse(deep)
 

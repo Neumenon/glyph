@@ -21,9 +21,9 @@ export function parsePacked(input: string, schema: Schema): GValue {
   return parser.parse();
 }
 
-const MAX_PARSE_DEPTH = 256;
-const MAX_COLLECTION_LEN = 10_000_000;  // 10M elements
-const MAX_STRING_LEN = 500_000_000;     // 500MB
+const MAX_PARSE_DEPTH = 128;              // aligned with loose.ts, C, Python
+const MAX_COLLECTION_LEN = 1_000_000;     // 1M elements (aligned across all impls)
+const MAX_STRING_LEN = 10 * 1024 * 1024;  // 10MB (aligned across all impls)
 
 class PackedParser {
   private input: string;

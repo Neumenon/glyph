@@ -160,4 +160,4 @@ char *glyph = glyph_canonicalize_loose(v);
 
 ## License
 
-MIT
+Apache-2.0

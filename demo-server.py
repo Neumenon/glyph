@@ -265,7 +265,7 @@ class DemoHandler(SimpleHTTPRequestHandler):
         
         try:
             return super().do_GET()
-        except:
+        except Exception:
             self.send_response(404)
             self.end_headers()
 
