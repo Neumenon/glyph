@@ -25,6 +25,37 @@ class GType(Enum):
     MAP = "map"
     STRUCT = "struct"
     SUM = "sum"
+    BLOB = "blob"
+    POOL_REF = "poolref"
+
+
+@dataclass
+class BlobRef:
+    """Content-addressed blob reference."""
+    cid: str
+    mime: str
+    bytes: int
+    name: str = ""
+    caption: str = ""
+    preview: str = ""
+
+    def algorithm(self) -> str:
+        i = self.cid.find(":")
+        return self.cid[:i] if i > 0 else "sha256"
+
+    def hash(self) -> str:
+        i = self.cid.find(":")
+        return self.cid[i + 1:] if i > 0 else self.cid
+
+
+@dataclass
+class PoolRef:
+    """Reference to a pooled value: ^<PoolID>:<Index>."""
+    pool_id: str
+    index: int
+
+    def __str__(self) -> str:
+        return f"^{self.pool_id}:{self.index}"
 
 
 @dataclass
@@ -69,7 +100,8 @@ class GValue:
 
     __slots__ = (
         '_type', '_bool', '_int', '_float', '_str', '_bytes',
-        '_time', '_id', '_list', '_map', '_struct', '_sum'
+        '_time', '_id', '_list', '_map', '_struct', '_sum',
+        '_blob', '_poolref',
     )
 
     def __init__(self, gtype: GType):
@@ -85,6 +117,8 @@ class GValue:
         self._map: Optional[List[MapEntry]] = None
         self._struct: Optional[StructValue] = None
         self._sum: Optional[SumValue] = None
+        self._blob: Optional[BlobRef] = None
+        self._poolref: Optional[PoolRef] = None
 
     @property
     def type(self) -> GType:
@@ -170,6 +204,18 @@ class GValue:
         gv._sum = SumValue(tag, value)
         return gv
 
+    @staticmethod
+    def blob(ref: BlobRef) -> "GValue":
+        gv = GValue(GType.BLOB)
+        gv._blob = ref
+        return gv
+
+    @staticmethod
+    def pool_ref(pool_id: str, index: int) -> "GValue":
+        gv = GValue(GType.POOL_REF)
+        gv._poolref = PoolRef(pool_id, index)
+        return gv
+
     # ============================================================
     # Accessors
     # ============================================================
@@ -231,6 +277,16 @@ class GValue:
         if self._type != GType.SUM:
             raise TypeError("not a sum")
         return self._sum  # type: ignore
+
+    def as_blob(self) -> BlobRef:
+        if self._type != GType.BLOB:
+            raise TypeError("not a blob")
+        return self._blob  # type: ignore
+
+    def as_pool_ref(self) -> PoolRef:
+        if self._type != GType.POOL_REF:
+            raise TypeError("not a pool ref")
+        return self._poolref  # type: ignore
 
     def as_number(self) -> Union[int, float]:
         """Get numeric value (works for int or float)."""
@@ -329,6 +385,12 @@ class GValue:
                 self._sum.tag,  # type: ignore
                 self._sum.value.clone() if self._sum.value else None  # type: ignore
             )
+        elif self._type == GType.BLOB:
+            b = self._blob  # type: ignore
+            return GValue.blob(BlobRef(b.cid, b.mime, b.bytes, b.name, b.caption, b.preview))
+        elif self._type == GType.POOL_REF:
+            p = self._poolref  # type: ignore
+            return GValue.pool_ref(p.pool_id, p.index)
         raise ValueError(f"unknown type: {self._type}")
 
     def __repr__(self) -> str:
@@ -356,6 +418,10 @@ class GValue:
             return f"GValue.struct({self._struct.type_name!r}, ...)"  # type: ignore
         elif self._type == GType.SUM:
             return f"GValue.sum({self._sum.tag!r}, ...)"  # type: ignore
+        elif self._type == GType.BLOB:
+            return f"GValue.blob({self._blob!r})"  # type: ignore
+        elif self._type == GType.POOL_REF:
+            return f"GValue.pool_ref({self._poolref.pool_id!r}, {self._poolref.index})"  # type: ignore
         return f"GValue({self._type})"
 
 

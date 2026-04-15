@@ -450,6 +450,9 @@ class Parser:
                 self.advance()
             else:
                 raise ValueError(f"expected reference value part, got {self.current.type}")
+            from .pool import is_pool_ref_id
+            if is_pool_ref_id(first) and second.isdigit():
+                return GValue.pool_ref(first, int(second))
             return GValue.id(first, second)
 
         return GValue.id("", first)
