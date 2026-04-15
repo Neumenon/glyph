@@ -217,11 +217,11 @@ func TestAutoPoolEncode_IsBareKey(t *testing.T) {
 }
 
 func TestAutoPoolEncode_EscapeString(t *testing.T) {
-	got := escapeStringForPool("hello\nworld\t\"back\\")
+	got := escapeString("hello\nworld\t\"back\\")
 	if got != `hello\nworld\t\"back\\` {
 		t.Errorf("unexpected: %q", got)
 	}
-	got2 := escapeStringForPool("carriage\rreturn")
+	got2 := escapeString("carriage\rreturn")
 	if got2 != `carriage\rreturn` {
 		t.Errorf("unexpected: %q", got2)
 	}

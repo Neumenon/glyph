@@ -10,7 +10,7 @@ import {
   parsePacked, parseTabular, parseHeader,
   jsonToPacked, jsonToLyph, compareTokens,
   PatchBuilder, emitPatch, parsePatch, applyPatch,
-  canonicalizeLoose, canonicalizeLooseNoTabular, canonicalizeLooseTabular, canonicalizeLooseWithOpts,
+  canonicalizeLoose, canonicalizeLooseNoTabular, canonicalizeLooseWithOpts,
   equalLoose, fromJsonLoose, toJsonLoose, jsonEqual,
   parseTabularLoose, unescapeTabularCell,
 } from './index';
@@ -686,7 +686,7 @@ describe('Loose Mode', () => {
 // ============================================================
 
 describe('Auto-Tabular', () => {
-  describe('canonicalizeLooseTabular', () => {
+  describe('auto-tabular canonicalization', () => {
     test('basic list of objects', () => {
       const list = g.list(
         g.map(field('id', g.int(1)), field('name', g.str('a'))),
@@ -694,7 +694,7 @@ describe('Auto-Tabular', () => {
         g.map(field('id', g.int(3)), field('name', g.str('c')))
       );
       
-      const result = canonicalizeLooseTabular(list);
+      const result = canonicalizeLoose(list);
       expect(result).toContain('@tab _ rows=3 cols=2 [id name]');
       expect(result).toContain('|1|a|');
       expect(result).toContain('|2|b|');
@@ -708,7 +708,7 @@ describe('Auto-Tabular', () => {
         g.map(field('id', g.int(2)))
       );
       
-      const result = canonicalizeLooseTabular(list);
+      const result = canonicalizeLoose(list);
       expect(result).toBe('[{id=1} {id=2}]');
     });
 
@@ -719,7 +719,7 @@ describe('Auto-Tabular', () => {
         g.str('hello')
       );
       
-      const result = canonicalizeLooseTabular(list);
+      const result = canonicalizeLoose(list);
       expect(result).toBe('[{id=1} 42 hello]');
     });
 
@@ -730,7 +730,7 @@ describe('Auto-Tabular', () => {
         g.map(field('id', g.int(3)), field('name', g.str('c')))
       );
       
-      const result = canonicalizeLooseTabular(list);
+      const result = canonicalizeLoose(list);
       expect(result).toContain('|2|_|');
     });
 
@@ -741,7 +741,7 @@ describe('Auto-Tabular', () => {
         g.map(field('val', g.str('e|f')))
       );
       
-      const result = canonicalizeLooseTabular(list);
+      const result = canonicalizeLoose(list);
       expect(result).toContain('"a\\|b"');
       expect(result).toContain('"c\\|d"');
     });
@@ -753,7 +753,7 @@ describe('Auto-Tabular', () => {
         g.map(field('id', g.int(3)), field('meta', g.map(field('x', g.int(30)))))
       );
       
-      const result = canonicalizeLooseTabular(list);
+      const result = canonicalizeLoose(list);
       expect(result).toContain('{x=10}');
       expect(result).toContain('{x=20}');
     });
@@ -876,7 +876,7 @@ describe('Auto-Tabular', () => {
         g.map(field('id', g.int(3)), field('name', g.str('carol')))
       );
       
-      const emitted = canonicalizeLooseTabular(original);
+      const emitted = canonicalizeLoose(original);
       const parsed = parseTabularLoose(emitted);
       
       expect(parsed.rows[0]).toEqual({ id: 1, name: 'alice' });

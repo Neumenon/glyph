@@ -386,7 +386,7 @@ describe('StreamingValidator - Required Fields', () => {
     registry.register({
       name: 'test',
       args: {
-        ['toString']: { type: 'string', required: true },
+        ['toString']: { type: 'string' as const, required: true },
       },
     });
 

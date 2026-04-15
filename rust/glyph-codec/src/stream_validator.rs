@@ -9,6 +9,7 @@
 //! - Latency savings: Reject bad payloads without waiting for completion
 
 use std::collections::HashMap;
+use std::fmt;
 use std::time::{Duration, Instant};
 use regex::Regex;
 
@@ -16,10 +17,70 @@ use regex::Regex;
 // Tool Registry
 // ============================================================
 
+/// Expected argument type for a tool argument.
+///
+/// Parsed case-insensitively. Unknown strings fall back to `Any`, preserving
+/// the validator's permissive behaviour for schemas authored with free-form
+/// type names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArgType {
+    String,
+    Int,
+    Float,
+    Number,
+    Bool,
+    Null,
+    Any,
+}
+
+impl ArgType {
+    pub fn parse(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_str() {
+            "string" | "str" => ArgType::String,
+            "int" | "integer" => ArgType::Int,
+            "float" => ArgType::Float,
+            "number" => ArgType::Number,
+            "bool" | "boolean" => ArgType::Bool,
+            "null" => ArgType::Null,
+            _ => ArgType::Any,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ArgType::String => "string",
+            ArgType::Int => "int",
+            ArgType::Float => "float",
+            ArgType::Number => "number",
+            ArgType::Bool => "bool",
+            ArgType::Null => "null",
+            ArgType::Any => "any",
+        }
+    }
+}
+
+impl fmt::Display for ArgType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for ArgType {
+    fn from(s: &str) -> Self {
+        ArgType::parse(s)
+    }
+}
+
+impl From<String> for ArgType {
+    fn from(s: String) -> Self {
+        ArgType::parse(&s)
+    }
+}
+
 /// Constraints for a tool argument.
 #[derive(Debug, Clone)]
 pub struct ArgSchema {
-    pub arg_type: String,
+    pub arg_type: ArgType,
     pub required: bool,
     pub min: Option<f64>,
     pub max: Option<f64>,
@@ -30,9 +91,9 @@ pub struct ArgSchema {
 }
 
 impl ArgSchema {
-    pub fn new(arg_type: &str) -> Self {
+    pub fn new(arg_type: impl Into<ArgType>) -> Self {
         Self {
-            arg_type: arg_type.to_string(),
+            arg_type: arg_type.into(),
             required: false,
             min: None,
             max: None,
@@ -244,15 +305,7 @@ pub struct StreamingValidator {
     max_error_count: usize,
 }
 
-/// Field value during parsing.
-#[derive(Debug, Clone, PartialEq)]
-pub enum FieldValue {
-    Null,
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    Str(String),
-}
+pub use crate::schema_evolution::FieldValue;
 
 impl StreamingValidator {
     /// Create a new validator with the given registry.
@@ -707,14 +760,14 @@ impl StreamingValidator {
     }
 
     fn type_matches(arg_schema: &ArgSchema, value: &FieldValue) -> bool {
-        let expected = arg_schema.arg_type.to_ascii_lowercase();
-
-        match value {
-            FieldValue::Null => !arg_schema.required,
-            FieldValue::Bool(_) => matches!(expected.as_str(), "bool" | "boolean"),
-            FieldValue::Int(_) => matches!(expected.as_str(), "int" | "integer" | "float" | "number"),
-            FieldValue::Float(_) => matches!(expected.as_str(), "float" | "number"),
-            FieldValue::Str(_) => matches!(expected.as_str(), "string" | "str"),
+        match (value, arg_schema.arg_type) {
+            (FieldValue::Null, _) => !arg_schema.required,
+            (_, ArgType::Any) => true,
+            (FieldValue::Bool(_), ArgType::Bool) => true,
+            (FieldValue::Int(_), ArgType::Int | ArgType::Float | ArgType::Number) => true,
+            (FieldValue::Float(_), ArgType::Float | ArgType::Number) => true,
+            (FieldValue::Str(_), ArgType::String) => true,
+            _ => false,
         }
     }
 
@@ -725,6 +778,7 @@ impl StreamingValidator {
             FieldValue::Int(_) => "int",
             FieldValue::Float(_) => "float",
             FieldValue::Str(_) => "string",
+            FieldValue::List(_) => "list",
         }
     }
 

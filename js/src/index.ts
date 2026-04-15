@@ -122,7 +122,6 @@ export {
   canonicalizeLoose,
   canonicalizeLooseNoTabular,
   canonicalizeLooseWithOpts,
-  canonicalizeLooseTabular,
   fingerprintLoose,
   equalLoose,
   fromJsonLoose,
@@ -137,7 +136,6 @@ export {
   TabularParseResult as LooseTabularParseResult,
   defaultLooseCanonOpts,
   noTabularLooseCanonOpts,
-  tabularLooseCanonOpts,
   // v2.4.0: LLM mode, schema headers, compact keys
   llmLooseCanonOpts,
   canonicalizeLooseWithSchema,

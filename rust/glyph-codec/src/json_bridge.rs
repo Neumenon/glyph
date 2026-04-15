@@ -6,9 +6,9 @@ use serde_json::{Value as JsonValue, Number, Map};
 
 pub const MAX_JSON_DEPTH: usize = 128;
 
-/// Convert JSON value to GValue
+/// Convert JSON value to GValue. Panics on recursion limit; use `try_from_json` to handle it.
 pub fn from_json(json: &JsonValue) -> GValue {
-    try_from_json(json).unwrap_or(GValue::Null)
+    try_from_json(json).expect("from_json: recursion limit exceeded")
 }
 
 pub fn try_from_json(json: &JsonValue) -> Result<GValue> {
@@ -52,9 +52,9 @@ fn from_json_with_depth(json: &JsonValue, depth: usize) -> Result<GValue> {
     })
 }
 
-/// Convert GValue to JSON value
+/// Convert GValue to JSON value. Panics on recursion limit; use `try_to_json` to handle it.
 pub fn to_json(gv: &GValue) -> JsonValue {
-    try_to_json(gv).unwrap_or(JsonValue::Null)
+    try_to_json(gv).expect("to_json: recursion limit exceeded")
 }
 
 pub fn try_to_json(gv: &GValue) -> Result<JsonValue> {
@@ -130,20 +130,16 @@ pub fn parse_json(json_str: &str) -> Result<GValue> {
     try_from_json(&json)
 }
 
-/// Stringify GValue to JSON string
+/// Stringify GValue to JSON string. Panics on recursion limit or serde failure.
 pub fn stringify_json(gv: &GValue) -> String {
-    try_to_json(gv)
-        .ok()
-        .and_then(|json| serde_json::to_string(&json).ok())
-        .unwrap_or_default()
+    let json = try_to_json(gv).expect("stringify_json: recursion limit exceeded");
+    serde_json::to_string(&json).expect("stringify_json: serde_json encoding failed")
 }
 
-/// Stringify GValue to pretty JSON string
+/// Stringify GValue to pretty JSON string. Panics on recursion limit or serde failure.
 pub fn stringify_json_pretty(gv: &GValue) -> String {
-    try_to_json(gv)
-        .ok()
-        .and_then(|json| serde_json::to_string_pretty(&json).ok())
-        .unwrap_or_default()
+    let json = try_to_json(gv).expect("stringify_json_pretty: recursion limit exceeded");
+    serde_json::to_string_pretty(&json).expect("stringify_json_pretty: serde_json encoding failed")
 }
 
 #[cfg(test)]

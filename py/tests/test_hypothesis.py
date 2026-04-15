@@ -115,21 +115,13 @@ def test_canon_float_rejects_inf():
 @given(obj=st.dictionaries(st.text(min_size=1, max_size=20), json_scalars, max_size=10))
 @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow])
 def test_json_loose_roundtrip(obj: dict):
-    """to_json_loose then from_json_loose preserves structure for simple dicts."""
+    """from_json_loose then to_json_loose preserves dict structure."""
     try:
-        glyph_text = to_json_loose(obj)
-        parsed = from_json_loose(glyph_text)
-    except Exception:
-        return  # Some values may not be representable
+        gv = from_json_loose(obj)
+        parsed = to_json_loose(gv)
+    except (ValueError, TypeError):
+        return  # Unrepresentable values are expected
 
-    # Compare JSON representations (normalizes types)
-    try:
-        original_json = json.dumps(obj, sort_keys=True, default=str)
-        parsed_json = json.dumps(parsed, sort_keys=True, default=str)
-    except (TypeError, ValueError):
-        return
-
-    # Loose comparison — types may differ slightly (int vs float)
     assert isinstance(parsed, dict)
 
 
@@ -139,9 +131,12 @@ def test_canonicalize_no_crash(text: str):
     """Canonicalizing arbitrary parsed values never crashes."""
     try:
         parsed = from_json_loose(text)
-        if parsed is not None:
-            # Try to canonicalize whatever we got
-            result = to_json_loose(parsed)
-            assert isinstance(result, str)
-    except Exception:
-        pass
+    except (ValueError, TypeError):
+        return
+    if parsed is None:
+        return
+    try:
+        result = to_json_loose(parsed)
+    except (ValueError, TypeError):
+        return
+    assert isinstance(result, str)

@@ -8,6 +8,7 @@ import { GValue, RefID, MapEntry } from './types';
 import { Schema } from './schema';
 import { canonicalizeLoose } from './loose';
 import { stateHashLooseSync, hashToHex } from './stream/hash';
+import { canonInt, canonFloat, canonString } from './codec_primitives';
 
 // ============================================================
 // Patch Types (Match Go's emit_patch.go)
@@ -920,61 +921,7 @@ function applyToParent(value: GValue, seg: PathSeg, op: PatchOp): GValue {
 // Canonical Helpers
 // ============================================================
 
-function canonInt(n: number): string {
-  return String(Math.floor(n));
-}
-
-function canonFloat(f: number): string {
-  if (f === 0) return '0';
-  return String(f).replace('E', 'e');
-}
-
-function canonString(s: string): string {
-  if (isBareSafe(s)) return s;
-  return quoteString(s);
-}
-
 function canonRef(ref: RefID): string {
   const full = ref.prefix ? `${ref.prefix}:${ref.value}` : ref.value;
   return `^${full}`;
-}
-
-function isBareSafe(s: string): boolean {
-  if (!s) return false;
-  if (['t', 'f', 'true', 'false', 'null', 'none', 'nil'].includes(s)) return false;
-  
-  const first = s.charCodeAt(0);
-  if (!isLetter(first) && first !== 95) return false;
-  
-  for (let i = 1; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (!isLetter(c) && !isDigit(c) && c !== 95 && c !== 45 && c !== 46 && c !== 47) {
-      return false;
-    }
-  }
-  
-  return true;
-}
-
-function isLetter(c: number): boolean {
-  return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
-}
-
-function isDigit(c: number): boolean {
-  return c >= 48 && c <= 57;
-}
-
-function quoteString(s: string): string {
-  let result = '"';
-  for (const ch of s) {
-    switch (ch) {
-      case '\\': result += '\\\\'; break;
-      case '"': result += '\\"'; break;
-      case '\n': result += '\\n'; break;
-      case '\r': result += '\\r'; break;
-      case '\t': result += '\\t'; break;
-      default: result += ch;
-    }
-  }
-  return result + '"';
 }

@@ -31,7 +31,7 @@ pub use decimal128::*;
 pub use schema_evolution::*;
 pub use stream_validator::{
     ArgSchema, ToolSchema, ToolRegistry, ErrorCode, ValidationError, ValidatorState, TimelineEvent,
-    StreamingValidator, ValidationResult, default_tool_registry, FieldValue as StreamFieldValue,
+    StreamingValidator, ValidationResult, default_tool_registry,
 };
 
 #[cfg(test)]

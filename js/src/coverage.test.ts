@@ -11,7 +11,7 @@ import {
   parsePacked, parseTabular, parseHeader,
   PatchBuilder, emitPatch, parsePatch, applyPatch,
   parsePathToSegs, fieldSeg, listIdxSeg, mapKeySeg,
-  canonicalizeLoose, canonicalizeLooseNoTabular, canonicalizeLooseTabular,
+  canonicalizeLoose, canonicalizeLooseNoTabular,
   canonicalizeLooseWithOpts, canonicalizeLooseWithSchema,
   equalLoose, fromJsonLoose, toJsonLoose, jsonEqual,
   parseJsonLoose, stringifyJsonLoose,
@@ -834,16 +834,6 @@ describe('Loose coverage', () => {
   test('fingerprintLoose', () => {
     const fp = fingerprintLoose(g.int(42));
     expect(fp).toBe('42');
-  });
-
-  test('canonicalizeLooseTabular (deprecated alias)', () => {
-    const list = g.list(
-      g.map(field('id', g.int(1))),
-      g.map(field('id', g.int(2))),
-      g.map(field('id', g.int(3)))
-    );
-    const result = canonicalizeLooseTabular(list);
-    expect(result).toContain('@tab');
   });
 
   test('tabular with allowMissing=false and mismatched keys', () => {

@@ -31,9 +31,14 @@ Example:
 import math
 import re
 import time
-from typing import Dict, List, Optional, Any, Pattern
+from typing import Dict, List, Optional, Any, Pattern, Union
 from dataclasses import dataclass, field as dataclass_field
 from enum import Enum
+
+# Primitive values carried in parsed field maps. Mirrors the Rust `FieldValue`
+# enum and the TS `FieldValue` union.
+FieldValue = Union[None, bool, int, float, str, List[Any]]
+FieldMap = Dict[str, FieldValue]
 
 
 class ArgType(str, Enum):
@@ -133,7 +138,7 @@ class ToolSchema:
     args: Dict[str, ArgSchema] = dataclass_field(default_factory=dict)
     description: str = ""
     
-    def validate(self, fields: Dict[str, Any]) -> Optional[str]:
+    def validate(self, fields: FieldMap) -> Optional[str]:
         """
         Validate all fields against this tool schema.
         Returns error message if invalid, None if valid.
@@ -236,7 +241,7 @@ class TimelineEvent:
 class StreamValidationResult:
     """Result of a single push_token call."""
     tool_name: Optional[str] = None
-    fields: Dict[str, Any] = dataclass_field(default_factory=dict)
+    fields: FieldMap = dataclass_field(default_factory=dict)
     errors: List[str] = dataclass_field(default_factory=list)
     
     # State
@@ -316,7 +321,7 @@ class StreamingValidator:
         self.pending_key_separator = False
         self.tool_name = ""
         self.tool_finalized = False
-        self.fields: Dict[str, Any] = {}
+        self.fields: FieldMap = {}
         self.errors: List[str] = []
         
         # Timing
@@ -696,7 +701,7 @@ class StreamingValidator:
         """Get the current validation result."""
         return self._get_result()
     
-    def get_parsed(self) -> Optional[Dict[str, Any]]:
+    def get_parsed(self) -> Optional[FieldMap]:
         """Get the parsed fields if validation is complete and valid."""
         if self.state == ValidatorState.COMPLETE and len(self.errors) == 0:
             return self.fields.copy()

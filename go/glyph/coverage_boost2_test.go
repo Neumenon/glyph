@@ -965,7 +965,7 @@ func TestConstraint_Compile_InvalidRegexType(t *testing.T) {
 }
 
 // ============================================================
-// loose.go coverage — canonNullWithStyle, base64Encode
+// loose.go coverage — canonNullWithStyle
 // ============================================================
 
 func TestCanonNullWithStyle_Coverage2(t *testing.T) {
@@ -974,13 +974,6 @@ func TestCanonNullWithStyle_Coverage2(t *testing.T) {
 	}
 	if canonNullWithStyle(NullStyleSymbol) != "∅" {
 		t.Error("expected ∅")
-	}
-}
-
-func TestBase64Encode_Loose(t *testing.T) {
-	result := base64Encode([]byte("Hello"))
-	if result == "" {
-		t.Error("expected non-empty output")
 	}
 }
 

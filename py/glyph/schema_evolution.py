@@ -37,9 +37,14 @@ Example:
 
 from __future__ import annotations
 from dataclasses import dataclass, field as dataclass_field
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from enum import Enum
 import re
+
+# Values carried through schema-evolution data maps. Matches the primitive
+# set used by the Rust `FieldValue` enum and the TS `FieldValue` union.
+FieldValue = Union[None, bool, int, float, str, List[Any]]
+FieldMap = Dict[str, FieldValue]
 
 
 class EvolutionMode(Enum):
@@ -139,7 +144,7 @@ class StructSchema:
         """Get a field by name."""
         return self.fields.get(name)
     
-    def validate(self, data: Dict[str, Any]) -> Optional[str]:
+    def validate(self, data: FieldMap) -> Optional[str]:
         """Validate data against this schema version."""
         # Check required fields
         for field_name, field_schema in self.fields.items():
@@ -195,7 +200,7 @@ class VersionedSchema:
         """Get schema for a specific version."""
         return self.versions.get(version)
     
-    def parse(self, data: Dict[str, Any], from_version: str) -> Tuple[Optional[str], Dict[str, Any]]:
+    def parse(self, data: FieldMap, from_version: str) -> Tuple[Optional[str], FieldMap]:
         """
         Parse data from a specific version.
 
@@ -232,7 +237,7 @@ class VersionedSchema:
 
         return None, result
     
-    def emit(self, data: Dict[str, Any], version: Optional[str] = None) -> Tuple[Optional[str], str]:
+    def emit(self, data: FieldMap, version: Optional[str] = None) -> Tuple[Optional[str], str]:
         """
         Emit data for a specific version.
         
@@ -258,7 +263,7 @@ class VersionedSchema:
         header = f"@version {target_version}"
         return None, header
     
-    def _migrate(self, data: Dict[str, Any], from_version: str, to_version: str) -> Tuple[Optional[str], Dict[str, Any]]:
+    def _migrate(self, data: FieldMap, from_version: str, to_version: str) -> Tuple[Optional[str], FieldMap]:
         """Migrate data from one version to another."""
         current_version = from_version
         current_data = data.copy()
@@ -277,7 +282,7 @@ class VersionedSchema:
         
         return None, current_data
     
-    def _migrate_step(self, data: Dict[str, Any], from_version: str, to_version: str) -> Tuple[Optional[str], Dict[str, Any]]:
+    def _migrate_step(self, data: FieldMap, from_version: str, to_version: str) -> Tuple[Optional[str], FieldMap]:
         """Migrate data from one version to the next."""
         from_schema = self.get_version(from_version)
         to_schema = self.get_version(to_version)

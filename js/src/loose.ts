@@ -156,14 +156,6 @@ export function prettyLooseCanonOpts(): LooseCanonOpts {
   };
 }
 
-/**
- * Options preset for tabular-enabled canonicalization.
- * @deprecated auto-tabular is now the default.
- */
-export function tabularLooseCanonOpts(): LooseCanonOpts {
-  return defaultLooseCanonOpts();
-}
-
 // ============================================================
 // Canonical Scalar Encoding
 // ============================================================
@@ -386,14 +378,6 @@ export function canonicalizeLooseNoTabular(v: GValue): string {
  */
 export function canonicalizeLooseWithOpts(v: GValue, opts: LooseCanonOpts): string {
   return canonicalizeLooseImpl(v, { ...defaultLooseCanonOpts(), ...opts });
-}
-
-/**
- * Convenience function: canonicalize with auto-tabular enabled.
- * @deprecated auto-tabular is now the default. Use canonicalizeLoose instead.
- */
-export function canonicalizeLooseTabular(v: GValue): string {
-  return canonicalizeLoose(v);
 }
 
 function canonicalizeLooseImpl(v: GValue, opts: LooseCanonOpts): string {

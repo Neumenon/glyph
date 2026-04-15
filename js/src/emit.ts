@@ -6,39 +6,19 @@
 
 import { GValue, RefID, MapEntry } from './types';
 import { Schema, FieldDef, TypeDef } from './schema';
+import {
+  canonNull,
+  canonBool,
+  canonInt,
+  canonFloat,
+  canonString,
+  isRefSafe,
+  quoteString,
+} from './codec_primitives';
 
 // ============================================================
 // Canonical Scalar Encoding
 // ============================================================
-
-const NULL_SYMBOL = '∅';
-
-function canonNull(): string {
-  return NULL_SYMBOL;
-}
-
-function canonBool(v: boolean): string {
-  return v ? 't' : 'f';
-}
-
-function canonInt(n: number): string {
-  if (n === 0) return '0';
-  return String(Math.floor(n));
-}
-
-function canonFloat(f: number): string {
-  if (f === 0) return '0';
-  // Use shortest representation
-  const s = String(f);
-  return s.replace('E', 'e');
-}
-
-function canonString(s: string): string {
-  if (isBareSafe(s)) {
-    return s;
-  }
-  return quoteString(s);
-}
 
 function canonRef(ref: RefID): string {
   const full = ref.prefix ? `${ref.prefix}:${ref.value}` : ref.value;
@@ -50,69 +30,6 @@ function canonRef(ref: RefID): string {
 
 function canonTime(d: Date): string {
   return d.toISOString().replace('.000Z', 'Z');
-}
-
-// Check if string can be bare (unquoted)
-function isBareSafe(s: string): boolean {
-  if (s.length === 0) return false;
-  
-  // Reserved words
-  if (['t', 'f', 'true', 'false', 'null', 'none', 'nil'].includes(s)) {
-    return false;
-  }
-  
-  // First char: letter or underscore
-  const first = s.charCodeAt(0);
-  if (!isLetter(first) && first !== 95) return false; // 95 = '_'
-  
-  // Rest: letter, digit, _, -, ., /
-  for (let i = 1; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (!isLetter(c) && !isDigit(c) && c !== 95 && c !== 45 && c !== 46 && c !== 47) {
-      return false;
-    }
-  }
-  
-  return true;
-}
-
-function isRefSafe(s: string): boolean {
-  if (s.length === 0) return false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (!isLetter(c) && !isDigit(c) && c !== 95 && c !== 45 && c !== 46 && c !== 47 && c !== 58) {
-      return false; // 58 = ':'
-    }
-  }
-  return true;
-}
-
-function isLetter(c: number): boolean {
-  return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
-}
-
-function isDigit(c: number): boolean {
-  return c >= 48 && c <= 57;
-}
-
-function quoteString(s: string): string {
-  let result = '"';
-  for (const ch of s) {
-    switch (ch) {
-      case '\\': result += '\\\\'; break;
-      case '"': result += '\\"'; break;
-      case '\n': result += '\\n'; break;
-      case '\r': result += '\\r'; break;
-      case '\t': result += '\\t'; break;
-      default:
-        if (ch.charCodeAt(0) < 0x20) {
-          result += '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0');
-        } else {
-          result += ch;
-        }
-    }
-  }
-  return result + '"';
 }
 
 // ============================================================

@@ -1,6 +1,7 @@
 package glyph
 
 import (
+	"encoding/base64"
 	"fmt"
 	"sort"
 	"strconv"
@@ -273,7 +274,7 @@ func writeValueWithRefs(b *strings.Builder, gv *GValue, refMap map[string]string
 
 	case TypeBytes:
 		b.WriteString("b64\"")
-		b.WriteString(base64Encode(gv.bytesVal))
+		b.WriteString(base64.StdEncoding.EncodeToString(gv.bytesVal))
 		b.WriteString("\"")
 
 	case TypeTime:
@@ -356,7 +357,7 @@ func writeMapWithRefs(b *strings.Builder, entries []MapEntry, refMap map[string]
 			b.WriteString(entry.Key)
 		} else {
 			b.WriteString("\"")
-			b.WriteString(escapeStringForPool(entry.Key))
+			b.WriteString(escapeString(entry.Key))
 			b.WriteString("\"")
 		}
 		b.WriteString("=")
@@ -591,24 +592,3 @@ func isBareKeyForPool(s string) bool {
 	return true
 }
 
-// escapeStringForPool escapes a string for quoted output.
-func escapeStringForPool(s string) string {
-	var b strings.Builder
-	for _, c := range s {
-		switch c {
-		case '\\':
-			b.WriteString("\\\\")
-		case '"':
-			b.WriteString("\\\"")
-		case '\n':
-			b.WriteString("\\n")
-		case '\r':
-			b.WriteString("\\r")
-		case '\t':
-			b.WriteString("\\t")
-		default:
-			b.WriteRune(c)
-		}
-	}
-	return b.String()
-}

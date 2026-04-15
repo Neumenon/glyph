@@ -507,7 +507,7 @@ func TestAutoTabular_Basic(t *testing.T) {
 		Map(MapEntry{Key: "id", Value: Int(3)}, MapEntry{Key: "name", Value: Str("Carol")}),
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	// v2.4.0: includes rows=N cols=M for streaming resync
 	expected := "@tab _ rows=3 cols=2 [id name]\n|1|Alice|\n|2|Bob|\n|3|Carol|\n@end"
 
@@ -524,7 +524,7 @@ func TestAutoTabular_MissingKeys(t *testing.T) {
 		Map(MapEntry{Key: "id", Value: Int(3)}, MapEntry{Key: "extra", Value: Str("x")}, MapEntry{Key: "name", Value: Str("Carol")}),
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	// Should remain in list form
 	expected := "[{id=1 name=Alice} {id=2} {extra=x id=3 name=Carol}]"
 
@@ -541,7 +541,7 @@ func TestAutoTabular_NestedValues(t *testing.T) {
 		Map(MapEntry{Key: "id", Value: Int(3)}, MapEntry{Key: "meta", Value: List(Int(1), Int(2))}),
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	expected := "@tab _ rows=3 cols=2 [id meta]\n|1|{a=1}|\n|2|{b=2}|\n|3|[1 2]|\n@end"
 
 	if got != expected {
@@ -556,7 +556,7 @@ func TestAutoTabular_BelowThreshold(t *testing.T) {
 		Map(MapEntry{Key: "id", Value: Int(2)}, MapEntry{Key: "name", Value: Str("Bob")}),
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	// Should be regular list format, not tabular
 	expected := "[{id=1 name=Alice} {id=2 name=Bob}]"
 
@@ -573,7 +573,7 @@ func TestAutoTabular_HeterogeneousList(t *testing.T) {
 		Map(MapEntry{Key: "id", Value: Int(3)}),
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	// Should be regular list format
 	expected := `[{id=1} "not an object" {id=3}]`
 
@@ -590,7 +590,7 @@ func TestAutoTabular_PipeEscaping(t *testing.T) {
 		Map(MapEntry{Key: "cmd", Value: Str("e")}, MapEntry{Key: "id", Value: Int(3)}),
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	// Columns sorted: cmd, id
 	// Note: "a|b" is quoted because it contains |, and | inside is escaped
 	expected := "@tab _ rows=3 cols=2 [cmd id]\n|\"a\\|b\"|1|\n|\"c\\|\\|d\"|2|\n|e|3|\n@end"
@@ -609,7 +609,7 @@ func TestAutoTabular_BackslashInStrings(t *testing.T) {
 		Map(MapEntry{Key: "id", Value: Int(3)}, MapEntry{Key: "path", Value: Str(`home`)}), // bare-safe
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	// Backslash in string causes it to be quoted, backslash escaped inside quote
 	// "home" is bare-safe so not quoted
 	expected := "@tab _ rows=3 cols=2 [id path]\n|1|\"C:\\\\Users\"|\n|2|\"D:\\\\Data\"|\n|3|home|\n@end"
@@ -621,7 +621,7 @@ func TestAutoTabular_BackslashInStrings(t *testing.T) {
 
 func TestAutoTabular_EmptyList(t *testing.T) {
 	items := List()
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	expected := "[]"
 
 	if got != expected {
@@ -637,7 +637,7 @@ func TestAutoTabular_StructsAsObjects(t *testing.T) {
 		Struct("User", MapEntry{Key: "id", Value: Int(3)}, MapEntry{Key: "name", Value: Str("C")}),
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	expected := "@tab _ rows=3 cols=2 [id name]\n|1|A|\n|2|B|\n|3|C|\n@end"
 
 	if got != expected {
@@ -653,7 +653,7 @@ func TestAutoTabular_PreservesOriginalOrder(t *testing.T) {
 		Map(MapEntry{Key: "z", Value: Int(3)}, MapEntry{Key: "a", Value: Int(30)}),
 	)
 
-	got := CanonicalizeLooseTabular(items)
+	got := CanonicalizeLoose(items)
 	// Columns sorted: a, z (alphabetical)
 	// Rows preserve original order: 1,2,3
 	expected := "@tab _ rows=3 cols=2 [a z]\n|10|1|\n|20|2|\n|30|3|\n@end"
@@ -784,7 +784,7 @@ func TestParseTabularLoose_Roundtrip(t *testing.T) {
 	)
 
 	// Emit as tabular
-	tabular := CanonicalizeLooseTabular(items)
+	tabular := CanonicalizeLoose(items)
 
 	// Parse back
 	parsed, err := ParseTabularLoose(tabular)
@@ -865,7 +865,7 @@ func TestParseTabularLoose_EscapedPipe(t *testing.T) {
 		Map(MapEntry{Key: "cmd", Value: Str("d|e|f")}, MapEntry{Key: "id", Value: Int(3)}),
 	)
 
-	tabular := CanonicalizeLooseTabular(items)
+	tabular := CanonicalizeLoose(items)
 	parsed, err := ParseTabularLoose(tabular)
 	if err != nil {
 		t.Fatalf("ParseTabularLoose failed: %v", err)

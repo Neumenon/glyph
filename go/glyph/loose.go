@@ -90,12 +90,6 @@ func CanonicalizeLooseNoTabular(v *GValue) string {
 	return CanonicalizeLooseWithOpts(v, NoTabularLooseCanonOpts())
 }
 
-// CanonicalizeLooseTabular is an alias for CanonicalizeLoose.
-// Deprecated: auto-tabular is now the default.
-func CanonicalizeLooseTabular(v *GValue) string {
-	return CanonicalizeLoose(v)
-}
-
 // canonBytes returns canonical bytes representation: b64"..."
 func canonBytes(data []byte) string {
 	if len(data) == 0 {
@@ -115,12 +109,6 @@ func writeCanonBytes(b *strings.Builder, data []byte) {
 	b.WriteString(`b64"`)
 	b.WriteString(encoded)
 	b.WriteByte('"')
-}
-
-// base64Encode encodes bytes to standard base64.
-// Deprecated: Use base64.StdEncoding.EncodeToString directly.
-func base64Encode(data []byte) string {
-	return base64.StdEncoding.EncodeToString(data)
 }
 
 // ============================================================

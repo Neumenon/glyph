@@ -14,8 +14,18 @@
 // Tool Registry
 // ============================================================
 
+export type ArgType =
+  | 'string'
+  | 'int'
+  | 'float'
+  | 'number'
+  | 'bool'
+  | 'boolean'
+  | 'null'
+  | 'any';
+
 export interface ArgSchema {
-  type: string;
+  type: ArgType;
   required?: boolean;
   min?: number;
   max?: number;
@@ -560,7 +570,7 @@ export class StreamingValidator {
     }
   }
 
-  private isValidType(type: string, value: FieldValue): boolean {
+  private isValidType(type: ArgType, value: FieldValue): boolean {
     if (value === null) {
       return true;
     }
@@ -579,8 +589,6 @@ export class StreamingValidator {
       case 'null':
         return value === null;
       case 'any':
-        return true;
-      default:
         return true;
     }
   }
