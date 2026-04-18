@@ -413,6 +413,16 @@ function canonicalizeLooseImpl(v: GValue, opts: LooseCanonOpts): string {
       const entry: MapEntry = { key: sum.tag, value: sum.value ?? GValue.null() };
       return canonMapLooseWithOpts([entry], opts);
     }
+    case 'blob': {
+      // Lazy import to break circular dependency with blob.ts
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { emitBlob } = require('./blob') as typeof import('./blob');
+      return emitBlob(v.asBlob());
+    }
+    case 'poolRef': {
+      const pr = v.asPoolRef();
+      return `^${pr.poolId}:${pr.index}`;
+    }
   }
 }
 
@@ -1427,6 +1437,29 @@ export function toJsonLoose(gv: GValue, opts: BridgeOpts = {}): unknown {
       const result = createJsonObject();
       result[sum.tag] = sum.value ? toJsonLoose(sum.value, opts) : null;
       return result;
+    }
+    case 'blob': {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { emitBlob } = require('./blob') as typeof import('./blob');
+      const str = emitBlob(gv.asBlob());
+      if (opts.extended) {
+        const result = createJsonObject();
+        result.$glyph = 'blob';
+        result.value = str;
+        return result;
+      }
+      return str;
+    }
+    case 'poolRef': {
+      const pr = gv.asPoolRef();
+      const str = `^${pr.poolId}:${pr.index}`;
+      if (opts.extended) {
+        const result = createJsonObject();
+        result.$glyph = 'poolRef';
+        result.value = str;
+        return result;
+      }
+      return str;
     }
   }
 }

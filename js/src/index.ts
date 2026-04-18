@@ -39,16 +39,46 @@
  */
 
 // Core types
-export { 
-  GValue, 
-  GType, 
-  RefID, 
-  MapEntry, 
-  StructValue, 
+export {
+  GValue,
+  GType,
+  RefID,
+  MapEntry,
+  StructValue,
   SumValue,
+  BlobRef,
+  PoolRef,
   g,
   field,
 } from './types';
+
+// Blob (content-addressed references)
+export {
+  computeCid,
+  blobFromContent,
+  blobAlgorithm,
+  blobHash,
+  emitBlob,
+  parseBlobRef,
+  MemoryBlobRegistry,
+  ParseBlobError,
+} from './blob';
+
+// Pool (deduplication)
+export {
+  Pool,
+  PoolKind,
+  PoolRegistry,
+  ParsePoolError,
+  ParsedDocument,
+  isPoolRefId,
+  parsePoolRef,
+  emitPool,
+  parsePool,
+  splitDocument,
+  parseDocument,
+  resolvePoolRefs,
+} from './pool';
 
 // Schema
 export {

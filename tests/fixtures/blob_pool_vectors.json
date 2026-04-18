@@ -1,0 +1,90 @@
+{
+  "_comment": "Cross-implementation parity vectors for Blob + PoolRef features. Each language's test suite should validate against these expected outputs.",
+  "version": "1.0.0",
+
+  "cid": [
+    {
+      "desc": "sha256 of 'hello'",
+      "input_utf8": "hello",
+      "expected": "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    },
+    {
+      "desc": "sha256 of empty",
+      "input_utf8": "",
+      "expected": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+
+  "emit_blob": [
+    {
+      "desc": "minimum fields",
+      "cid": "sha256:abc",
+      "mime": "image/png",
+      "bytes": 1024,
+      "expected": "@blob cid=sha256:abc mime=image/png bytes=1024"
+    },
+    {
+      "desc": "with name (bare-safe)",
+      "cid": "sha256:abc",
+      "mime": "image/png",
+      "bytes": 1024,
+      "name": "cat.png",
+      "expected": "@blob cid=sha256:abc mime=image/png bytes=1024 name=cat.png"
+    },
+    {
+      "desc": "with caption (needs quoting)",
+      "cid": "sha256:abc",
+      "mime": "image/png",
+      "bytes": 1024,
+      "name": "cat.png",
+      "caption": "A very fluffy cat",
+      "expected": "@blob cid=sha256:abc mime=image/png bytes=1024 name=cat.png caption=\"A very fluffy cat\""
+    },
+    {
+      "desc": "caption with quotes (escape sequences)",
+      "cid": "sha256:a",
+      "mime": "text/plain",
+      "bytes": 1,
+      "caption": "quote \"x\" here",
+      "expected": "@blob cid=sha256:a mime=text/plain bytes=1 caption=\"quote \\\"x\\\" here\""
+    }
+  ],
+
+  "pool_ref_id_valid": ["S1", "O1", "P42", "AA9", "S100"],
+  "pool_ref_id_invalid": ["", "S", "s1", "1S", "SS", "S-1"],
+
+  "canonicalize_pool_ref": [
+    {
+      "desc": "basic pool ref",
+      "pool_id": "O3",
+      "index": 12,
+      "expected": "^O3:12"
+    },
+    {
+      "desc": "zero index",
+      "pool_id": "S1",
+      "index": 0,
+      "expected": "^S1:0"
+    }
+  ],
+
+  "canonicalize_blob": [
+    {
+      "desc": "blob as GValue through canonicalize_loose",
+      "cid": "sha256:x",
+      "mime": "image/png",
+      "bytes": 42,
+      "expected": "@blob cid=sha256:x mime=image/png bytes=42"
+    }
+  ],
+
+  "emit_pool": [
+    {
+      "desc": "string pool with two entries",
+      "kind": "str",
+      "id": "S1",
+      "entries": ["hello", "world"],
+      "expected": "@pool.str id=S1 [hello world]"
+    }
+  ]
+}

@@ -1199,3 +1199,228 @@ fn test_ref_id_new() {
     assert_eq!(r2.prefix, "");
     assert_eq!(r2.value, "abc");
 }
+
+// ============================================================
+// Blob tests
+// ============================================================
+
+#[test]
+fn test_compute_cid_hello() {
+    assert_eq!(
+        compute_cid(b"hello"),
+        "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    );
+}
+
+#[test]
+fn test_compute_cid_empty() {
+    assert_eq!(
+        compute_cid(b""),
+        "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+}
+
+#[test]
+fn test_blob_ref_round_trip_minimum() {
+    let r = BlobRef::new("sha256:abc", "image/png", 1024);
+    let text = emit_blob(&r);
+    assert_eq!(text, "@blob cid=sha256:abc mime=image/png bytes=1024");
+    let parsed = parse_blob_ref(&text).unwrap();
+    assert_eq!(parsed, r);
+}
+
+#[test]
+fn test_blob_ref_round_trip_optional_fields() {
+    let mut r = BlobRef::new("sha256:abc", "image/png", 1024);
+    r.name = "cat.png".to_string();
+    r.caption = "A very fluffy cat".to_string();
+    let text = emit_blob(&r);
+    assert!(text.contains("name=cat.png"));
+    assert!(text.contains("caption=\"A very fluffy cat\""));
+    let parsed = parse_blob_ref(&text).unwrap();
+    assert_eq!(parsed, r);
+}
+
+#[test]
+fn test_blob_ref_escape_sequences() {
+    let mut r = BlobRef::new("sha256:a", "text/plain", 1);
+    r.caption = "quote \"x\" here".to_string();
+    let text = emit_blob(&r);
+    let parsed = parse_blob_ref(&text).unwrap();
+    assert_eq!(parsed.caption, "quote \"x\" here");
+}
+
+#[test]
+fn test_blob_ref_missing_cid() {
+    assert!(parse_blob_ref("@blob mime=x bytes=1").is_err());
+}
+
+#[test]
+fn test_blob_ref_missing_mime() {
+    assert!(parse_blob_ref("@blob cid=x bytes=1").is_err());
+}
+
+#[test]
+fn test_blob_ref_missing_bytes() {
+    assert!(parse_blob_ref("@blob cid=x mime=y").is_err());
+}
+
+#[test]
+fn test_blob_ref_bad_prefix() {
+    assert!(parse_blob_ref("cid=x mime=y bytes=1").is_err());
+}
+
+#[test]
+fn test_blob_algorithm_and_hash() {
+    let r = BlobRef::new("sha256:deadbeef", "x", 0);
+    assert_eq!(r.algorithm(), "sha256");
+    assert_eq!(r.hash(), "deadbeef");
+}
+
+#[test]
+fn test_blob_from_content() {
+    let gv = blob_from_content(b"hello", "text/plain", "h.txt", "");
+    assert!(gv.is_blob());
+    let r = gv.as_blob().unwrap();
+    assert_eq!(r.bytes, 5);
+    assert!(r.cid.starts_with("sha256:"));
+    assert_eq!(r.name, "h.txt");
+}
+
+#[test]
+fn test_blob_canonicalize() {
+    let gv = GValue::blob(BlobRef::new("sha256:x", "image/png", 42));
+    assert_eq!(
+        canonicalize_loose(&gv).unwrap(),
+        "@blob cid=sha256:x mime=image/png bytes=42"
+    );
+}
+
+// ============================================================
+// Pool ref ID validation
+// ============================================================
+
+#[test]
+fn test_pool_ref_id_valid() {
+    for s in &["S1", "O1", "P42", "AA9", "S100"] {
+        assert!(is_pool_ref_id(s), "expected valid: {}", s);
+    }
+}
+
+#[test]
+fn test_pool_ref_id_invalid() {
+    for s in &["", "S", "s1", "1S", "SS", "S-1", "^S1"] {
+        assert!(!is_pool_ref_id(s), "expected invalid: {}", s);
+    }
+}
+
+// ============================================================
+// Pool ref
+// ============================================================
+
+#[test]
+fn test_parse_pool_ref() {
+    let r = parse_pool_ref("^S1:0").unwrap();
+    assert_eq!(r.pool_id, "S1");
+    assert_eq!(r.index, 0);
+}
+
+#[test]
+fn test_pool_ref_canonicalize() {
+    let gv = GValue::pool_ref("O3", 12);
+    assert_eq!(canonicalize_loose(&gv).unwrap(), "^O3:12");
+}
+
+#[test]
+fn test_pool_ref_missing_caret() {
+    assert!(parse_pool_ref("S1:0").is_err());
+}
+
+#[test]
+fn test_pool_ref_missing_colon() {
+    assert!(parse_pool_ref("^S1").is_err());
+}
+
+// ============================================================
+// Pool
+// ============================================================
+
+#[test]
+fn test_pool_string_add_get() {
+    let mut pool = Pool::new("S1", PoolKind::String);
+    let idx = pool.add(GValue::str("hello")).unwrap();
+    assert_eq!(idx, 0);
+    assert_eq!(pool.get(0).unwrap().as_str(), Some("hello"));
+}
+
+#[test]
+fn test_pool_object_mixed_types() {
+    let mut pool = Pool::new("O1", PoolKind::Object);
+    pool.add(GValue::map(vec![field("a", GValue::int(1))])).unwrap();
+    pool.add(GValue::int(42)).unwrap();
+    assert_eq!(pool.len(), 2);
+}
+
+#[test]
+fn test_pool_string_rejects_non_string() {
+    let mut pool = Pool::new("S1", PoolKind::String);
+    assert!(pool.add(GValue::int(7)).is_err());
+}
+
+#[test]
+fn test_pool_registry_resolve() {
+    let mut pool = Pool::new("S1", PoolKind::String);
+    pool.add(GValue::str("a")).unwrap();
+    let mut reg = PoolRegistry::new();
+    reg.register(pool);
+    let resolved = reg.resolve(&PoolRef::new("S1", 0)).unwrap();
+    assert_eq!(resolved.as_str(), Some("a"));
+}
+
+#[test]
+fn test_pool_registry_unknown_pool() {
+    let reg = PoolRegistry::new();
+    assert!(reg.resolve(&PoolRef::new("X1", 0)).is_err());
+}
+
+// ============================================================
+// Pool serialization
+// ============================================================
+
+#[test]
+fn test_emit_string_pool() {
+    let mut pool = Pool::new("S1", PoolKind::String);
+    pool.add(GValue::str("hello")).unwrap();
+    pool.add(GValue::str("world")).unwrap();
+    assert_eq!(emit_pool(&pool).unwrap(), "@pool.str id=S1 [hello world]");
+}
+
+// ============================================================
+// Resolve pool refs
+// ============================================================
+
+#[test]
+fn test_resolve_nested_pool_refs() {
+    let mut pool = Pool::new("S1", PoolKind::String);
+    pool.add(GValue::str("shared")).unwrap();
+    let mut reg = PoolRegistry::new();
+    reg.register(pool);
+    let value = GValue::map(vec![field("a", GValue::pool_ref("S1", 0))]);
+    let resolved = resolve_pool_refs(&value, &reg).unwrap();
+    assert_eq!(resolved.get("a").and_then(|v| v.as_str()), Some("shared"));
+}
+
+#[test]
+fn test_memory_blob_registry() {
+    let reg = MemoryBlobRegistry::new();
+    reg.put("sha256:abc", b"hello".to_vec());
+    assert!(reg.has("sha256:abc"));
+    assert!(!reg.has("sha256:xyz"));
+    assert_eq!(reg.get("sha256:abc").unwrap(), b"hello");
+}
+
+#[test]
+fn test_pool_ref_display() {
+    let r = PoolRef::new("S1", 5);
+    assert_eq!(r.to_string(), "^S1:5");
+}

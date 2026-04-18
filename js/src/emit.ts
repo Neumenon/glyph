@@ -101,6 +101,15 @@ function emitValue(gv: GValue, opts: EmitOptions): string {
       return emitStruct(gv, opts);
     case 'sum':
       return emitSum(gv, opts);
+    case 'blob': {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { emitBlob } = require('./blob') as typeof import('./blob');
+      return emitBlob(gv.asBlob());
+    }
+    case 'poolRef': {
+      const pr = gv.asPoolRef();
+      return `^${pr.poolId}:${pr.index}`;
+    }
   }
 }
 
@@ -305,6 +314,15 @@ function emitPackedValue(gv: GValue, schema: Schema, opts: PackedOptions): strin
         return `${sum.tag}()`;
       }
       return `${sum.tag}(${emitPackedValue(sum.value, schema, opts)})`;
+    }
+    case 'blob': {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { emitBlob } = require('./blob') as typeof import('./blob');
+      return emitBlob(gv.asBlob());
+    }
+    case 'poolRef': {
+      const pr = gv.asPoolRef();
+      return `^${pr.poolId}:${pr.index}`;
     }
   }
 }

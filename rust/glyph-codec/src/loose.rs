@@ -135,6 +135,12 @@ fn write_canon_loose(buf: &mut String, v: &GValue, opts: &LooseCanonOpts) -> Res
         GValue::Map(entries) => write_canon_map(buf, entries, opts)?,
         GValue::Struct(s) => write_canon_struct(buf, s, opts)?,
         GValue::Sum(s) => write_canon_sum(buf, s, opts)?,
+        GValue::Blob(r) => {
+            buf.push_str(&crate::blob::emit_blob(r));
+        }
+        GValue::PoolRef(r) => {
+            buf.push_str(&r.to_string());
+        }
     }
     Ok(())
 }
@@ -221,7 +227,7 @@ fn is_bare_safe(s: &str) -> bool {
     })
 }
 
-fn canon_string(s: &str) -> String {
+pub fn canon_string(s: &str) -> String {
     if is_bare_safe(s) {
         s.to_string()
     } else {

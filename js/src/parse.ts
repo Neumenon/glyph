@@ -6,6 +6,7 @@
 
 import { GValue, RefID } from './types';
 import { Schema } from './schema';
+import { isPoolRefId } from './pool';
 
 // ============================================================
 // Packed Parser
@@ -801,7 +802,7 @@ function isPackedFormat(s: string): boolean {
   return next === '(' || next === '{';
 }
 
-function parseScalarValue(s: string): GValue {
+export function parseScalarValue(s: string): GValue {
   s = s.trim();
   
   // Null
@@ -827,7 +828,12 @@ function parseScalarValue(s: string): GValue {
     }
     const colonIdx = ref.indexOf(':');
     if (colonIdx > 0) {
-      return GValue.id(ref.slice(0, colonIdx), ref.slice(colonIdx + 1));
+      const first = ref.slice(0, colonIdx);
+      const second = ref.slice(colonIdx + 1);
+      if (isPoolRefId(first) && /^\d+$/.test(second)) {
+        return GValue.poolRef(first, parseInt(second, 10));
+      }
+      return GValue.id(first, second);
     }
     return GValue.id('', ref);
   }

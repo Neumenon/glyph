@@ -4,23 +4,39 @@
  * GValue is the universal value type for LYPH/GLYPH data.
  */
 
-export type GType = 
-  | 'null' 
-  | 'bool' 
-  | 'int' 
-  | 'float' 
-  | 'str' 
-  | 'bytes' 
-  | 'time' 
-  | 'id' 
-  | 'list' 
-  | 'map' 
-  | 'struct' 
-  | 'sum';
+export type GType =
+  | 'null'
+  | 'bool'
+  | 'int'
+  | 'float'
+  | 'str'
+  | 'bytes'
+  | 'time'
+  | 'id'
+  | 'list'
+  | 'map'
+  | 'struct'
+  | 'sum'
+  | 'blob'
+  | 'poolRef';
 
 export interface RefID {
   prefix: string;
   value: string;
+}
+
+export interface BlobRef {
+  cid: string;
+  mime: string;
+  bytes: number;
+  name?: string;
+  caption?: string;
+  preview?: string;
+}
+
+export interface PoolRef {
+  poolId: string;
+  index: number;
 }
 
 export interface MapEntry {
@@ -58,6 +74,8 @@ export class GValue {
   private _map?: MapEntry[];
   private _struct?: StructValue;
   private _sum?: SumValue;
+  private _blob?: BlobRef;
+  private _poolRef?: PoolRef;
 
   private constructor(type: GType) {
     this.type = type;
@@ -143,6 +161,18 @@ export class GValue {
     return gv;
   }
 
+  static blob(ref: BlobRef): GValue {
+    const gv = new GValue('blob');
+    gv._blob = ref;
+    return gv;
+  }
+
+  static poolRef(poolId: string, index: number): GValue {
+    const gv = new GValue('poolRef');
+    gv._poolRef = { poolId, index };
+    return gv;
+  }
+
   // ============================================================
   // Accessors
   // ============================================================
@@ -204,6 +234,16 @@ export class GValue {
   asSum(): SumValue {
     if (this.type !== 'sum') throw new Error('not a sum');
     return this._sum!;
+  }
+
+  asBlob(): BlobRef {
+    if (this.type !== 'blob') throw new Error('not a blob');
+    return this._blob!;
+  }
+
+  asPoolRef(): PoolRef {
+    if (this.type !== 'poolRef') throw new Error('not a pool ref');
+    return this._poolRef!;
   }
 
   /**
@@ -323,6 +363,10 @@ export class GValue {
         );
       case 'sum':
         return GValue.sum(this._sum!.tag, this._sum!.value?.clone() ?? null);
+      case 'blob':
+        return GValue.blob({ ...this._blob! });
+      case 'poolRef':
+        return GValue.poolRef(this._poolRef!.poolId, this._poolRef!.index);
     }
   }
 }
@@ -354,5 +398,7 @@ export const g = {
   map: GValue.map,
   struct: GValue.struct,
   sum: GValue.sum,
+  blob: GValue.blob,
+  poolRef: GValue.poolRef,
   field,
 };

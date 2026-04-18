@@ -29,6 +29,10 @@ pub enum GValue {
     Struct(StructValue),
     /// Sum type (tagged union)
     Sum(SumValue),
+    /// Content-addressed blob reference
+    Blob(BlobRef),
+    /// Pool reference (deduplication)
+    PoolRef(PoolRef),
 }
 
 /// Reference ID with optional prefix
@@ -102,6 +106,60 @@ impl SumValue {
     }
 }
 
+/// Content-addressed blob reference
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlobRef {
+    pub cid: String,
+    pub mime: String,
+    pub bytes: u64,
+    pub name: String,
+    pub caption: String,
+    pub preview: String,
+}
+
+impl BlobRef {
+    pub fn new(cid: impl Into<String>, mime: impl Into<String>, bytes: u64) -> Self {
+        Self {
+            cid: cid.into(),
+            mime: mime.into(),
+            bytes,
+            name: String::new(),
+            caption: String::new(),
+            preview: String::new(),
+        }
+    }
+
+    pub fn algorithm(&self) -> &str {
+        self.cid.find(':').map_or("", |i| &self.cid[..i])
+    }
+
+    pub fn hash(&self) -> &str {
+        self.cid.find(':').map_or(&self.cid, |i| &self.cid[i + 1..])
+    }
+}
+
+/// Pool reference for deduplication
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PoolRef {
+    pub pool_id: String,
+    pub index: usize,
+}
+
+impl PoolRef {
+    pub fn new(pool_id: impl Into<String>, index: usize) -> Self {
+        Self {
+            pool_id: pool_id.into(),
+            index,
+        }
+    }
+}
+
+impl std::fmt::Display for PoolRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "^{}:{}", self.pool_id, self.index)
+    }
+}
+
 // ============================================================
 // Builder functions
 // ============================================================
@@ -172,6 +230,16 @@ impl GValue {
         GValue::Sum(SumValue::new(tag, value))
     }
 
+    /// Create a blob reference value
+    pub fn blob(r: BlobRef) -> Self {
+        GValue::Blob(r)
+    }
+
+    /// Create a pool reference value
+    pub fn pool_ref(pool_id: impl Into<String>, index: usize) -> Self {
+        GValue::PoolRef(PoolRef::new(pool_id, index))
+    }
+
     // ============================================================
     // Type checking
     // ============================================================
@@ -222,6 +290,14 @@ impl GValue {
 
     pub fn is_sum(&self) -> bool {
         matches!(self, GValue::Sum(_))
+    }
+
+    pub fn is_blob(&self) -> bool {
+        matches!(self, GValue::Blob(_))
+    }
+
+    pub fn is_pool_ref(&self) -> bool {
+        matches!(self, GValue::PoolRef(_))
     }
 
     // ============================================================
@@ -301,6 +377,20 @@ impl GValue {
     pub fn as_sum(&self) -> Option<&SumValue> {
         match self {
             GValue::Sum(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_blob(&self) -> Option<&BlobRef> {
+        match self {
+            GValue::Blob(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_pool_ref(&self) -> Option<&PoolRef> {
+        match self {
+            GValue::PoolRef(v) => Some(v),
             _ => None,
         }
     }
