@@ -259,11 +259,13 @@ text = glyph.json_to_glyph(data)
 ### Manual Control
 
 ```python
-# Force tabular mode
-text = glyph.emit(data, mode="tabular")
+from glyph import LooseCanonOpts, no_tabular_loose_canon_opts
+
+# Emit with default settings (auto-tabular on)
+text = glyph.emit(glyph.from_json(data))
 
 # Disable tabular mode
-text = glyph.emit(data, mode="loose")
+text = glyph.canonicalize_loose_no_tabular(glyph.from_json(data))
 ```
 
 ---
@@ -280,29 +282,29 @@ text = glyph.emit(data, mode="loose")
 
 ### Solution: Base Fingerprints
 
+Fingerprint the current state and embed it in the patch header. The receiver only applies the patch when its own state fingerprint matches:
+
 ```python
 import glyph
 
-# Agent A reads state
+# Sender: fingerprint current state
 state = {"current": "processing", "count": 5}
-base_hash = glyph.state_fingerprint(state)
+base_hash = glyph.fingerprint_loose(glyph.from_json(state))
 # base_hash: "a1b2c3..." (64 lowercase hex chars)
 
-# Agent A creates patch
-next_state = {**state, "count": 6}
-update = glyph.create_state_patch(
-    state,
-    next_state,
-    author_id="agent_a",
-    revision=2,
-    reason="increment count",
-)
+# Embed base hash in a GS1 patch frame header (see GS1_SPEC.md)
+# @frame{v=1 sid=1 seq=2 kind=patch len=... base=sha256:<base_hash>}
+# @patch
+# = .count 6
+# @end
 
-# Server validates before applying
-try:
-    current_state = glyph.apply_state_patch(current_state, update)
-except glyph.StateConflictError:
-    reject(update)  # Conflict - state changed
+# Receiver: verify before applying
+receiver_hash = glyph.fingerprint_loose(glyph.from_json(current_state))
+if receiver_hash != base_hash:
+    request_snapshot()  # State diverged — request full doc frame instead
+else:
+    updated = glyph.apply_patch(glyph.from_json(current_state),
+                                 glyph.parse_patch(patch_text))
 ```
 
 ### How Fingerprinting Works
@@ -324,16 +326,17 @@ hash = sha256(canonical)
 
 ```python
 # Save checkpoint
+state_value = glyph.from_json(current_state)
 checkpoint = {
     "state": current_state,
-    "hash": glyph.state_fingerprint(current_state),
+    "hash": glyph.fingerprint_loose(state_value),
     "timestamp": now()
 }
 save(checkpoint)
 
 # Resume later
 loaded = load_checkpoint()
-if glyph.state_fingerprint(loaded["state"]) == loaded["hash"]:
+if glyph.fingerprint_loose(glyph.from_json(loaded["state"])) == loaded["hash"]:
     resume(loaded["state"])  # Integrity verified
 else:
     error("Checkpoint corrupted")
@@ -429,16 +432,17 @@ Tools available:
 ```python
 # Turn 1
 conversation = [
-    {turn=1 role=user msg="What's the weather in NYC?"}
+    {"turn": 1, "role": "user", "msg": "What's the weather in NYC?"}
 ]
 
 # Turn 2 - append, don't recreate
 conversation.append(
-    {turn=2 role=assistant thought="Need weather data" action={tool=get_weather location=NYC}}
+    {"turn": 2, "role": "assistant", "thought": "Need weather data",
+     "action": {"tool": "get_weather", "location": "NYC"}}
 )
 
-# Store efficiently (40% smaller than JSON)
-stored = glyph.emit(conversation, mode="tabular")
+# Store efficiently (40% smaller than JSON); auto-tabular kicks in for homogeneous lists
+stored = glyph.json_to_glyph(conversation)
 ```
 
 ### Pattern 3: Batch Operations
@@ -455,10 +459,10 @@ glyph_text = glyph.json_to_glyph(embeddings)
 send_to_vector_db(glyph_text)
 ```
 
-### Pattern 4: Multi-Agent Coordination
+### Pattern 4: Structured Message Serialization
 
 ```python
-# Agent A sends message
+# Serialize a message with fingerprint for verification
 msg = {
     "from": "agent_a",
     "to": "agent_b",
@@ -467,11 +471,10 @@ msg = {
     "correlation_id": "msg_123",
 }
 
-# Serialize with fingerprint for verification
 text = glyph.json_to_glyph(msg)
-hash = glyph.state_fingerprint(msg)
+fp = glyph.fingerprint_loose(glyph.from_json(msg))
 
-bus.publish(text, hash=hash)
+bus.publish(text, fingerprint=fp)
 ```
 
 ---
@@ -584,7 +587,6 @@ print(f"Token savings: {savings:.1f}%")
 ## Next Steps
 
 **Deep Dives:**
-- [AI Agent Patterns](AGENTS.md) - LLM integration patterns
 - [Technical Specifications](SPECIFICATIONS.md) - Format specs
 - [API Reference](API_REFERENCE.md) - Per-language APIs
 

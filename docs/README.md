@@ -35,7 +35,7 @@ These files are still useful, but they are not the source of truth for the curre
 
 - [reports/README.md](./reports/README.md) — dated research and benchmark snapshots
 - [archive/README.md](./archive/README.md) — archived docs and experiments
-- [../DEMO_README.md](../DEMO_README.md) and [../DEMO_QUICK_REFERENCE.md](../DEMO_QUICK_REFERENCE.md) — legacy demo material
+- `DEMO_README.md` / `DEMO_QUICK_REFERENCE.md` — legacy demo material (removed)
 - [visual-guide.html](./visual-guide.html) — visual explainer, not authoritative API/spec text
 - [../attic/](../attic/) — parked features (agent framework, blob/pool); preserved for history, not part of the lead surface
 

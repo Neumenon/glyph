@@ -480,7 +480,6 @@ All implementations MUST produce byte-identical canonical forms.
 **Implementation Guides:**
 - [Quickstart](QUICKSTART.md) - Get started in 5 minutes
 - [Complete Guide](GUIDE.md) - Features and patterns
-- [Agent Patterns](AGENTS.md) - AI integration
 
 **Research:**
 - [LLM Accuracy Report](reports/LLM_ACCURACY_REPORT.md)

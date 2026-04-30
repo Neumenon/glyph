@@ -85,9 +85,8 @@ assert result.valid
 assert result.tool_name == "search"
 ```
 
-## Optional Higher-Level Layer
+## Attic
 
-The Python package also contains an optional agent-oriented runtime in `glyph.agent`.
-Treat that as an example consumer of the codec layer, not the definition of the format.
+An earlier agent-oriented runtime (`agent.py`) is parked in `attic/agents/` and is not part of the installed package.
 
 For repo-wide docs, start at [../README.md](../README.md).
