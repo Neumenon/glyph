@@ -6,7 +6,6 @@
 
 import { GValue, RefID } from './types';
 import { Schema } from './schema';
-import { isPoolRefId } from './pool';
 
 // ============================================================
 // Packed Parser
@@ -830,9 +829,6 @@ export function parseScalarValue(s: string): GValue {
     if (colonIdx > 0) {
       const first = ref.slice(0, colonIdx);
       const second = ref.slice(colonIdx + 1);
-      if (isPoolRefId(first) && /^\d+$/.test(second)) {
-        return GValue.poolRef(first, parseInt(second, 10));
-      }
       return GValue.id(first, second);
     }
     return GValue.id('', ref);
