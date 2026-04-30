@@ -19,8 +19,6 @@ mod types;
 mod loose;
 mod json_bridge;
 mod error;
-pub mod blob;
-pub mod pool;
 pub mod decimal128;
 pub mod schema_evolution;
 pub mod stream_validator;
@@ -29,8 +27,6 @@ pub use types::*;
 pub use loose::*;
 pub use json_bridge::*;
 pub use error::*;
-pub use blob::*;
-pub use pool::*;
 pub use decimal128::*;
 pub use schema_evolution::*;
 pub use stream_validator::{

@@ -121,12 +121,6 @@ fn to_json_with_depth(gv: &GValue, depth: usize) -> Result<JsonValue> {
             }
             JsonValue::Object(map)
         }
-        GValue::Blob(r) => {
-            JsonValue::String(crate::blob::emit_blob(r))
-        }
-        GValue::PoolRef(r) => {
-            JsonValue::String(r.to_string())
-        }
     })
 }
 
