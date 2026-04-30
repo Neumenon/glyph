@@ -19,7 +19,6 @@ If you only read three files, read these:
 - [GS1_SPEC.md](./GS1_SPEC.md) — multiplexed streaming protocol
 
 ### Supporting Guides
-- [AGENTS.md](./AGENTS.md) — optional higher-level examples built on the codec
 - [GUIDE.md](./GUIDE.md) — broader concepts and patterns
 - [SPECIFICATIONS.md](./SPECIFICATIONS.md) — overview-level technical summary
 
@@ -36,9 +35,9 @@ These files are still useful, but they are not the source of truth for the curre
 
 - [reports/README.md](./reports/README.md) — dated research and benchmark snapshots
 - [archive/README.md](./archive/README.md) — archived docs and experiments
-- [../AGENT.md](../AGENT.md) — older positioning note; may drift from current repo direction
 - [../DEMO_README.md](../DEMO_README.md) and [../DEMO_QUICK_REFERENCE.md](../DEMO_QUICK_REFERENCE.md) — legacy demo material
 - [visual-guide.html](./visual-guide.html) — visual explainer, not authoritative API/spec text
+- [../attic/](../attic/) — parked features (agent framework, blob/pool); preserved for history, not part of the lead surface
 
 ## Documentation Rules For This Repo
 

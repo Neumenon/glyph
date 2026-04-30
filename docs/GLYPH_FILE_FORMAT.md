@@ -25,11 +25,11 @@ A `.glyph` file contains GLYPH-Loose canonical text, as produced by `Canonicaliz
    {action=search query="weather in NYC" max_results=10}
    ```
 
-2. **With directives**: Optional `@schema`, `@pool`, `@tab` preamble followed by a value
+2. **With directives**: Optional `@schema` or `@tab` preamble followed by a value
    ```
-   @pool.str id=S1 ["hello" "world"]
-
-   {greeting=^S1:0 farewell=^S1:1}
+   @tab _ [step tool status]
+   |1 search ok|
+   |2 fetch ok|
    ```
 
 3. **Patch**: A `@patch ... @end` block (for delta files)
@@ -45,8 +45,6 @@ A `.glyph` file contains GLYPH-Loose canonical text, as produced by `Canonicaliz
 | Directive | Purpose |
 |-----------|---------|
 | `@schema#<id>` | Schema reference or inline definition |
-| `@pool.str id=<id> [...]` | String pool definition |
-| `@pool.obj id=<id> [...]` | Object pool definition |
 | `@tab _ [col1 col2 ...]` | Tabular (column-oriented) encoding |
 | `@patch ... @end` | Semantic delta encoding |
 

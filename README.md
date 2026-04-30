@@ -213,7 +213,6 @@ If you find a case where any of these break, that is a spec-level bug — please
 - [C](./c/glyph-codec/README.md)
 
 ### Examples and history
-- [Agent Patterns](./docs/AGENTS.md) — higher-level usage examples
 - [Research Reports](./docs/reports/README.md) — dated benchmark snapshots
 - [Archive](./docs/archive/README.md) — historical material
 
