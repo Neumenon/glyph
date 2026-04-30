@@ -5,15 +5,11 @@ import (
 	"strings"
 )
 
-// ParseDocument parses a GLYPH document that may contain @pool definitions,
-// @schema directives, @tab blocks (top-level or embedded), and pool references.
-// It composes the lower-level Parse*, Pool*, and Tabular APIs into a single
-// high-level entry point.
+// ParseDocument parses a GLYPH document that may contain @schema directives
+// and @tab blocks (top-level or embedded). It composes the lower-level
+// Parse* and Tabular APIs into a single high-level entry point.
 //
 // Supported input formats:
-//
-//	@pool.str id=S1 ["a" "b" "c"]
-//	{key=^S1:0 other=42}
 //
 //	@tab _ [col1 col2]
 //	|v1|v2|
@@ -23,60 +19,19 @@ import (
 //
 //	@schema#abc @keys=[k1 k2]\n{#0=v1 #1=v2}
 func ParseDocument(input string) (*GValue, error) {
-	return ParseDocumentWithRegistries(input, NewSchemaRegistry(), NewPoolRegistry())
+	return ParseDocumentWithRegistries(input, NewSchemaRegistry())
 }
 
 // ParseDocumentWithRegistries parses a GLYPH document using the given
-// schema and pool registries. Pools defined in the document are added to
-// the registry, and pool references are resolved before returning.
-func ParseDocumentWithRegistries(input string, schemaReg *SchemaRegistry, poolReg *PoolRegistry) (*GValue, error) {
+// schema registry.
+func ParseDocumentWithRegistries(input string, schemaReg *SchemaRegistry) (*GValue, error) {
 	lines := strings.Split(input, "\n")
 
-	// Collect pool definitions and find the value start
 	var valueLines []string
-	inPool := false
-	var poolBuf strings.Builder
-
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Check for pool definition start
-		if strings.HasPrefix(trimmed, "@pool.") {
-			inPool = true
-			poolBuf.Reset()
-			poolBuf.WriteString(trimmed)
-
-			// Check if it's a single-line pool
-			if strings.Contains(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-				pool, err := ParsePool(poolBuf.String())
-				if err != nil {
-					return nil, fmt.Errorf("parse pool: %w", err)
-				}
-				poolReg.Define(pool)
-				inPool = false
-			}
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-
-		if inPool {
-			poolBuf.WriteString("\n")
-			poolBuf.WriteString(line)
-
-			if strings.HasSuffix(trimmed, "]") {
-				pool, err := ParsePool(poolBuf.String())
-				if err != nil {
-					return nil, fmt.Errorf("parse pool: %w", err)
-				}
-				poolReg.Define(pool)
-				inPool = false
-			}
-			continue
-		}
-
-		if trimmed == "" {
-			continue
-		}
-
 		valueLines = append(valueLines, line)
 	}
 
@@ -85,121 +40,30 @@ func ParseDocumentWithRegistries(input string, schemaReg *SchemaRegistry, poolRe
 	}
 
 	valueStr := strings.Join(valueLines, "\n")
-
-	// Route to the appropriate parser based on content
-	var gv *GValue
-	var err error
-
 	trimmedValue := strings.TrimSpace(valueStr)
 
 	switch {
 	case strings.HasPrefix(trimmedValue, "@tab _"):
-		// Top-level @tab block
-		gv, err = ParseTabularLoose(valueStr)
+		gv, err := ParseTabularLoose(valueStr)
 		if err != nil {
 			return nil, fmt.Errorf("parse tabular: %w", err)
 		}
+		return gv, nil
 
 	case strings.Contains(valueStr, "=@tab _"):
-		// Map with embedded @tab blocks
-		gv, err = parseMapWithEmbeddedTab(valueStr)
+		gv, err := parseMapWithEmbeddedTab(valueStr)
 		if err != nil {
 			return nil, fmt.Errorf("parse embedded tab: %w", err)
 		}
+		return gv, nil
 
 	default:
-		// Standard parsing with schema registry
-		gv, _, err = ParseLoosePayload(valueStr, schemaReg)
+		gv, _, err := ParseLoosePayload(valueStr, schemaReg)
 		if err != nil {
 			return nil, fmt.Errorf("parse value: %w", err)
 		}
-	}
-
-	// Resolve pool references
-	resolved, err := ResolvePoolRefs(gv, poolReg)
-	if err != nil {
-		return nil, fmt.Errorf("resolve pool refs: %w", err)
-	}
-
-	return resolved, nil
-}
-
-// ResolvePoolRefs recursively resolves ^S1:N pool references to their pooled values.
-func ResolvePoolRefs(gv *GValue, poolReg *PoolRegistry) (*GValue, error) {
-	if gv == nil {
-		return nil, nil
-	}
-
-	// Check if this is a pool reference (stored as a string starting with ^)
-	if gv.Type() == TypeStr {
-		s, err := gv.AsStr()
-		if err != nil {
-			return nil, err
-		}
-		if strings.HasPrefix(s, "^") && strings.Contains(s, ":") {
-			ref, err := ParsePoolRef(s)
-			if err == nil && ref != nil {
-				resolved, err := poolReg.Resolve(*ref)
-				if err == nil && resolved != nil {
-					return resolved, nil
-				}
-			}
-		}
 		return gv, nil
 	}
-
-	// Recursively resolve containers
-	switch gv.Type() {
-	case TypeList:
-		items, err := gv.AsList()
-		if err != nil {
-			return nil, err
-		}
-		resolved := make([]*GValue, len(items))
-		for i, item := range items {
-			r, err := ResolvePoolRefs(item, poolReg)
-			if err != nil {
-				return nil, err
-			}
-			resolved[i] = r
-		}
-		return List(resolved...), nil
-
-	case TypeMap:
-		entries, err := gv.AsMap()
-		if err != nil {
-			return nil, err
-		}
-		resolvedEntries := make([]MapEntry, len(entries))
-		for i, e := range entries {
-			r, err := ResolvePoolRefs(e.Value, poolReg)
-			if err != nil {
-				return nil, err
-			}
-			resolvedEntries[i] = MapEntry{Key: e.Key, Value: r}
-		}
-		return Map(resolvedEntries...), nil
-
-	case TypeStruct:
-		sv, err := gv.AsStruct()
-		if err != nil {
-			return nil, err
-		}
-		if sv == nil {
-			return gv, nil
-		}
-		resolvedFields := make([]MapEntry, len(sv.Fields))
-		for i, f := range sv.Fields {
-			r, err := ResolvePoolRefs(f.Value, poolReg)
-			if err != nil {
-				return nil, err
-			}
-			resolvedFields[i] = MapEntry{Key: f.Key, Value: r}
-		}
-		return Struct(sv.TypeName, resolvedFields...), nil
-	}
-
-	return gv, nil
 }
 
 // parseMapWithEmbeddedTab parses a map that contains embedded @tab blocks.
@@ -211,13 +75,13 @@ func parseMapWithEmbeddedTab(input string) (*GValue, error) {
 		return nil, fmt.Errorf("expected { at start of map")
 	}
 
-	input = input[1:] // Remove leading {
+	input = input[1:]
 
 	if !strings.HasSuffix(strings.TrimSpace(input), "}") {
 		return nil, fmt.Errorf("expected } at end of map")
 	}
 	input = strings.TrimSpace(input)
-	input = input[:len(input)-1] // Remove trailing }
+	input = input[:len(input)-1]
 
 	var entries []MapEntry
 	remaining := input
@@ -228,7 +92,6 @@ func parseMapWithEmbeddedTab(input string) (*GValue, error) {
 			break
 		}
 
-		// Find key=
 		eqIdx := strings.Index(remaining, "=")
 		if eqIdx < 0 {
 			break
@@ -237,7 +100,6 @@ func parseMapWithEmbeddedTab(input string) (*GValue, error) {
 		key := strings.TrimSpace(remaining[:eqIdx])
 		remaining = remaining[eqIdx+1:]
 
-		// Check if value is @tab
 		if strings.HasPrefix(strings.TrimSpace(remaining), "@tab _") {
 			tabStart := strings.Index(remaining, "@tab _")
 			tabContent := remaining[tabStart:]
@@ -274,7 +136,6 @@ func parseMapWithEmbeddedTab(input string) (*GValue, error) {
 
 			entries = append(entries, MapEntry{Key: key, Value: tabValue})
 		} else {
-			// Regular value
 			var valueEnd int
 			found := false
 

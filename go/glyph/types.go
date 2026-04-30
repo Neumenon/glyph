@@ -50,10 +50,6 @@ func (t GType) String() string {
 		return "struct"
 	case TypeSum:
 		return "sum"
-	case TypeBlob:
-		return "blob"
-	case TypePoolRef:
-		return "poolref"
 	default:
 		return "unknown"
 	}
@@ -79,12 +75,6 @@ type GValue struct {
 
 	// Sum type
 	sumVal *SumValue
-
-	// Blob reference
-	blobVal *BlobRef
-
-	// Pool reference
-	poolRef *PoolRef
 
 	// Source location for error reporting
 	pos Position

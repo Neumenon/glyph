@@ -7,227 +7,6 @@ import (
 )
 
 // ============================================================
-// auto_pool.go coverage — all functions at 0%
-// ============================================================
-
-func TestAutoPoolEncode_NilValue(t *testing.T) {
-	_, err := AutoPoolEncode(nil, DefaultAutoPoolOpts())
-	if err == nil {
-		t.Fatal("expected error for nil value")
-	}
-}
-
-func TestAutoPoolEncode_Simple(t *testing.T) {
-	// A map with a repeated long string should produce a pool
-	longStr := "this is a fairly long string that should be pooled"
-	gv := List(
-		Map(MapEntry{Key: "msg", Value: Str(longStr)}),
-		Map(MapEntry{Key: "msg", Value: Str(longStr)}),
-		Map(MapEntry{Key: "msg", Value: Str(longStr)}),
-	)
-	result, err := AutoPoolEncode(gv, DefaultAutoPoolOpts())
-	if err != nil {
-		t.Fatalf("AutoPoolEncode: %v", err)
-	}
-	if result.Stats.PooledStrings == 0 {
-		t.Error("expected at least one pooled string")
-	}
-	if result.Stats.PoolEntries == 0 {
-		t.Error("expected pool entries")
-	}
-	if result.Output == "" {
-		t.Error("expected non-empty output")
-	}
-	if result.Stats.SavingsPercent <= 0 {
-		t.Errorf("expected positive savings, got %f", result.Stats.SavingsPercent)
-	}
-}
-
-func TestAutoPoolEncodeJSON(t *testing.T) {
-	json := []byte(`[{"msg":"this is a long enough string for pooling"}, {"msg":"this is a long enough string for pooling"}]`)
-	result, err := AutoPoolEncodeJSON(json, DefaultAutoPoolOpts())
-	if err != nil {
-		t.Fatalf("AutoPoolEncodeJSON: %v", err)
-	}
-	if result.Stats.PooledStrings == 0 {
-		t.Error("expected pooled strings")
-	}
-}
-
-func TestAutoPoolEncodeJSON_InvalidJSON(t *testing.T) {
-	_, err := AutoPoolEncodeJSON([]byte(`{invalid`), DefaultAutoPoolOpts())
-	if err == nil {
-		t.Fatal("expected error for invalid JSON")
-	}
-}
-
-func TestAutoPoolEncode_WithStruct(t *testing.T) {
-	longStr := "this value is long enough to pool"
-	gv := Struct("Test",
-		MapEntry{Key: "a", Value: Str(longStr)},
-		MapEntry{Key: "b", Value: Str(longStr)},
-	)
-	result, err := AutoPoolEncode(gv, DefaultAutoPoolOpts())
-	if err != nil {
-		t.Fatalf("AutoPoolEncode: %v", err)
-	}
-	if result.Output == "" {
-		t.Error("expected non-empty output")
-	}
-}
-
-func TestAutoPoolEncode_WithSum(t *testing.T) {
-	longStr := "this value is long enough to pool"
-	gv := Sum("Ok", Str(longStr))
-	result, err := AutoPoolEncode(gv, DefaultAutoPoolOpts())
-	if err != nil {
-		t.Fatalf("AutoPoolEncode: %v", err)
-	}
-	if result.Output == "" {
-		t.Error("expected non-empty output")
-	}
-}
-
-func TestAutoPoolEncode_TabularMode(t *testing.T) {
-	longStr := "this value is long enough for pooling purposes"
-	opts := DefaultAutoPoolOpts()
-	opts.LooseOpts.AutoTabular = true
-	opts.LooseOpts.MinRows = 2
-	opts.LooseOpts.MaxCols = 10
-
-	gv := List(
-		Map(
-			MapEntry{Key: "name", Value: Str("alice")},
-			MapEntry{Key: "msg", Value: Str(longStr)},
-		),
-		Map(
-			MapEntry{Key: "name", Value: Str("bob")},
-			MapEntry{Key: "msg", Value: Str(longStr)},
-		),
-		Map(
-			MapEntry{Key: "name", Value: Str("carol")},
-			MapEntry{Key: "msg", Value: Str(longStr)},
-		),
-	)
-
-	result, err := AutoPoolEncode(gv, opts)
-	if err != nil {
-		t.Fatalf("AutoPoolEncode: %v", err)
-	}
-	if result.Output == "" {
-		t.Error("expected non-empty output")
-	}
-}
-
-func TestAutoPoolEncode_CellTypes(t *testing.T) {
-	longStr := "repeated long poolable string val"
-	opts := DefaultAutoPoolOpts()
-	opts.MinLength = 10
-	opts.LooseOpts.AutoTabular = true
-	opts.LooseOpts.MinRows = 2
-	opts.LooseOpts.MaxCols = 10
-
-	// Exercise writeCellWithRefs with different types
-	gv := List(
-		Map(
-			MapEntry{Key: "a", Value: Null()},
-			MapEntry{Key: "b", Value: Bool(true)},
-			MapEntry{Key: "c", Value: Int(42)},
-			MapEntry{Key: "d", Value: Float(3.14)},
-			MapEntry{Key: "e", Value: Str(longStr)},
-			MapEntry{Key: "f", Value: Str("pipe|in")},
-			MapEntry{Key: "g", Value: List(Int(1), Int(2))},
-			MapEntry{Key: "h", Value: Map(MapEntry{Key: "x", Value: Int(1)})},
-		),
-		Map(
-			MapEntry{Key: "a", Value: Null()},
-			MapEntry{Key: "b", Value: Bool(false)},
-			MapEntry{Key: "c", Value: Int(99)},
-			MapEntry{Key: "d", Value: Float(0)},
-			MapEntry{Key: "e", Value: Str(longStr)},
-			MapEntry{Key: "f", Value: Str("ok")},
-			MapEntry{Key: "g", Value: List(Int(3))},
-			MapEntry{Key: "h", Value: Map(MapEntry{Key: "y", Value: Int(2)})},
-		),
-	)
-
-	result, err := AutoPoolEncode(gv, opts)
-	if err != nil {
-		t.Fatalf("AutoPoolEncode: %v", err)
-	}
-	if result.Output == "" {
-		t.Error("expected output")
-	}
-}
-
-func TestAutoPoolEncode_NeedsQuotingInCell(t *testing.T) {
-	if !needsQuotingInCellForPool("") {
-		t.Error("empty string should need quoting")
-	}
-	if !needsQuotingInCellForPool("hello world") {
-		t.Error("space should need quoting")
-	}
-	if !needsQuotingInCellForPool("pipe|char") {
-		t.Error("pipe should need quoting")
-	}
-	if !needsQuotingInCellForPool("t") {
-		t.Error("bare 't' should need quoting")
-	}
-	if !needsQuotingInCellForPool("f") {
-		t.Error("bare 'f' should need quoting")
-	}
-	if !needsQuotingInCellForPool("_") {
-		t.Error("bare '_' should need quoting")
-	}
-	if !needsQuotingInCellForPool("null") {
-		t.Error("'null' should need quoting")
-	}
-	if needsQuotingInCellForPool("hello") {
-		t.Error("'hello' should not need quoting")
-	}
-}
-
-func TestAutoPoolEncode_EscapeCellString(t *testing.T) {
-	got := escapeCellStringForPool("hello\nworld\\\"pipe|")
-	if got != `hello\nworld\\\"pipe\|` {
-		t.Errorf("unexpected escape result: %q", got)
-	}
-	got2 := escapeCellStringForPool("tab\rhere")
-	if got2 != `tab\rhere` {
-		t.Errorf("unexpected escape result: %q", got2)
-	}
-}
-
-func TestAutoPoolEncode_IsBareKey(t *testing.T) {
-	if isBareKeyForPool("") {
-		t.Error("empty should not be bare")
-	}
-	if !isBareKeyForPool("hello") {
-		t.Error("hello should be bare")
-	}
-	if !isBareKeyForPool("_under") {
-		t.Error("_under should be bare")
-	}
-	if isBareKeyForPool("123start") {
-		t.Error("digit-start should not be bare")
-	}
-	if isBareKeyForPool("has space") {
-		t.Error("spaces not bare")
-	}
-}
-
-func TestAutoPoolEncode_EscapeString(t *testing.T) {
-	got := escapeString("hello\nworld\t\"back\\")
-	if got != `hello\nworld\t\"back\\` {
-		t.Errorf("unexpected: %q", got)
-	}
-	got2 := escapeString("carriage\rreturn")
-	if got2 != `carriage\rreturn` {
-		t.Errorf("unexpected: %q", got2)
-	}
-}
-
-// ============================================================
 // canon.go — uncovered paths
 // ============================================================
 
@@ -333,139 +112,6 @@ func TestBinaryToMask_Errors(t *testing.T) {
 	_, err = binaryToMask("0b102")
 	if err == nil {
 		t.Error("expected error for invalid char")
-	}
-}
-
-// ============================================================
-// blob.go — uncovered paths
-// ============================================================
-
-func TestBlobRef_AlgorithmAndHash(t *testing.T) {
-	ref := BlobRef{CID: "sha256:abc123", MIME: "text/plain"}
-	if ref.Algorithm() != "sha256" {
-		t.Errorf("expected sha256, got %s", ref.Algorithm())
-	}
-	if ref.Hash() != "abc123" {
-		t.Errorf("expected abc123, got %s", ref.Hash())
-	}
-
-	// No colon
-	ref2 := BlobRef{CID: "justahash", MIME: "text/plain"}
-	if ref2.Algorithm() != "sha256" {
-		t.Errorf("expected default sha256, got %s", ref2.Algorithm())
-	}
-	if ref2.Hash() != "justahash" {
-		t.Errorf("expected justahash, got %s", ref2.Hash())
-	}
-}
-
-func TestComputeCIDWithAlgorithm(t *testing.T) {
-	cid, err := ComputeCIDWithAlgorithm([]byte("test"), "sha256")
-	if err != nil {
-		t.Fatalf("ComputeCIDWithAlgorithm: %v", err)
-	}
-	if cid == "" {
-		t.Error("expected non-empty CID")
-	}
-
-	_, err = ComputeCIDWithAlgorithm([]byte("test"), "unsupported")
-	if err == nil {
-		t.Error("expected error for unsupported algorithm")
-	}
-}
-
-func TestEmitBlob(t *testing.T) {
-	ref := BlobRef{CID: "sha256:abc", MIME: "text/plain", Bytes: 100}
-	got := EmitBlob(ref)
-	if got == "" {
-		t.Error("expected non-empty")
-	}
-}
-
-func TestUnquoteBlobString(t *testing.T) {
-	tests := []struct {
-		input, expected string
-	}{
-		{`hello`, "hello"},
-		{`hello\nworld`, "hello\nworld"},
-		{`tab\there`, "tab\there"},
-		{`cr\rhere`, "cr\rhere"},
-		{`back\\slash`, "back\\slash"},
-		{`quote\"here`, "quote\"here"},
-		{`other\x`, "otherx"}, // unknown escape passes through char after backslash
-	}
-	for _, tt := range tests {
-		got := unquoteBlobString(tt.input)
-		if got != tt.expected {
-			t.Errorf("unquoteBlobString(%q) = %q, want %q", tt.input, got, tt.expected)
-		}
-	}
-}
-
-func TestAsBlob_Panic(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for non-blob AsBlob")
-		}
-	}()
-	v := Int(42)
-	v.AsBlob()
-}
-
-func TestAsBlob_NilBlobVal(t *testing.T) {
-	v := &GValue{typ: TypeBlob, blobVal: nil}
-	ref := v.AsBlob()
-	if ref.CID != "" {
-		t.Error("expected empty CID for nil blobVal")
-	}
-}
-
-func TestBlobRegistry_GetMissing(t *testing.T) {
-	reg := NewMemoryBlobRegistry()
-	_, _, err := reg.Get("nonexistent")
-	if err == nil {
-		t.Error("expected error for missing blob")
-	}
-}
-
-func TestBlobRegistry_MetaMissing(t *testing.T) {
-	reg := NewMemoryBlobRegistry()
-	_, _, err := reg.Meta("nonexistent")
-	if err == nil {
-		t.Error("expected error for missing blob")
-	}
-}
-
-func TestParseBlobRef_WithQuotedValues(t *testing.T) {
-	input := `@blob cid=sha256:abc mime=text/plain bytes=100 name="my file.txt" caption="a caption"`
-	ref, err := ParseBlobRef(input)
-	if err != nil {
-		t.Fatalf("ParseBlobRef: %v", err)
-	}
-	if ref.Name != "my file.txt" {
-		t.Errorf("expected name 'my file.txt', got %q", ref.Name)
-	}
-	if ref.Caption != "a caption" {
-		t.Errorf("expected caption 'a caption', got %q", ref.Caption)
-	}
-}
-
-func TestParseBlobRef_UnterminatedQuote(t *testing.T) {
-	input := `@blob cid=sha256:abc mime=text/plain bytes=100 name="unterminated`
-	_, err := ParseBlobRef(input)
-	if err == nil {
-		t.Error("expected error for unterminated quote")
-	}
-}
-
-func TestParseBlobRef_MissingFields(t *testing.T) {
-	_, err := ParseBlobRef("@blob cid=sha256:abc")
-	if err == nil {
-		t.Error("expected error for missing mime")
-	}
-	_, err = ParseBlobRef("@blob mime=text/plain")
-	if err == nil {
-		t.Error("expected error for missing cid")
 	}
 }
 
@@ -616,7 +262,7 @@ func TestGType_String_Unknown(t *testing.T) {
 }
 
 func TestGType_String_AllTypes(t *testing.T) {
-	types := []GType{TypeNull, TypeBool, TypeInt, TypeFloat, TypeStr, TypeBytes, TypeTime, TypeID, TypeList, TypeMap, TypeStruct, TypeSum, TypeBlob, TypePoolRef}
+	types := []GType{TypeNull, TypeBool, TypeInt, TypeFloat, TypeStr, TypeBytes, TypeTime, TypeID, TypeList, TypeMap, TypeStruct, TypeSum}
 	for _, tt := range types {
 		s := tt.String()
 		if s == "" || s == "unknown" {
@@ -1064,23 +710,6 @@ other=42}`
 	}
 }
 
-func TestParseDocument_MultiLinePool(t *testing.T) {
-	input := `@pool.str id=S1 [
-"hello"
-"world"
-]
-
-{a=^S1:0}`
-	gv, err := ParseDocument(input)
-	if err != nil {
-		t.Fatalf("ParseDocument: %v", err)
-	}
-	aVal, _ := gv.Get("a").AsStr()
-	if aVal != "hello" {
-		t.Errorf("expected 'hello', got %q", aVal)
-	}
-}
-
 func TestIsDocKeyStart(t *testing.T) {
 	if !isDocKeyStart("key=value") {
 		t.Error("should recognize key=")
@@ -1093,40 +722,6 @@ func TestIsDocKeyStart(t *testing.T) {
 	}
 	if isDocKeyStart("") {
 		t.Error("should reject empty")
-	}
-}
-
-func TestResolvePoolRefs_Nil(t *testing.T) {
-	result, err := ResolvePoolRefs(nil, NewPoolRegistry())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result != nil {
-		t.Error("expected nil")
-	}
-}
-
-func TestResolvePoolRefs_NestedMap(t *testing.T) {
-	poolReg := NewPoolRegistry()
-	pool := &Pool{
-		ID:      "S1",
-		Kind:    PoolKindString,
-		Entries: []*GValue{Str("resolved")},
-	}
-	poolReg.Define(pool)
-
-	gv := Map(
-		MapEntry{Key: "a", Value: Str("^S1:0")},
-		MapEntry{Key: "b", Value: Str("normal")},
-	)
-	resolved, err := ResolvePoolRefs(gv, poolReg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := resolved.Get("a")
-	s, _ := a.AsStr()
-	if s != "resolved" {
-		t.Errorf("expected 'resolved', got %q", s)
 	}
 }
 
@@ -1484,21 +1079,6 @@ func TestSchema_Nil(t *testing.T) {
 	}
 }
 
-func TestPool_ClearAll(t *testing.T) {
-	reg := NewPoolRegistry()
-	pool := &Pool{
-		ID:      "S1",
-		Kind:    PoolKindString,
-		Entries: []*GValue{Str("a")},
-	}
-	reg.Define(pool)
-	reg.ClearAll()
-	_, err := reg.Resolve(PoolRef{PoolID: "S1", Index: 0})
-	if err == nil {
-		t.Error("expected error after ClearAll")
-	}
-}
-
 // ============================================================
 // parse.go — uncovered paths
 // ============================================================
@@ -1682,18 +1262,6 @@ func TestStreamSession_EncodeKey_Coverage(t *testing.T) {
 	// In learning mode, EncodeOrAdd is called but Freeze prevents Add
 	// Just ensure we don't panic
 	_ = ok
-}
-
-// ============================================================
-// pool.go — uncovered paths
-// ============================================================
-
-func TestAsPoolRef(t *testing.T) {
-	// Non-pool-ref value
-	_, err := Int(42).AsPoolRef()
-	if err == nil {
-		t.Error("int should not be a pool ref")
-	}
 }
 
 // ============================================================

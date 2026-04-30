@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -74,9 +73,6 @@ func main() {
 	noTabular := false
 	llmMode := false
 	compactMode := false
-	autoPool := false
-	minOccurs := 2
-	minLength := 20
 	fileArg := ""
 	for _, arg := range os.Args[2:] {
 		switch {
@@ -86,18 +82,8 @@ func main() {
 			llmMode = true
 		case arg == "--compact":
 			compactMode = true
-		case arg == "--auto-pool":
-			autoPool = true
 		case arg == "--auto-tabular":
 			// For backward compat (tabular is already default)
-		case strings.HasPrefix(arg, "--min-occurs="):
-			if n, err := parseIntArg(arg, "--min-occurs="); err == nil {
-				minOccurs = n
-			}
-		case strings.HasPrefix(arg, "--min-length="):
-			if n, err := parseIntArg(arg, "--min-length="); err == nil {
-				minLength = n
-			}
 		default:
 			if !strings.HasPrefix(arg, "-") && arg != "-" {
 				fileArg = arg
@@ -117,11 +103,7 @@ func main() {
 
 	switch cmd {
 	case "fmt-loose", "fmt":
-		if autoPool {
-			cmdFmtLooseWithPool(input, llmMode, minOccurs, minLength)
-		} else {
-			cmdFmtLoose(input, noTabular, llmMode, compactMode)
-		}
+		cmdFmtLoose(input, noTabular, llmMode, compactMode)
 	case "to-json":
 		cmdToJSON(input)
 	case "from-json":
@@ -152,9 +134,6 @@ Options:
   --no-tabular        Disable auto-tabular (it's ON by default for 35-65% token savings)
   --llm               Use LLM-friendly mode (ASCII _ for null)
   --compact           Use schema header + compact keys (#0, #1, etc.) for max compression
-  --auto-pool         Enable automatic string pooling for deduplication
-  --min-occurs=N      Minimum occurrences to pool a string (default: 2)
-  --min-length=N      Minimum string length to consider for pooling (default: 20)
 
 Smart auto-tabular: lists of 3+ homogeneous objects become compact @tab blocks.
 Non-eligible data (primitives, mixed lists, <3 items) uses standard format.
@@ -233,7 +212,7 @@ func cmdFmtLoose(r io.Reader, noTabular, llmMode, compactMode bool) {
 }
 
 // cmdToJSON: GLYPH-Loose canonical -> JSON
-// Parses GLYPH canonical form (with optional @schema, @pool, @tab directives) and outputs JSON.
+// Parses GLYPH canonical form (with optional @schema and @tab directives) and outputs JSON.
 func cmdToJSON(r io.Reader) {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -468,46 +447,3 @@ func fatal(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
-// parseIntArg extracts an integer from a flag like "--min-occurs=2"
-func parseIntArg(arg, prefix string) (int, error) {
-	val := strings.TrimPrefix(arg, prefix)
-	n, err := strconv.Atoi(val)
-	if err != nil {
-		return 0, err
-	}
-	return n, nil
-}
-
-
-// cmdFmtLooseWithPool: JSON -> canonical GLYPH-Loose with automatic string pooling
-func cmdFmtLooseWithPool(r io.Reader, llmMode bool, minOccurs, minLength int) {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		fatal("read input: %v", err)
-	}
-
-	opts := glyph.DefaultAutoPoolOpts()
-	opts.MinOccurs = minOccurs
-	opts.MinLength = minLength
-	if llmMode {
-		opts.LooseOpts = glyph.LLMLooseCanonOpts()
-	}
-
-	result, err := glyph.AutoPoolEncodeJSON(data, opts)
-	if err != nil {
-		fatal("encode with pool: %v", err)
-	}
-
-	// Print output
-	fmt.Print(result.Output)
-
-	// Print stats to stderr
-	if result.Stats.PoolEntries > 0 {
-		fmt.Fprintf(os.Stderr, "\n--- Pool Stats ---\n")
-		fmt.Fprintf(os.Stderr, "Strings pooled: %d\n", result.Stats.PooledStrings)
-		fmt.Fprintf(os.Stderr, "Pool entries: %d\n", result.Stats.PoolEntries)
-		fmt.Fprintf(os.Stderr, "Original size: %d bytes\n", result.Stats.OriginalBytes)
-		fmt.Fprintf(os.Stderr, "Pooled size: %d bytes\n", result.Stats.PooledBytes)
-		fmt.Fprintf(os.Stderr, "Savings: %d bytes (%.1f%%)\n", result.Stats.BytesSaved, result.Stats.SavingsPercent)
-	}
-}
