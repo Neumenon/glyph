@@ -7,7 +7,7 @@ import (
 )
 
 // ============================================================
-// LYPH v2 Patch Parser
+// GLYPH v2 Patch Parser
 // ============================================================
 //
 // Parses patch blocks in the format:

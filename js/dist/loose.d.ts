@@ -89,11 +89,6 @@ export declare function noTabularLooseCanonOpts(): LooseCanonOpts;
  */
 export declare function prettyLooseCanonOpts(): LooseCanonOpts;
 /**
- * Options preset for tabular-enabled canonicalization.
- * @deprecated auto-tabular is now the default.
- */
-export declare function tabularLooseCanonOpts(): LooseCanonOpts;
-/**
  * Returns a deterministic canonical string for any GValue.
  * This function produces identical output for semantically equal values,
  * making it suitable for hashing, comparison, and deduplication.
@@ -114,11 +109,6 @@ export declare function canonicalizeLooseNoTabular(v: GValue): string;
  * Canonicalize with options (including auto-tabular support).
  */
 export declare function canonicalizeLooseWithOpts(v: GValue, opts: LooseCanonOpts): string;
-/**
- * Convenience function: canonicalize with auto-tabular enabled.
- * @deprecated auto-tabular is now the default. Use canonicalizeLoose instead.
- */
-export declare function canonicalizeLooseTabular(v: GValue): string;
 /**
  * Unescape pipe characters in a tabular cell.
  */
@@ -152,12 +142,22 @@ export interface TabularMetadata {
  */
 export declare function parseTabularLooseHeaderWithMeta(line: string): TabularMetadata;
 /**
- * Returns a deterministic fingerprint string for a GValue.
- * Useful for caching, deduplication, and equality checks.
+ * Returns the SHA-256 hex digest of the no-tabular canonical form of v.
+ * The output is a 64-character lowercase hex string that is byte-identical
+ * across Go, Python, and JS for semantically equal values.
+ *
+ * Tabular form is excluded from the hash so that fingerprint stability does
+ * not depend on cross-language agreement about tabular triggering thresholds
+ * or escaping. Use canonicalizeLooseNoTabular for the pre-hash bytes.
+ *
+ * Node-only synchronous variant — uses node's crypto module. For browser/
+ * async contexts, hash canonicalizeLooseNoTabular(v) with crypto.subtle.
  */
 export declare function fingerprintLoose(v: GValue): string;
 /**
  * Checks if two GValues are semantically equal using loose canonicalization.
+ * Compares no-tabular canonical strings so the result aligns with
+ * fingerprintLoose equality.
  */
 export declare function equalLoose(a: GValue, b: GValue): boolean;
 /**

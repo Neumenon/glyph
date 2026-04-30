@@ -7,7 +7,7 @@ import (
 )
 
 // ============================================================
-// LYPH v2 Integration Tests
+// GLYPH v2 Integration Tests
 // ============================================================
 
 func makeHikesSchema() *Schema {

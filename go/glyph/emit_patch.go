@@ -11,7 +11,7 @@ import (
 )
 
 // ============================================================
-// LYPH v2 Patch Mode Encoder
+// GLYPH v2 Patch Mode Encoder
 // ============================================================
 //
 // Patch mode encodes a set of changes (delta) to a document:

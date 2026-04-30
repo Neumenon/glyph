@@ -6,11 +6,13 @@ import (
 	"github.com/Neumenon/glyph/glyph"
 )
 
-// StateHashLoose computes the state hash using CanonicalizeLoose.
+// StateHashLoose computes the stream state hash using CanonicalizeLoose.
 // This is: sha256(CanonicalizeLoose(decoded value))
 //
 // Use this for schema-optional streaming where both sides operate
-// in loose mode.
+// in loose mode. This intentionally hashes the emitted loose stream form;
+// glyph.FingerprintLoose uses the no-tabular canonical form for stable
+// value identity outside the GS1 stream protocol.
 func StateHashLoose(value *glyph.GValue) [32]byte {
 	canonical := glyph.CanonicalizeLoose(value)
 	return sha256.Sum256([]byte(canonical))

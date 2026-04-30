@@ -27,11 +27,9 @@ exports.defaultLooseCanonOpts = defaultLooseCanonOpts;
 exports.llmLooseCanonOpts = llmLooseCanonOpts;
 exports.noTabularLooseCanonOpts = noTabularLooseCanonOpts;
 exports.prettyLooseCanonOpts = prettyLooseCanonOpts;
-exports.tabularLooseCanonOpts = tabularLooseCanonOpts;
 exports.canonicalizeLoose = canonicalizeLoose;
 exports.canonicalizeLooseNoTabular = canonicalizeLooseNoTabular;
 exports.canonicalizeLooseWithOpts = canonicalizeLooseWithOpts;
-exports.canonicalizeLooseTabular = canonicalizeLooseTabular;
 exports.unescapeTabularCell = unescapeTabularCell;
 exports.parseTabularLoose = parseTabularLoose;
 exports.parseTabularLooseHeaderWithMeta = parseTabularLooseHeaderWithMeta;
@@ -110,13 +108,6 @@ function prettyLooseCanonOpts() {
         allowMissing: true,
         nullStyle: 'symbol',
     };
-}
-/**
- * Options preset for tabular-enabled canonicalization.
- * @deprecated auto-tabular is now the default.
- */
-function tabularLooseCanonOpts() {
-    return defaultLooseCanonOpts();
 }
 // ============================================================
 // Canonical Scalar Encoding
@@ -207,7 +198,7 @@ function isBareSafe(s) {
     if (s.length === 0)
         return false;
     // Reserved words
-    if (['t', 'f', 'true', 'false', 'null', 'none', 'nil'].includes(s)) {
+    if (['t', 'f', '_', 'true', 'false', 'null', 'none', 'nil'].includes(s)) {
         return false;
     }
     // Use codepoint iteration for proper Unicode handling
@@ -328,13 +319,6 @@ function canonicalizeLooseNoTabular(v) {
 function canonicalizeLooseWithOpts(v, opts) {
     return canonicalizeLooseImpl(v, { ...defaultLooseCanonOpts(), ...opts });
 }
-/**
- * Convenience function: canonicalize with auto-tabular enabled.
- * @deprecated auto-tabular is now the default. Use canonicalizeLoose instead.
- */
-function canonicalizeLooseTabular(v) {
-    return canonicalizeLoose(v);
-}
 function canonicalizeLooseImpl(v, opts) {
     switch (v.type) {
         case 'null':
@@ -367,6 +351,16 @@ function canonicalizeLooseImpl(v, opts) {
             const sum = v.asSum();
             const entry = { key: sum.tag, value: sum.value ?? types_1.GValue.null() };
             return canonMapLooseWithOpts([entry], opts);
+        }
+        case 'blob': {
+            // Lazy import to break circular dependency with blob.ts
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { emitBlob } = require('./blob');
+            return emitBlob(v.asBlob());
+        }
+        case 'poolRef': {
+            const pr = v.asPoolRef();
+            return `^${pr.poolId}:${pr.index}`;
         }
     }
 }
@@ -983,17 +977,30 @@ function canonMapLooseWithOpts(entries, opts) {
 // Loose Mode Helpers
 // ============================================================
 /**
- * Returns a deterministic fingerprint string for a GValue.
- * Useful for caching, deduplication, and equality checks.
+ * Returns the SHA-256 hex digest of the no-tabular canonical form of v.
+ * The output is a 64-character lowercase hex string that is byte-identical
+ * across Go, Python, and JS for semantically equal values.
+ *
+ * Tabular form is excluded from the hash so that fingerprint stability does
+ * not depend on cross-language agreement about tabular triggering thresholds
+ * or escaping. Use canonicalizeLooseNoTabular for the pre-hash bytes.
+ *
+ * Node-only synchronous variant — uses node's crypto module. For browser/
+ * async contexts, hash canonicalizeLooseNoTabular(v) with crypto.subtle.
  */
 function fingerprintLoose(v) {
-    return canonicalizeLoose(v);
+    const canonical = canonicalizeLooseNoTabular(v);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createHash } = require('crypto');
+    return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 /**
  * Checks if two GValues are semantically equal using loose canonicalization.
+ * Compares no-tabular canonical strings so the result aligns with
+ * fingerprintLoose equality.
  */
 function equalLoose(a, b) {
-    return canonicalizeLoose(a) === canonicalizeLoose(b);
+    return canonicalizeLooseNoTabular(a) === canonicalizeLooseNoTabular(b);
 }
 // ============================================================
 // GLYPH v2.4.0: Schema Header + Compact Keys
@@ -1278,6 +1285,29 @@ function toJsonLoose(gv, opts = {}) {
             const result = createJsonObject();
             result[sum.tag] = sum.value ? toJsonLoose(sum.value, opts) : null;
             return result;
+        }
+        case 'blob': {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { emitBlob } = require('./blob');
+            const str = emitBlob(gv.asBlob());
+            if (opts.extended) {
+                const result = createJsonObject();
+                result.$glyph = 'blob';
+                result.value = str;
+                return result;
+            }
+            return str;
+        }
+        case 'poolRef': {
+            const pr = gv.asPoolRef();
+            const str = `^${pr.poolId}:${pr.index}`;
+            if (opts.extended) {
+                const result = createJsonObject();
+                result.$glyph = 'poolRef';
+                result.value = str;
+                return result;
+            }
+            return str;
         }
     }
 }

@@ -265,7 +265,7 @@ python3 demo_oracle_sophisticated.py
 For questions:
 - See [COOKBOOK.md](docs/COOKBOOK.md) for integration patterns
 - See [AGENT.md](AGENT.md) for design philosophy
-- See [TOOL_CALL_REPORT.md](docs/TOOL_CALL_REPORT.md) for streaming validation details
+- See [TOOL_CALL_REPORT.md](docs/reports/TOOL_CALL_REPORT.md) for streaming validation details
 
 ---
 

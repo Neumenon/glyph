@@ -1,7 +1,7 @@
 /**
- * LYPH v2 Core Types
+ * GLYPH v2 Core Types
  * 
- * GValue is the universal value type for LYPH/GLYPH data.
+ * GValue is the universal value type for GLYPH/GGLYPH data.
  */
 
 export type GType =
@@ -55,7 +55,7 @@ export interface SumValue {
 }
 
 /**
- * GValue - Universal value container for LYPH data
+ * GValue - Universal value container for GLYPH data
  */
 export class GValue {
   readonly type: GType;

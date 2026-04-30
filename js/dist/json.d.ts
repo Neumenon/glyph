@@ -1,5 +1,5 @@
 /**
- * LYPH v2 JSON Conversion
+ * GLYPH v2 JSON Conversion
  *
  * Converts between JSON and GValue representations.
  */
@@ -45,7 +45,7 @@ export declare function parseJson(jsonStr: string, options?: FromJsonOptions): G
 export declare function stringifyJson(gv: GValue, options?: ToJsonOptions, indent?: number): string;
 /**
  * Round-trip convert: JSON -> GValue -> JSON
- * Useful for normalizing JSON to LYPH conventions
+ * Useful for normalizing JSON to GLYPH conventions
  */
 export declare function normalizeJson(json: unknown, fromOptions?: FromJsonOptions, toOptions?: ToJsonOptions): unknown;
 //# sourceMappingURL=json.d.ts.map

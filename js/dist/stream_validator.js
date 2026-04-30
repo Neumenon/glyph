@@ -454,8 +454,6 @@ class StreamingValidator {
                 return value === null;
             case 'any':
                 return true;
-            default:
-                return true;
         }
     }
     validateComplete() {

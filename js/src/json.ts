@@ -1,5 +1,5 @@
 /**
- * LYPH v2 JSON Conversion
+ * GLYPH v2 JSON Conversion
  * 
  * Converts between JSON and GValue representations.
  */
@@ -383,7 +383,7 @@ export function stringifyJson(gv: GValue, options: ToJsonOptions = {}, indent?: 
 
 /**
  * Round-trip convert: JSON -> GValue -> JSON
- * Useful for normalizing JSON to LYPH conventions
+ * Useful for normalizing JSON to GLYPH conventions
  */
 export function normalizeJson(
   json: unknown, 

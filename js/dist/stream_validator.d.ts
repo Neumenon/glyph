@@ -9,8 +9,9 @@
  * - Incremental validation: Check constraints as tokens arrive
  * - Latency savings: Reject bad payloads without waiting for completion
  */
+export type ArgType = 'string' | 'int' | 'float' | 'number' | 'bool' | 'boolean' | 'null' | 'any';
 export interface ArgSchema {
-    type: string;
+    type: ArgType;
     required?: boolean;
     min?: number;
     max?: number;

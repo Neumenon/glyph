@@ -1,7 +1,7 @@
 /**
- * LYPH v2 Encoders
+ * GLYPH v2 Encoders
  *
- * Emits LYPH format from GValue.
+ * Emits GLYPH format from GValue.
  */
 import { GValue, RefID } from './types';
 import { Schema } from './schema';

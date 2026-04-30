@@ -1,6 +1,6 @@
 "use strict";
 /**
- * LYPH v2 Schema System
+ * GLYPH v2 Schema System
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = exports.SchemaBuilder = exports.Schema = void 0;

@@ -93,10 +93,13 @@ func TestTruthTable(t *testing.T) {
 
 	t.Run("reserved_words_quoted", func(t *testing.T) {
 		// "true" as a string → "\"true\""
-		gv := Str("true")
-		got := CanonicalizeLoose(gv)
-		if got != `"true"` {
-			t.Errorf("expected %q, got %q", `"true"`, got)
+		for _, word := range []string{"true", "_"} {
+			gv := Str(word)
+			got := CanonicalizeLoose(gv)
+			want := `"` + word + `"`
+			if got != want {
+				t.Errorf("CanonicalizeLoose(%q) = %q, want %q", word, got, want)
+			}
 		}
 	})
 

@@ -9,7 +9,7 @@ import (
 )
 
 // ============================================================
-// LYPH v2 Tabular Mode Parser (Streaming)
+// GLYPH v2 Tabular Mode Parser (Streaming)
 // ============================================================
 //
 // Tabular format:

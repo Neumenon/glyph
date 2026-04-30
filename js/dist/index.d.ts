@@ -1,5 +1,5 @@
 /**
- * LYPH v2 JavaScript/TypeScript Codec
+ * GLYPH v2 JavaScript/TypeScript Codec
  *
  * A token-efficient serialization format for LLM communication.
  *
@@ -22,7 +22,7 @@
  *   field('league', g.str('EPL'))
  * );
  *
- * // Emit as packed LYPH
+ * // Emit as packed GLYPH
  * const packed = emitPacked(team, schema);
  * // => "Team@(^t:ARS Arsenal EPL)"
  *
@@ -37,13 +37,15 @@
  * const backToJson = toJson(team, { includeTypeMarkers: true });
  * ```
  */
-export { GValue, GType, RefID, MapEntry, StructValue, SumValue, g, field, } from './types';
+export { GValue, GType, RefID, MapEntry, StructValue, SumValue, BlobRef, PoolRef, g, field, } from './types';
+export { computeCid, blobFromContent, blobAlgorithm, blobHash, emitBlob, parseBlobRef, MemoryBlobRegistry, ParseBlobError, } from './blob';
+export { Pool, PoolKind, PoolRegistry, ParsePoolError, ParsedDocument, isPoolRefId, parsePoolRef, emitPool, parsePool, splitDocument, parseDocument, resolvePoolRefs, } from './pool';
 export { Schema, SchemaBuilder, TypeDef, FieldDef, TypeSpec, TypeSpecKind, Constraint, VariantDef, t, } from './schema';
 export { fromJson, toJson, parseJson, stringifyJson, normalizeJson, FromJsonOptions, ToJsonOptions, } from './json';
 export { emit, emitPacked, emitTabular, emitV2, emitHeader, EmitOptions, PackedOptions, TabularOptions, HeaderOptions, V2Options, KeyMode, } from './emit';
 export { parsePacked, parseTabular, parseHeader, ParseOptions, Header, TabularParseResult, } from './parse';
 export { Patch, PatchOp, PatchOpKind, PathSeg, PathSegKind, PatchBuilder, PatchEmitOptions, emitPatch, parsePatch, applyPatch, parsePathToSegs, fieldSeg, listIdxSeg, mapKeySeg, } from './patch';
-export { canonicalizeLoose, canonicalizeLooseNoTabular, canonicalizeLooseWithOpts, canonicalizeLooseTabular, fingerprintLoose, equalLoose, fromJsonLoose, toJsonLoose, parseJsonLoose, stringifyJsonLoose, jsonEqual, parseTabularLoose, unescapeTabularCell, BridgeOpts, LooseCanonOpts, TabularParseResult as LooseTabularParseResult, defaultLooseCanonOpts, noTabularLooseCanonOpts, tabularLooseCanonOpts, llmLooseCanonOpts, canonicalizeLooseWithSchema, buildKeyDictFromValue, parseSchemaHeader, parseTabularLooseHeaderWithMeta, NullStyle, SchemaHeaderResult, TabularMetadata, } from './loose';
+export { canonicalizeLoose, canonicalizeLooseNoTabular, canonicalizeLooseWithOpts, fingerprintLoose, equalLoose, fromJsonLoose, toJsonLoose, parseJsonLoose, stringifyJsonLoose, jsonEqual, parseTabularLoose, unescapeTabularCell, BridgeOpts, LooseCanonOpts, TabularParseResult as LooseTabularParseResult, defaultLooseCanonOpts, noTabularLooseCanonOpts, llmLooseCanonOpts, canonicalizeLooseWithSchema, buildKeyDictFromValue, parseSchemaHeader, parseTabularLooseHeaderWithMeta, NullStyle, SchemaHeaderResult, TabularMetadata, } from './loose';
 export * as stream from './stream/index';
 export { Decimal128, DecimalError, decimal, isDecimalLiteral, parseDecimalLiteral, } from './decimal128';
 export { VersionedSchema, VersionSchema, EvolvingField, EvolvingFieldConfig, EvolutionMode, FieldType, FieldValue as EvolutionFieldValue, ParseResult as EvolutionParseResult, EmitResult as EvolutionEmitResult, ChangelogEntry, compareVersions, parseVersionHeader, formatVersionHeader, versionedSchema, } from './schema_evolution';
@@ -52,17 +54,17 @@ import { FromJsonOptions } from './json';
 import { V2Options } from './emit';
 import { Schema } from './schema';
 /**
- * Convert JSON directly to packed LYPH format
+ * Convert JSON directly to packed GLYPH format
  */
 export declare function jsonToPacked(json: unknown, schema: Schema, options?: FromJsonOptions & {
     typeName?: string;
 }): string;
 /**
- * Convert JSON directly to tabular LYPH format
+ * Convert JSON directly to tabular GLYPH format
  */
 export declare function jsonToTabular(json: unknown, schema: Schema, options?: FromJsonOptions): string;
 /**
- * Convert JSON directly to LYPH v2 with auto mode selection
+ * Convert JSON directly to GLYPH v2 with auto mode selection
  */
 export declare function jsonToLyph(json: unknown, schema: Schema, options?: FromJsonOptions & V2Options): string;
 /**
@@ -70,7 +72,7 @@ export declare function jsonToLyph(json: unknown, schema: Schema, options?: From
  */
 export declare function estimateTokens(s: string): number;
 /**
- * Compare token counts between JSON and LYPH representations
+ * Compare token counts between JSON and GLYPH representations
  */
 export declare function compareTokens(json: unknown, schema: Schema, options?: FromJsonOptions & V2Options): {
     json: number;

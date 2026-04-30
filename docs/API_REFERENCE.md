@@ -27,7 +27,10 @@ Typical operations:
 - `from_json` / `fromJson` / `FromJSONLoose`
 - `to_json` / `toJson` / `ToJSONLoose`
 - `canonicalize_loose` / `canonicalizeLoose` / `CanonicalizeLoose`
-- `fingerprint_loose` / `fingerprintLoose` / `FingerprintLoose`
+- Go/Python/JS value identity: `fingerprint_loose` / `fingerprintLoose` / `FingerprintLoose`
+
+Rust and C currently expose narrower hash helpers; use their language READMEs
+as the source of truth for those packages.
 
 ### Structured Values
 Implementations expose a typed value model with:

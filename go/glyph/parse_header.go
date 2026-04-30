@@ -6,7 +6,7 @@ import (
 )
 
 // ============================================================
-// LYPH v2 Header Parsing
+// GLYPH v2 Header Parsing
 // ============================================================
 //
 // Header format:
@@ -18,7 +18,7 @@ import (
 //   @mode=X        - Encoding mode: auto, struct, packed, tabular, patch
 //   @keys=X        - Key format: wire, name, fid
 
-// Header represents parsed LYPH v2 header information.
+// Header represents parsed GLYPH v2 header information.
 type Header struct {
 	Version         string  // "v2"
 	SchemaID        string  // Schema hash (optional)
@@ -29,7 +29,7 @@ type Header struct {
 	Raw             string  // Original header text
 }
 
-// ParseHeader parses a LYPH v2 header line.
+// ParseHeader parses a GLYPH v2 header line.
 // Returns nil if the input is not a v2 header.
 func ParseHeader(input string) (*Header, error) {
 	input = strings.TrimSpace(input)
@@ -146,7 +146,7 @@ func parseRefIDFromTarget(s string) RefID {
 	return RefID{Value: s}
 }
 
-// EmitHeader generates a LYPH v2 header string.
+// EmitHeader generates a GLYPH v2 header string.
 func EmitHeader(h *Header) string {
 	var b strings.Builder
 
@@ -189,7 +189,7 @@ func EmitHeader(h *Header) string {
 // Document Structure
 // ============================================================
 
-// Document represents a complete LYPH v2 document.
+// Document represents a complete GLYPH v2 document.
 type Document struct {
 	Header *Header // Parsed header
 	Body   *GValue // Main content
@@ -232,7 +232,7 @@ func DetectMode(input string) Mode {
 // V2 Encoder Options
 // ============================================================
 
-// V2Options configures LYPH v2 encoding.
+// V2Options configures GLYPH v2 encoding.
 type V2Options struct {
 	Schema        *Schema
 	Mode          Mode    // Preferred mode (ModeAuto for automatic)
@@ -243,7 +243,7 @@ type V2Options struct {
 	IndentPrefix  string  // Indentation for nested content
 }
 
-// DefaultV2Options returns sensible defaults for LYPH v2 encoding.
+// DefaultV2Options returns sensible defaults for GLYPH v2 encoding.
 func DefaultV2Options(schema *Schema) V2Options {
 	return V2Options{
 		Schema:        schema,
@@ -260,7 +260,7 @@ func DefaultV2Options(schema *Schema) V2Options {
 // Top-level V2 Encoder
 // ============================================================
 
-// EmitV2 encodes a value in LYPH v2 format with automatic mode selection.
+// EmitV2 encodes a value in GLYPH v2 format with automatic mode selection.
 func EmitV2(v *GValue, opts V2Options) (string, error) {
 	if v == nil {
 		return canonNull(), nil
@@ -317,7 +317,7 @@ func EmitV2(v *GValue, opts V2Options) (string, error) {
 	return body, nil
 }
 
-// EmitV2Patch encodes a patch in LYPH v2 format.
+// EmitV2Patch encodes a patch in GLYPH v2 format.
 func EmitV2Patch(p *Patch, opts V2Options) (string, error) {
 	patchOpts := PatchOptions{
 		Schema:       opts.Schema,

@@ -1,14 +1,14 @@
 "use strict";
 /**
- * LYPH v2 Core Types
+ * GLYPH v2 Core Types
  *
- * GValue is the universal value type for LYPH/GLYPH data.
+ * GValue is the universal value type for GLYPH/GGLYPH data.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.g = exports.GValue = void 0;
 exports.field = field;
 /**
- * GValue - Universal value container for LYPH data
+ * GValue - Universal value container for GLYPH data
  */
 class GValue {
     constructor(type) {
@@ -80,6 +80,16 @@ class GValue {
         gv._sum = { tag, value };
         return gv;
     }
+    static blob(ref) {
+        const gv = new GValue('blob');
+        gv._blob = ref;
+        return gv;
+    }
+    static poolRef(poolId, index) {
+        const gv = new GValue('poolRef');
+        gv._poolRef = { poolId, index };
+        return gv;
+    }
     // ============================================================
     // Accessors
     // ============================================================
@@ -140,6 +150,16 @@ class GValue {
         if (this.type !== 'sum')
             throw new Error('not a sum');
         return this._sum;
+    }
+    asBlob() {
+        if (this.type !== 'blob')
+            throw new Error('not a blob');
+        return this._blob;
+    }
+    asPoolRef() {
+        if (this.type !== 'poolRef')
+            throw new Error('not a pool ref');
+        return this._poolRef;
     }
     /**
      * Get numeric value as number (works for int or float)
@@ -259,6 +279,10 @@ class GValue {
                 return GValue.struct(this._struct.typeName, ...this._struct.fields.map(f => ({ key: f.key, value: f.value.clone() })));
             case 'sum':
                 return GValue.sum(this._sum.tag, this._sum.value?.clone() ?? null);
+            case 'blob':
+                return GValue.blob({ ...this._blob });
+            case 'poolRef':
+                return GValue.poolRef(this._poolRef.poolId, this._poolRef.index);
         }
     }
 }
@@ -288,6 +312,8 @@ exports.g = {
     map: GValue.map,
     struct: GValue.struct,
     sum: GValue.sum,
+    blob: GValue.blob,
+    poolRef: GValue.poolRef,
     field,
 };
 //# sourceMappingURL=types.js.map

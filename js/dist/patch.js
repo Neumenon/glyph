@@ -1,6 +1,6 @@
 "use strict";
 /**
- * LYPH v2 Patch System
+ * GLYPH v2 Patch System
  *
  * Implements patch emit, parse, and apply for cross-implementation parity with Go.
  */
@@ -15,6 +15,7 @@ exports.parsePatch = parsePatch;
 exports.applyPatch = applyPatch;
 const types_1 = require("./types");
 const hash_1 = require("./stream/hash");
+const codec_primitives_1 = require("./codec_primitives");
 // ============================================================
 // Path Segment Constructors
 // ============================================================
@@ -307,7 +308,7 @@ function emitPatch(patch, options = {}) {
         else if (op.op === '~') {
             if (op.value) {
                 const num = op.value.type === 'float' ? op.value.asFloat() : op.value.asInt();
-                line += ' ' + (num >= 0 ? '+' : '') + canonFloat(num);
+                line += ' ' + (num >= 0 ? '+' : '') + (0, codec_primitives_1.canonFloat)(num);
             }
         }
         // OpDelete has no value
@@ -346,9 +347,9 @@ function emitValue(gv, schema) {
     switch (gv.type) {
         case 'null': return '∅';
         case 'bool': return gv.asBool() ? 't' : 'f';
-        case 'int': return canonInt(gv.asInt());
-        case 'float': return canonFloat(gv.asFloat());
-        case 'str': return canonString(gv.asStr());
+        case 'int': return (0, codec_primitives_1.canonInt)(gv.asInt());
+        case 'float': return (0, codec_primitives_1.canonFloat)(gv.asFloat());
+        case 'str': return (0, codec_primitives_1.canonString)(gv.asStr());
         case 'id': return canonRef(gv.asId());
         case 'time': return gv.asTime().toISOString().replace('.000Z', 'Z');
         case 'list': {
@@ -358,7 +359,7 @@ function emitValue(gv, schema) {
         case 'map': {
             const parts = [];
             for (const e of gv.asMap()) {
-                parts.push(`${canonString(e.key)}:${emitValue(e.value, schema)}`);
+                parts.push(`${(0, codec_primitives_1.canonString)(e.key)}:${emitValue(e.value, schema)}`);
             }
             return '{' + parts.join(' ') + '}';
         }
@@ -368,7 +369,7 @@ function emitValue(gv, schema) {
             // Otherwise fall back to struct form
             const parts = [];
             for (const f of sv.fields) {
-                parts.push(`${canonString(f.key)}=${emitValue(f.value, schema)}`);
+                parts.push(`${(0, codec_primitives_1.canonString)(f.key)}=${emitValue(f.value, schema)}`);
             }
             return `${sv.typeName}{${parts.join(' ')}}`;
         }
@@ -814,67 +815,8 @@ function applyToParent(value, seg, op) {
 // ============================================================
 // Canonical Helpers
 // ============================================================
-function canonInt(n) {
-    return String(Math.floor(n));
-}
-function canonFloat(f) {
-    if (f === 0)
-        return '0';
-    return String(f).replace('E', 'e');
-}
-function canonString(s) {
-    if (isBareSafe(s))
-        return s;
-    return quoteString(s);
-}
 function canonRef(ref) {
     const full = ref.prefix ? `${ref.prefix}:${ref.value}` : ref.value;
     return `^${full}`;
-}
-function isBareSafe(s) {
-    if (!s)
-        return false;
-    if (['t', 'f', 'true', 'false', 'null', 'none', 'nil'].includes(s))
-        return false;
-    const first = s.charCodeAt(0);
-    if (!isLetter(first) && first !== 95)
-        return false;
-    for (let i = 1; i < s.length; i++) {
-        const c = s.charCodeAt(i);
-        if (!isLetter(c) && !isDigit(c) && c !== 95 && c !== 45 && c !== 46 && c !== 47) {
-            return false;
-        }
-    }
-    return true;
-}
-function isLetter(c) {
-    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
-}
-function isDigit(c) {
-    return c >= 48 && c <= 57;
-}
-function quoteString(s) {
-    let result = '"';
-    for (const ch of s) {
-        switch (ch) {
-            case '\\':
-                result += '\\\\';
-                break;
-            case '"':
-                result += '\\"';
-                break;
-            case '\n':
-                result += '\\n';
-                break;
-            case '\r':
-                result += '\\r';
-                break;
-            case '\t':
-                result += '\\t';
-                break;
-            default: result += ch;
-        }
-    }
-    return result + '"';
 }
 //# sourceMappingURL=patch.js.map

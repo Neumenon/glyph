@@ -167,6 +167,10 @@ base = sha256( Canonicalize(stateDoc) )
 ```
 
 Sender and receiver **MUST** agree on canonicalization mode (Strict vs Loose).
+This is the stream state hash. In Go, the source-of-truth helper is
+`stream.StateHashLoose`, which hashes `glyph.CanonicalizeLoose(stateDoc)`.
+Do not substitute a high-level value fingerprint helper unless both sender
+and receiver use the same canonical byte definition.
 
 ### 6.2 Patch Application Rule
 

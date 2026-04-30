@@ -6,7 +6,7 @@ import (
 )
 
 // ============================================================
-// LYPH v2 Tabular Mode Encoder
+// GLYPH v2 Tabular Mode Encoder
 // ============================================================
 //
 // Tabular mode efficiently encodes list<struct> as a table:

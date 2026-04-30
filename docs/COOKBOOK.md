@@ -1840,7 +1840,7 @@ if __name__ == "__main__":
 
 ## Next Steps
 
-- **[SPEC.md](./SPEC.md)** - Formal grammar specification
+- **[LOOSE_MODE_SPEC.md](./LOOSE_MODE_SPEC.md)** - Canonical loose-mode grammar and encoding rules
 - **[GitHub Issues](https://github.com/Neumenon/glyph/issues)** - Report bugs, request features
 
 ---

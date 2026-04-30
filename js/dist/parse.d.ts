@@ -1,7 +1,7 @@
 /**
- * LYPH v2 Parser
+ * GLYPH v2 Parser
  *
- * Parses LYPH format back to GValue.
+ * Parses GLYPH format back to GValue.
  */
 import { GValue, RefID } from './types';
 import { Schema } from './schema';
@@ -33,4 +33,5 @@ export interface TabularParseResult {
  *   @end
  */
 export declare function parseTabular(input: string, schema: Schema): TabularParseResult;
+export declare function parseScalarValue(s: string): GValue;
 //# sourceMappingURL=parse.d.ts.map

@@ -1,5 +1,5 @@
 /**
- * LYPH v2 JavaScript/TypeScript Codec
+ * GLYPH v2 JavaScript/TypeScript Codec
  * 
  * A token-efficient serialization format for LLM communication.
  * 
@@ -22,7 +22,7 @@
  *   field('league', g.str('EPL'))
  * );
  * 
- * // Emit as packed LYPH
+ * // Emit as packed GLYPH
  * const packed = emitPacked(team, schema);
  * // => "Team@(^t:ARS Arsenal EPL)"
  * 
@@ -227,7 +227,7 @@ export {
 } from './stream_validator';
 
 // ============================================================
-// Convenience: Convert JSON directly to LYPH
+// Convenience: Convert JSON directly to GLYPH
 // ============================================================
 
 import { fromJson, FromJsonOptions } from './json';
@@ -236,7 +236,7 @@ import { Schema } from './schema';
 import { GValue } from './types';
 
 /**
- * Convert JSON directly to packed LYPH format
+ * Convert JSON directly to packed GLYPH format
  */
 export function jsonToPacked(
   json: unknown, 
@@ -248,7 +248,7 @@ export function jsonToPacked(
 }
 
 /**
- * Convert JSON directly to tabular LYPH format
+ * Convert JSON directly to tabular GLYPH format
  */
 export function jsonToTabular(
   json: unknown,
@@ -260,7 +260,7 @@ export function jsonToTabular(
 }
 
 /**
- * Convert JSON directly to LYPH v2 with auto mode selection
+ * Convert JSON directly to GLYPH v2 with auto mode selection
  */
 export function jsonToLyph(
   json: unknown,
@@ -283,7 +283,7 @@ export function estimateTokens(s: string): number {
 }
 
 /**
- * Compare token counts between JSON and LYPH representations
+ * Compare token counts between JSON and GLYPH representations
  */
 export function compareTokens(
   json: unknown,

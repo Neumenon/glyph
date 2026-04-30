@@ -1,5 +1,5 @@
 /**
- * LYPH v2 Schema System
+ * GLYPH v2 Schema System
  */
 
 import { GValue } from './types';

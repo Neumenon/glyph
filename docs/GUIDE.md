@@ -284,18 +284,24 @@ text = glyph.emit(data, mode="loose")
 import glyph
 
 # Agent A reads state
-state = {" current": "processing", "count": 5}
-base_hash = glyph.fingerprint_loose(state)
-# base_hash: "sha256:a1b2c3..."
+state = {"current": "processing", "count": 5}
+base_hash = glyph.state_fingerprint(state)
+# base_hash: "a1b2c3..." (64 lowercase hex chars)
 
 # Agent A creates patch
-patch = {"count": 6}
-update = glyph.create_patch(patch, base=base_hash)
+next_state = {**state, "count": 6}
+update = glyph.create_state_patch(
+    state,
+    next_state,
+    author_id="agent_a",
+    revision=2,
+    reason="increment count",
+)
 
 # Server validates before applying
-if glyph.verify_patch(current_state, update):
-    apply(update)  # Safe - base matches
-else:
+try:
+    current_state = glyph.apply_state_patch(current_state, update)
+except glyph.StateConflictError:
     reject(update)  # Conflict - state changed
 ```
 
@@ -320,14 +326,14 @@ hash = sha256(canonical)
 # Save checkpoint
 checkpoint = {
     "state": current_state,
-    "hash": glyph.fingerprint_loose(current_state),
+    "hash": glyph.state_fingerprint(current_state),
     "timestamp": now()
 }
 save(checkpoint)
 
 # Resume later
 loaded = load_checkpoint()
-if glyph.fingerprint_loose(loaded["state"]) == loaded["hash"]:
+if glyph.state_fingerprint(loaded["state"]) == loaded["hash"]:
     resume(loaded["state"])  # Integrity verified
 else:
     error("Checkpoint corrupted")
@@ -454,16 +460,16 @@ send_to_vector_db(glyph_text)
 ```python
 # Agent A sends message
 msg = {
-    from="agent_a"
-    to="agent_b"
-    type=request
-    payload={action=search query="documentation"}
-    correlation_id=msg_123
+    "from": "agent_a",
+    "to": "agent_b",
+    "type": "request",
+    "payload": {"action": "search", "query": "documentation"},
+    "correlation_id": "msg_123",
 }
 
 # Serialize with fingerprint for verification
-text = glyph.emit(msg)
-hash = glyph.fingerprint_loose(msg)
+text = glyph.json_to_glyph(msg)
+hash = glyph.state_fingerprint(msg)
 
 bus.publish(text, hash=hash)
 ```

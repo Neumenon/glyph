@@ -117,7 +117,7 @@ Map keys are sorted by **bytewise UTF-8 comparison** of their canonical string f
 
 ```glyph
 Input:  {"b":1,"a":2,"aa":3,"A":4,"_":5}
-Output: {A=4 _=5 a=2 aa=3 b=1}
+Output: {"_"=5 A=4 a=2 aa=3 b=1}
 ```
 
 UTF-8 byte order: `A` (0x41) < `_` (0x5F) < `a` (0x61) < ...
@@ -141,7 +141,7 @@ gv, err := glyph.FromJSONLoose(jsonBytes)
 
 ```python
 import glyph
-gv = glyph.json_to_glyph(json_str)
+text = glyph.json_to_glyph(data)
 ```
 
 ```typescript
@@ -193,12 +193,12 @@ Deterministic SHA-256 hash of canonical form:
 import glyph
 
 data = {"user": "alice", "count": 42}
-hash = glyph.fingerprint_loose(data)
-# sha256:a1b2c3d4e5f6...
+hash = glyph.fingerprint_loose(glyph.from_json(data))
+# a1b2c3d4e5f6... (64 lowercase hex chars)
 ```
 
 **Properties:**
-- Same data → same hash (across languages)
+- Same data → same hash in Go/Python/JS value-identity helpers
 - Different data → different hash (collision-resistant)
 - Used for state verification and patch safety
 
@@ -322,10 +322,12 @@ Receiver MUST NOT apply patch if `receiverStateHash != base`.
 **Example:**
 ```python
 import glyph
+import hashlib
 
 # Sender side
 current_state = {"user": "alice", "count": 5}
-base_hash = glyph.fingerprint_loose(current_state)
+state_bytes = glyph.json_to_glyph(current_state).encode("utf-8")
+base_hash = hashlib.sha256(state_bytes).hexdigest()
 
 patch = {"count": 6}
 frame = {
@@ -333,12 +335,14 @@ frame = {
     "sid": 1,
     "seq": 10,
     "kind": "patch",
-    "base": base_hash,
-    "payload": glyph.emit(patch)
+    "base": f"sha256:{base_hash}",
+    "payload": glyph.json_to_glyph(patch),
 }
 
 # Receiver side
-if glyph.fingerprint_loose(receiver_state) == frame["base"]:
+receiver_bytes = glyph.json_to_glyph(receiver_state).encode("utf-8")
+receiver_hash = hashlib.sha256(receiver_bytes).hexdigest()
+if f"sha256:{receiver_hash}" == frame["base"]:
     apply_patch(frame["payload"])
 else:
     request_snapshot()  # State diverged

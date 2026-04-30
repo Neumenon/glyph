@@ -18,27 +18,31 @@ In Rust code, import it as `glyph_rs`.
 use glyph_rs::{from_json, to_json, canonicalize_loose, hash_loose};
 use serde_json::json;
 
-let data = json!({
-    "action": "search",
-    "query": "glyph codec",
-    "limit": 5
-});
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let data = json!({
+        "action": "search",
+        "query": "glyph codec",
+        "limit": 5
+    });
 
-let value = from_json(&data);
-let text = canonicalize_loose(&value);
-let restored = to_json(&value);
-let hash = hash_loose(&value);
+    let value = from_json(&data);
+    let text = canonicalize_loose(&value)?;
+    let restored = to_json(&value);
+    let hash = hash_loose(&value)?;
 
-println!("{}", text);
-println!("{}", restored);
-println!("{}", hash);
+    println!("{}", text);
+    println!("{}", restored);
+    println!("{}", hash);
+
+    Ok(())
+}
 ```
 
 ## Current Surface
 
 - loose-mode canonicalization
 - JSON bridge
-- hash / fingerprint helpers
+- 16-hex hash helper plus canonical-form fingerprint helper
 - schema evolution helpers
 - streaming validator
 

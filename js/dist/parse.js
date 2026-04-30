@@ -1,21 +1,23 @@
 "use strict";
 /**
- * LYPH v2 Parser
+ * GLYPH v2 Parser
  *
- * Parses LYPH format back to GValue.
+ * Parses GLYPH format back to GValue.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parsePacked = parsePacked;
 exports.parseHeader = parseHeader;
 exports.parseTabular = parseTabular;
+exports.parseScalarValue = parseScalarValue;
 const types_1 = require("./types");
+const pool_1 = require("./pool");
 function parsePacked(input, schema) {
     const parser = new PackedParser(input, schema);
     return parser.parse();
 }
-const MAX_PARSE_DEPTH = 256;
-const MAX_COLLECTION_LEN = 10000000; // 10M elements
-const MAX_STRING_LEN = 500000000; // 500MB
+const MAX_PARSE_DEPTH = 128; // aligned with loose.ts, C, Python
+const MAX_COLLECTION_LEN = 1000000; // 1M elements (aligned across all impls)
+const MAX_STRING_LEN = 10 * 1024 * 1024; // 10MB (aligned across all impls)
 class PackedParser {
     constructor(input, schema) {
         this.pos = 0;
@@ -707,7 +709,12 @@ function parseScalarValue(s) {
         }
         const colonIdx = ref.indexOf(':');
         if (colonIdx > 0) {
-            return types_1.GValue.id(ref.slice(0, colonIdx), ref.slice(colonIdx + 1));
+            const first = ref.slice(0, colonIdx);
+            const second = ref.slice(colonIdx + 1);
+            if ((0, pool_1.isPoolRefId)(first) && /^\d+$/.test(second)) {
+                return types_1.GValue.poolRef(first, parseInt(second, 10));
+            }
+            return types_1.GValue.id(first, second);
         }
         return types_1.GValue.id('', ref);
     }

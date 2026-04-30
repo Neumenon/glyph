@@ -1,7 +1,7 @@
 /**
- * LYPH v2 Parser
+ * GLYPH v2 Parser
  * 
- * Parses LYPH format back to GValue.
+ * Parses GLYPH format back to GValue.
  */
 
 import { GValue, RefID } from './types';

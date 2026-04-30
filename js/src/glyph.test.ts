@@ -1,5 +1,5 @@
 /**
- * LYPH v2 JavaScript Tests
+ * GLYPH v2 JavaScript Tests
  */
 
 import { 
@@ -517,6 +517,7 @@ describe('Loose Mode', () => {
       expect(canonicalizeLoose(g.str('hello world'))).toBe('"hello world"');
       expect(canonicalizeLoose(g.str(''))).toBe('""');
       expect(canonicalizeLoose(g.str('t'))).toBe('"t"');
+      expect(canonicalizeLoose(g.str('_'))).toBe('"_"');
       expect(canonicalizeLoose(g.str('null'))).toBe('"null"');
     });
 
@@ -545,7 +546,7 @@ describe('Loose Mode', () => {
         field('A', g.int(4)),
         field('_', g.int(5))
       );
-      expect(canonicalizeLoose(mapWithKeys)).toBe('{A=4 _=5 a=2 aa=3 b=1}');
+      expect(canonicalizeLoose(mapWithKeys)).toBe('{"_"=5 A=4 a=2 aa=3 b=1}');
     });
 
     test('nested', () => {
@@ -949,7 +950,7 @@ describe('Golden Files', () => {
 // ============================================================
 
 describe('Integration', () => {
-  test('JSON to LYPH packed', () => {
+  test('JSON to GLYPH packed', () => {
     const schema = new SchemaBuilder()
       .addPackedStruct('Team', 'v2')
         .field('id', t.id(), { fid: 1 })
@@ -979,9 +980,9 @@ describe('Integration', () => {
     ];
     
     const stats = compareTokens(matches, schema);
-    console.log(`JSON tokens: ${stats.json}, LYPH tokens: ${stats.lyph}, Savings: ${stats.savingsPercent.toFixed(1)}%`);
+    console.log(`JSON tokens: ${stats.json}, GLYPH tokens: ${stats.lyph}, Savings: ${stats.savingsPercent.toFixed(1)}%`);
     
-    // LYPH should be more efficient for larger data
+    // GLYPH should be more efficient for larger data
     // Note: Token counting is a rough estimate and may not be accurate for small samples
     expect(stats.json).toBeGreaterThan(0);
     expect(stats.lyph).toBeGreaterThan(0);

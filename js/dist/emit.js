@@ -1,8 +1,8 @@
 "use strict";
 /**
- * LYPH v2 Encoders
+ * GLYPH v2 Encoders
  *
- * Emits LYPH format from GValue.
+ * Emits GLYPH format from GValue.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.emit = emit;
@@ -10,111 +10,19 @@ exports.emitPacked = emitPacked;
 exports.emitTabular = emitTabular;
 exports.emitHeader = emitHeader;
 exports.emitV2 = emitV2;
+const codec_primitives_1 = require("./codec_primitives");
 // ============================================================
 // Canonical Scalar Encoding
 // ============================================================
-const NULL_SYMBOL = '∅';
-function canonNull() {
-    return NULL_SYMBOL;
-}
-function canonBool(v) {
-    return v ? 't' : 'f';
-}
-function canonInt(n) {
-    if (n === 0)
-        return '0';
-    return String(Math.floor(n));
-}
-function canonFloat(f) {
-    if (f === 0)
-        return '0';
-    // Use shortest representation
-    const s = String(f);
-    return s.replace('E', 'e');
-}
-function canonString(s) {
-    if (isBareSafe(s)) {
-        return s;
-    }
-    return quoteString(s);
-}
 function canonRef(ref) {
     const full = ref.prefix ? `${ref.prefix}:${ref.value}` : ref.value;
-    if (isRefSafe(full)) {
+    if ((0, codec_primitives_1.isRefSafe)(full)) {
         return `^${full}`;
     }
-    return `^${quoteString(full)}`;
+    return `^${(0, codec_primitives_1.quoteString)(full)}`;
 }
 function canonTime(d) {
     return d.toISOString().replace('.000Z', 'Z');
-}
-// Check if string can be bare (unquoted)
-function isBareSafe(s) {
-    if (s.length === 0)
-        return false;
-    // Reserved words
-    if (['t', 'f', 'true', 'false', 'null', 'none', 'nil'].includes(s)) {
-        return false;
-    }
-    // First char: letter or underscore
-    const first = s.charCodeAt(0);
-    if (!isLetter(first) && first !== 95)
-        return false; // 95 = '_'
-    // Rest: letter, digit, _, -, ., /
-    for (let i = 1; i < s.length; i++) {
-        const c = s.charCodeAt(i);
-        if (!isLetter(c) && !isDigit(c) && c !== 95 && c !== 45 && c !== 46 && c !== 47) {
-            return false;
-        }
-    }
-    return true;
-}
-function isRefSafe(s) {
-    if (s.length === 0)
-        return false;
-    for (let i = 0; i < s.length; i++) {
-        const c = s.charCodeAt(i);
-        if (!isLetter(c) && !isDigit(c) && c !== 95 && c !== 45 && c !== 46 && c !== 47 && c !== 58) {
-            return false; // 58 = ':'
-        }
-    }
-    return true;
-}
-function isLetter(c) {
-    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
-}
-function isDigit(c) {
-    return c >= 48 && c <= 57;
-}
-function quoteString(s) {
-    let result = '"';
-    for (const ch of s) {
-        switch (ch) {
-            case '\\':
-                result += '\\\\';
-                break;
-            case '"':
-                result += '\\"';
-                break;
-            case '\n':
-                result += '\\n';
-                break;
-            case '\r':
-                result += '\\r';
-                break;
-            case '\t':
-                result += '\\t';
-                break;
-            default:
-                if (ch.charCodeAt(0) < 0x20) {
-                    result += '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0');
-                }
-                else {
-                    result += ch;
-                }
-        }
-    }
-    return result + '"';
 }
 // ============================================================
 // Bitmap Encoding
@@ -145,17 +53,17 @@ function emit(gv, options = {}) {
 function emitValue(gv, opts) {
     switch (gv.type) {
         case 'null':
-            return canonNull();
+            return (0, codec_primitives_1.canonNull)();
         case 'bool':
-            return canonBool(gv.asBool());
+            return (0, codec_primitives_1.canonBool)(gv.asBool());
         case 'int':
-            return canonInt(gv.asInt());
+            return (0, codec_primitives_1.canonInt)(gv.asInt());
         case 'float':
-            return canonFloat(gv.asFloat());
+            return (0, codec_primitives_1.canonFloat)(gv.asFloat());
         case 'str':
-            return canonString(gv.asStr());
+            return (0, codec_primitives_1.canonString)(gv.asStr());
         case 'bytes':
-            return 'b64' + quoteString(bytesToBase64(gv.asBytes()));
+            return 'b64' + (0, codec_primitives_1.quoteString)(bytesToBase64(gv.asBytes()));
         case 'time':
             return canonTime(gv.asTime());
         case 'id':
@@ -168,6 +76,15 @@ function emitValue(gv, opts) {
             return emitStruct(gv, opts);
         case 'sum':
             return emitSum(gv, opts);
+        case 'blob': {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { emitBlob } = require('./blob');
+            return emitBlob(gv.asBlob());
+        }
+        case 'poolRef': {
+            const pr = gv.asPoolRef();
+            return `^${pr.poolId}:${pr.index}`;
+        }
     }
 }
 function emitList(gv, opts) {
@@ -177,7 +94,7 @@ function emitList(gv, opts) {
 function emitMap(gv, opts) {
     const parts = [];
     for (const entry of gv.asMap()) {
-        parts.push(`${canonString(entry.key)}:${emitValue(entry.value, opts)}`);
+        parts.push(`${(0, codec_primitives_1.canonString)(entry.key)}:${emitValue(entry.value, opts)}`);
     }
     return '{' + parts.join(' ') + '}';
 }
@@ -197,7 +114,7 @@ function emitStruct(gv, opts) {
             if (fd)
                 key = `#${fd.fid}`;
         }
-        parts.push(`${canonString(key)}=${emitValue(field.value, opts)}`);
+        parts.push(`${(0, codec_primitives_1.canonString)(key)}=${emitValue(field.value, opts)}`);
     }
     return `${sv.typeName}{${parts.join(' ')}}`;
 }
@@ -245,7 +162,7 @@ function emitPackedDense(gv, td, schema, opts) {
     for (const fd of fields) {
         const val = getFieldValue(gv, fd);
         if (fd.optional && !isFieldPresent(val, fd)) {
-            parts.push(canonNull());
+            parts.push((0, codec_primitives_1.canonNull)());
             continue;
         }
         if (!fd.optional && val === null) {
@@ -301,17 +218,17 @@ function isFieldPresent(val, fd) {
 function emitPackedValue(gv, schema, opts) {
     switch (gv.type) {
         case 'null':
-            return canonNull();
+            return (0, codec_primitives_1.canonNull)();
         case 'bool':
-            return canonBool(gv.asBool());
+            return (0, codec_primitives_1.canonBool)(gv.asBool());
         case 'int':
-            return canonInt(gv.asInt());
+            return (0, codec_primitives_1.canonInt)(gv.asInt());
         case 'float':
-            return canonFloat(gv.asFloat());
+            return (0, codec_primitives_1.canonFloat)(gv.asFloat());
         case 'str':
-            return canonString(gv.asStr());
+            return (0, codec_primitives_1.canonString)(gv.asStr());
         case 'bytes':
-            return 'b64' + quoteString(bytesToBase64(gv.asBytes()));
+            return 'b64' + (0, codec_primitives_1.quoteString)(bytesToBase64(gv.asBytes()));
         case 'time':
             return canonTime(gv.asTime());
         case 'id':
@@ -323,7 +240,7 @@ function emitPackedValue(gv, schema, opts) {
         case 'map': {
             const parts = [];
             for (const entry of gv.asMap()) {
-                parts.push(`${canonString(entry.key)}:${emitPackedValue(entry.value, schema, opts)}`);
+                parts.push(`${(0, codec_primitives_1.canonString)(entry.key)}:${emitPackedValue(entry.value, schema, opts)}`);
             }
             return '{' + parts.join(' ') + '}';
         }
@@ -341,6 +258,15 @@ function emitPackedValue(gv, schema, opts) {
                 return `${sum.tag}()`;
             }
             return `${sum.tag}(${emitPackedValue(sum.value, schema, opts)})`;
+        }
+        case 'blob': {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { emitBlob } = require('./blob');
+            return emitBlob(gv.asBlob());
+        }
+        case 'poolRef': {
+            const pr = gv.asPoolRef();
+            return `^${pr.poolId}:${pr.index}`;
         }
     }
 }
@@ -386,7 +312,7 @@ function emitTabular(gv, schema, options = {}) {
         for (const fd of fields) {
             const val = getFieldValue(row, fd);
             if (!isFieldPresent(val, fd)) {
-                cells.push(canonNull());
+                cells.push((0, codec_primitives_1.canonNull)());
             }
             else {
                 cells.push(emitPackedValue(val, schema, options));

@@ -68,9 +68,8 @@ describe('Truth Table', () => {
 
   test('reserved_words_quoted', () => {
     // "true" as a string value → "\"true\""
-    const gv = g.str('true');
-    const got = canonicalizeLoose(gv);
-    expect(got).toBe('"true"');
+    expect(canonicalizeLoose(g.str('true'))).toBe('"true"');
+    expect(canonicalizeLoose(g.str('_'))).toBe('"_"');
   });
 
   test('bare_string_safe', () => {

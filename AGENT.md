@@ -579,7 +579,7 @@ GLYPH and JSON coexist. Migrate at your own pace.
 - [COOKBOOK.md](docs/COOKBOOK.md) — 10+ detailed recipes
 - [LOOSE_MODE_SPEC.md](docs/LOOSE_MODE_SPEC.md) — Schema-free canonical format
 - [GS1_SPEC.md](docs/GS1_SPEC.md) — Streaming protocol specification
-- [OPTIMIZATION_REPORT.md](docs/OPTIMIZATION_REPORT.md) — Encoding efficiency analysis
+- [OPTIMIZATION_REPORT.md](docs/reports/OPTIMIZATION_REPORT.md) — Encoding efficiency analysis
 
 ---
 

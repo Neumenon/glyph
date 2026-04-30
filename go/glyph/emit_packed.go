@@ -6,7 +6,7 @@ import (
 )
 
 // ============================================================
-// LYPH v2 Packed Mode Encoder
+// GLYPH v2 Packed Mode Encoder
 // ============================================================
 
 // PackedOptions configures packed encoding behavior.
@@ -416,7 +416,7 @@ func emitGenericStruct(out *bytes.Buffer, v *GValue, opts PackedOptions) error {
 // Mode Detection
 // ============================================================
 
-// Mode represents the encoding mode for LYPH v2.
+// Mode represents the encoding mode for GLYPH v2.
 type Mode int
 
 const (

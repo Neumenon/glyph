@@ -257,7 +257,7 @@ function isBareSafe(s: string): boolean {
   if (s.length === 0) return false;
   
   // Reserved words
-  if (['t', 'f', 'true', 'false', 'null', 'none', 'nil'].includes(s)) {
+  if (['t', 'f', '_', 'true', 'false', 'null', 'none', 'nil'].includes(s)) {
     return false;
   }
   
@@ -1094,18 +1094,31 @@ function canonMapLooseWithOpts(entries: MapEntry[], opts: LooseCanonOpts): strin
 // ============================================================
 
 /**
- * Returns a deterministic fingerprint string for a GValue.
- * Useful for caching, deduplication, and equality checks.
+ * Returns the SHA-256 hex digest of the no-tabular canonical form of v.
+ * The output is a 64-character lowercase hex string that is byte-identical
+ * across Go, Python, and JS for semantically equal values.
+ *
+ * Tabular form is excluded from the hash so that fingerprint stability does
+ * not depend on cross-language agreement about tabular triggering thresholds
+ * or escaping. Use canonicalizeLooseNoTabular for the pre-hash bytes.
+ *
+ * Node-only synchronous variant — uses node's crypto module. For browser/
+ * async contexts, hash canonicalizeLooseNoTabular(v) with crypto.subtle.
  */
 export function fingerprintLoose(v: GValue): string {
-  return canonicalizeLoose(v);
+  const canonical = canonicalizeLooseNoTabular(v);
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createHash } = require('crypto');
+  return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
 /**
  * Checks if two GValues are semantically equal using loose canonicalization.
+ * Compares no-tabular canonical strings so the result aligns with
+ * fingerprintLoose equality.
  */
 export function equalLoose(a: GValue, b: GValue): boolean {
-  return canonicalizeLoose(a) === canonicalizeLoose(b);
+  return canonicalizeLooseNoTabular(a) === canonicalizeLooseNoTabular(b);
 }
 
 // ============================================================

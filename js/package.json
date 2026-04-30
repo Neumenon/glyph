@@ -1,7 +1,7 @@
 {
   "name": "cowrie-glyph",
   "version": "1.0.0",
-  "description": "GLYPH v2.6 - Token-efficient serialization for LLM communication",
+  "description": "GLYPH - Token-efficient structured serialization for AI agents",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

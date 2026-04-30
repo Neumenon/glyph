@@ -1,7 +1,9 @@
 package glyph
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strconv"
@@ -115,15 +117,24 @@ func writeCanonBytes(b *strings.Builder, data []byte) {
 // Loose Mode Hash/Fingerprint
 // ============================================================
 
-// FingerprintLoose returns a deterministic fingerprint string for a GValue.
-// Useful for caching, deduplication, and equality checks.
+// FingerprintLoose returns the SHA-256 hex digest of the no-tabular canonical
+// form of v. The output is a 64-character lowercase hex string that is
+// byte-identical across Go, Python, and JS for semantically equal values.
+//
+// Tabular form is excluded from the hash so that fingerprint stability does
+// not depend on cross-language agreement about tabular triggering thresholds
+// or escaping. Use CanonicalizeLooseNoTabular for the pre-hash bytes.
 func FingerprintLoose(v *GValue) string {
-	return CanonicalizeLoose(v)
+	canonical := CanonicalizeLooseWithOpts(v, NoTabularLooseCanonOpts())
+	sum := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(sum[:])
 }
 
-// EqualLoose checks if two GValues are semantically equal using loose canonicalization.
+// EqualLoose checks if two GValues are semantically equal using loose
+// canonicalization. Compares no-tabular canonical bytes directly so the
+// result aligns with FingerprintLoose equality.
 func EqualLoose(a, b *GValue) bool {
-	return CanonicalizeLoose(a) == CanonicalizeLoose(b)
+	return CanonicalizeLooseNoTabular(a) == CanonicalizeLooseNoTabular(b)
 }
 
 // ============================================================
@@ -306,7 +317,7 @@ const (
 type LooseCanonOpts struct {
 	AutoTabular  bool // Enable tabular detection for homogeneous arrays (default: true)
 	MinRows      int  // Minimum rows for tabular mode (default: 3)
-	MaxCols      int  // Maximum columns allowed (default: 64)
+	MaxCols      int  // Maximum columns allowed (default: 20, matches spec)
 	AllowMissing bool // Fill missing keys with null (default: true)
 
 	// v2.4.0: Null style and schema support
@@ -328,7 +339,7 @@ func DefaultLooseCanonOpts() LooseCanonOpts {
 	return LooseCanonOpts{
 		AutoTabular:  true,
 		MinRows:      3,
-		MaxCols:      64,
+		MaxCols:      20,
 		AllowMissing: true,
 		NullStyle:    NullStyleUnderscore,
 	}
@@ -341,7 +352,7 @@ func LLMLooseCanonOpts() LooseCanonOpts {
 	return LooseCanonOpts{
 		AutoTabular:  true,
 		MinRows:      3,
-		MaxCols:      64,
+		MaxCols:      20,
 		AllowMissing: true,
 		NullStyle:    NullStyleUnderscore,
 	}
@@ -353,7 +364,7 @@ func PrettyLooseCanonOpts() LooseCanonOpts {
 	return LooseCanonOpts{
 		AutoTabular:  true,
 		MinRows:      3,
-		MaxCols:      64,
+		MaxCols:      20,
 		AllowMissing: true,
 		NullStyle:    NullStyleSymbol,
 	}
@@ -365,7 +376,7 @@ func NoTabularLooseCanonOpts() LooseCanonOpts {
 	return LooseCanonOpts{
 		AutoTabular:  false,
 		MinRows:      3,
-		MaxCols:      64,
+		MaxCols:      20,
 		AllowMissing: true,
 	}
 }
@@ -382,7 +393,7 @@ func SchemaLooseCanonOpts(schema *SchemaContext) LooseCanonOpts {
 	return LooseCanonOpts{
 		AutoTabular:    true,
 		MinRows:        3,
-		MaxCols:        64,
+		MaxCols:        20,
 		AllowMissing:   true,
 		NullStyle:      NullStyleUnderscore,
 		Schema:         schema,
@@ -401,7 +412,7 @@ func CanonicalizeLooseWithOpts(v *GValue, opts LooseCanonOpts) string {
 		opts.MinRows = 3
 	}
 	if opts.MaxCols == 0 {
-		opts.MaxCols = 64
+		opts.MaxCols = 20
 	}
 
 	return canonLooseWithOpts(v, opts)

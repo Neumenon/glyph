@@ -1,5 +1,5 @@
 /**
- * LYPH v2 Patch System
+ * GLYPH v2 Patch System
  * 
  * Implements patch emit, parse, and apply for cross-implementation parity with Go.
  */

@@ -72,13 +72,16 @@ console.log(canonicalizeLoose(value));
 use glyph_rs::{from_json, canonicalize_loose};
 use serde_json::json;
 
-let value = from_json(&json!({
-    "action": "search",
-    "query": "glyph codec",
-    "limit": 5
-}));
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let value = from_json(&json!({
+        "action": "search",
+        "query": "glyph codec",
+        "limit": 5
+    }));
 
-println!("{}", canonicalize_loose(&value));
+    println!("{}", canonicalize_loose(&value)?);
+    Ok(())
+}
 ```
 
 ## What To Read Next

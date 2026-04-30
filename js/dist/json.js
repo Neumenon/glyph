@@ -1,6 +1,6 @@
 "use strict";
 /**
- * LYPH v2 JSON Conversion
+ * GLYPH v2 JSON Conversion
  *
  * Converts between JSON and GValue representations.
  */
@@ -275,7 +275,7 @@ function stringifyJson(gv, options = {}, indent) {
 }
 /**
  * Round-trip convert: JSON -> GValue -> JSON
- * Useful for normalizing JSON to LYPH conventions
+ * Useful for normalizing JSON to GLYPH conventions
  */
 function normalizeJson(json, fromOptions = {}, toOptions = {}) {
     const gv = fromJson(json, fromOptions);
