@@ -283,11 +283,6 @@ def _canonicalize_value(v: GValue, opts: LooseCanonOpts) -> str:
     elif t == GType.SUM:
         sm = v.as_sum()
         return _canonicalize_sum(sm.tag, sm.value, opts)
-    elif t == GType.BLOB:
-        from .blob import emit_blob
-        return emit_blob(v.as_blob())
-    elif t == GType.POOL_REF:
-        return str(v.as_pool_ref())
 
     raise ValueError(f"unknown type: {t}")
 
@@ -552,11 +547,6 @@ def to_json_loose(v: GValue) -> Any:
     elif t == GType.SUM:
         sm = v.as_sum()
         return {"$tag": sm.tag, "$value": to_json_loose(sm.value) if sm.value is not None else None}
-    elif t == GType.BLOB:
-        from .blob import emit_blob
-        return emit_blob(v.as_blob())
-    elif t == GType.POOL_REF:
-        return str(v.as_pool_ref())
 
     return None
 
