@@ -57,7 +57,7 @@ func runNode(t *testing.T, args ...string) NodeResult {
 	}
 
 	// Check if the JS dist is built
-	jsDistPath := filepath.Join("..", "js", "dist", "index.js")
+	jsDistPath := filepath.Join("..", "..", "js", "dist", "index.js")
 	if _, err := os.Stat(jsDistPath); err != nil {
 		t.Skip("cowrie-glyph JS package not built, skipping cross-impl test")
 	}

@@ -13,8 +13,8 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PY_PATH = os.path.join(REPO_ROOT, "py")
 GO_DIR = os.path.join(REPO_ROOT, "go")
 JS_DIST = os.path.join(REPO_ROOT, "js", "dist", "index.js")
-RUST_PATH = os.path.join(REPO_ROOT, "rust", "glyph-codec")
-C_DIR = os.path.join(REPO_ROOT, "c", "glyph-codec")
+RUST_PATH = os.path.join(REPO_ROOT, "attic", "rust", "glyph-codec")
+C_DIR = os.path.join(REPO_ROOT, "attic", "c", "glyph-codec")
 
 # Test cases: (description, json_input, expected_glyph)
 TEST_CASES = [
@@ -116,7 +116,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-glyph-codec = {{ path = "{RUST_PATH}" }}
+glyph_codec = {{ package = "glyph-rs", path = "{RUST_PATH}" }}
 '''
 
     main_rs = r'''
@@ -130,7 +130,7 @@ fn main() {
         s
     });
     let v = parse_json(&input).unwrap();
-    print!("{}", canonicalize_loose(&v));
+    print!("{}", canonicalize_loose(&v).unwrap());
 }
 '''
 
@@ -148,7 +148,8 @@ fn main() {
         env={**os.environ, "CARGO_NET_OFFLINE": "true"},
     )
     if result.returncode != 0:
-        raise RuntimeError(f"Rust build error: {result.stderr}")
+        print(f"  [skipped (parked port)] Rust build unavailable: {result.stderr.strip()[:120]}")
+        return None
 
     _rust_bin = os.path.join(temp_dir, "target", "debug", "glyph_canon")
     return _rust_bin
@@ -198,7 +199,8 @@ int main(int argc, char **argv) {
             cwd=C_DIR,
         )
         if build_result.returncode != 0:
-            raise RuntimeError(f"C build error: {build_result.stderr}")
+            print(f"  [skipped (parked port)] C build unavailable: {build_result.stderr.strip()[:120]}")
+            return None
 
     bin_path = os.path.join(temp_dir, "glyph_canon")
     compile_result = subprocess.run(
@@ -216,7 +218,8 @@ int main(int argc, char **argv) {
         text=True,
     )
     if compile_result.returncode != 0:
-        raise RuntimeError(f"C compile error: {compile_result.stderr}")
+        print(f"  [skipped (parked port)] C compile error: {compile_result.stderr.strip()[:120]}")
+        return None
 
     _c_bin = bin_path
     return _c_bin
@@ -267,11 +270,14 @@ console.log(canonicalizeLoose(v));
 
 
 def get_rust_output(json_str):
-    """Get GLYPH output from Rust implementation"""
+    """Get GLYPH output from Rust implementation (parked port — best-effort)"""
     try:
         bin_path = ensure_rust_bin()
     except Exception as exc:
-        return f"ERROR: {exc}"
+        return f"SKIPPED: {exc}"
+
+    if bin_path is None:
+        return "SKIPPED"
 
     result = subprocess.run(
         [bin_path, json_str],
@@ -284,11 +290,14 @@ def get_rust_output(json_str):
 
 
 def get_c_output(json_str):
-    """Get GLYPH output from C implementation"""
+    """Get GLYPH output from C implementation (parked port — best-effort)"""
     try:
         bin_path = ensure_c_bin()
     except Exception as exc:
-        return f"ERROR: {exc}"
+        return f"SKIPPED: {exc}"
+
+    if bin_path is None:
+        return "SKIPPED"
 
     run_result = subprocess.run(
         [bin_path, json_str],
@@ -326,12 +335,12 @@ def main():
     for desc, json_str, expected in TEST_CASES:
         js_outputs[desc] = get_js_output(json_str)
 
-    print("Getting Rust outputs...")
+    print("Getting Rust outputs (parked port — best-effort)...")
     rust_outputs = {}
     for desc, json_str, expected in TEST_CASES:
         rust_outputs[desc] = get_rust_output(json_str)
 
-    print("Getting C outputs...")
+    print("Getting C outputs (parked port — best-effort)...")
     c_outputs = {}
     for desc, json_str, expected in TEST_CASES:
         c_outputs[desc] = get_c_output(json_str)
@@ -342,6 +351,8 @@ def main():
     print("=" * 70)
     print()
 
+    required_failed = 0
+
     for desc, json_str, expected in TEST_CASES:
         py = py_outputs[desc]
         go = go_outputs[desc]
@@ -349,9 +360,9 @@ def main():
         rust = rust_outputs[desc]
         c = c_outputs[desc]
 
-        all_match = (py == go == js == rust == c == expected)
+        required_match = (py == go == js == expected)
 
-        if all_match:
+        if required_match:
             print(f"✅ {desc}: {expected}")
             passed += 1
         else:
@@ -360,16 +371,24 @@ def main():
             print(f"   Python:   {repr(py)}")
             print(f"   Go:       {repr(go)}")
             print(f"   JS:       {repr(js)}")
-            print(f"   Rust:     {repr(rust)}")
-            print(f"   C:        {repr(c)}")
             failed += 1
+            required_failed += 1
+
+        # Parked ports: report any deviation but never count toward gate
+        rust_skipped = rust.startswith("SKIPPED")
+        c_skipped = c.startswith("SKIPPED")
+        if not rust_skipped and rust != expected:
+            print(f"   Rust:     {repr(rust)}  [parked port — informational]")
+        if not c_skipped and c != expected:
+            print(f"   C:        {repr(c)}  [parked port — informational]")
 
     print()
     print("=" * 70)
-    if failed == 0:
-        print(f"✅ ALL {passed} TESTS PASSED - FULL PARITY ACROSS ALL IMPLEMENTATIONS")
+    if required_failed == 0:
+        print(f"✅ ALL {passed} TESTS PASSED - FULL PARITY ACROSS Go / Python / JS")
     else:
-        print(f"❌ {passed} passed, {failed} failed")
+        print(f"❌ {passed} passed, {failed} failed (Go/Python/JS gate)")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

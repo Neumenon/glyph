@@ -68,8 +68,8 @@ def llm_loose_canon_opts() -> LooseCanonOpts:
 
 
 def no_tabular_loose_canon_opts() -> LooseCanonOpts:
-    """Options with auto-tabular disabled."""
-    return LooseCanonOpts(auto_tabular=False)
+    """Options with auto-tabular disabled (uses ∅ for null, matching Go/JS fingerprint path)."""
+    return LooseCanonOpts(auto_tabular=False, null_style=NullStyle.SYMBOL)
 
 
 # ============================================================

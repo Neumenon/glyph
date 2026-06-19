@@ -20,6 +20,7 @@ except ImportError:
     HAS_HYPOTHESIS = False
 
 from glyph import (
+    parse,
     from_json_loose,
     to_json_loose,
     canonicalize_loose_no_tabular,
@@ -65,11 +66,11 @@ json_values = st.recursive(
 @given(text=st.text(max_size=500))
 @settings(max_examples=300, suppress_health_check=[HealthCheck.too_slow])
 def test_arbitrary_text_parse_no_crash(text: str):
-    """Parsing arbitrary text must never crash — only return value or raise."""
+    """Parsing arbitrary text through the GLYPH parser must never crash unhandled."""
     try:
-        from_json_loose(text)
-    except Exception:
-        pass  # Any exception is fine
+        parse(text)
+    except (ValueError, UnicodeDecodeError):
+        pass  # Expected parse errors on invalid input
 
 
 @given(value=safe_floats)

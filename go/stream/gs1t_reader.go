@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// MaxHeaderSize is the maximum number of bytes read for a single header line.
+// A header line longer than this will be rejected to prevent unbounded memory
+// allocation via ReadString('\n').
+const MaxHeaderSize = 64 * 1024 // 64 KiB
+
 // Reader reads GS1-T (text) frames from an io.Reader.
 type Reader struct {
 	r          *bufio.Reader
@@ -36,7 +41,7 @@ func WithCRCVerification() ReaderOption {
 // NewReader creates a new GS1-T frame reader.
 func NewReader(r io.Reader, opts ...ReaderOption) *Reader {
 	reader := &Reader{
-		r:          bufio.NewReader(r),
+		r:          bufio.NewReaderSize(r, MaxHeaderSize),
 		maxPayload: MaxPayloadSize,
 		verifyCRC:  true, // verify by default
 	}
@@ -49,14 +54,23 @@ func NewReader(r io.Reader, opts ...ReaderOption) *Reader {
 // Next reads and returns the next frame.
 // Returns io.EOF when no more frames are available.
 func (r *Reader) Next() (*Frame, error) {
-	// Read header line
-	headerLine, err := r.r.ReadString('\n')
+	// Read header line, bounded to MaxHeaderSize to prevent DoS via a line
+	// with no newline (bufio.ReadString would otherwise grow unboundedly).
+	line, isPrefix, err := r.r.ReadLine()
 	if err != nil {
-		if err == io.EOF && headerLine == "" {
+		if err == io.EOF && len(line) == 0 {
 			return nil, io.EOF
 		}
 		return nil, fmt.Errorf("read header: %w", err)
 	}
+	if isPrefix {
+		// Line exceeded the MaxHeaderSize buffer — drain and reject.
+		for isPrefix {
+			_, isPrefix, _ = r.r.ReadLine()
+		}
+		return nil, &ParseError{Reason: fmt.Sprintf("header line exceeds maximum size (%d bytes)", MaxHeaderSize), Offset: -1}
+	}
+	headerLine := string(line) + "\n"
 
 	// Parse header
 	frame, err := r.parseHeader(headerLine)
@@ -133,6 +147,9 @@ func (r *Reader) parseHeader(line string) (*Frame, error) {
 			v, err := strconv.ParseUint(val, 10, 8)
 			if err != nil {
 				return nil, &ParseError{Reason: "invalid version", Offset: -1}
+			}
+			if v != 1 {
+				return nil, &ParseError{Reason: fmt.Sprintf("unsupported version %d, must be 1", v), Offset: -1}
 			}
 			frame.Version = uint8(v)
 

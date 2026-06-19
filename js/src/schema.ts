@@ -2,6 +2,7 @@
  * GLYPH v2 Schema System
  */
 
+import { createHash } from 'crypto';
 import { GValue } from './types';
 
 // ============================================================
@@ -103,18 +104,13 @@ export class Schema {
   }
 
   /**
-   * Compute schema hash
+   * Compute schema hash (SHA-256, first 16 bytes = 32 hex chars).
+   * Matches Go schema.go:238 (sha256.Sum256[:16] → hex.EncodeToString).
    */
   computeHash(): string {
     const canonical = this.canonical();
-    // Simple hash for browser compatibility
-    let hash = 0;
-    for (let i = 0; i < canonical.length; i++) {
-      const char = canonical.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    this.hash = Math.abs(hash).toString(16).padStart(8, '0');
+    const digest = createHash('sha256').update(canonical).digest();
+    this.hash = digest.slice(0, 16).toString('hex');
     return this.hash;
   }
 
