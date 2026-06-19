@@ -319,7 +319,9 @@ func (e *emitter) writeIndent(depth int) {
 	}
 }
 
-// escapeString escapes a string for quoted output.
+// escapeString escapes a string for quoted output. Control characters below
+// U+0020 (other than \n, \r, \t) are emitted as \uXXXX so the output stays
+// printable and safe; scanString decodes these back identically.
 func escapeString(s string) string {
 	var sb strings.Builder
 	for _, r := range s {
@@ -335,7 +337,11 @@ func escapeString(s string) string {
 		case '\t':
 			sb.WriteString("\\t")
 		default:
-			sb.WriteRune(r)
+			if r < 0x20 {
+				fmt.Fprintf(&sb, "\\u%04x", r)
+			} else {
+				sb.WriteRune(r)
+			}
 		}
 	}
 	return sb.String()
