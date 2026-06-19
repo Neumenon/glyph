@@ -186,6 +186,10 @@ class PackedParser {
         if (c === '{') {
             return this.parseMap();
         }
+        // Bytes: b64"..." (the b64 prefix would otherwise lex as a bare string)
+        if (c === 'b' && this.input.startsWith('b64"', this.pos)) {
+            return this.parseBytes();
+        }
         // Number or time
         if (c === '-' || (c >= '0' && c <= '9')) {
             return this.parseNumberOrTime();
@@ -307,6 +311,17 @@ class PackedParser {
                     case '"':
                         result += '"';
                         break;
+                    case 'u': {
+                        // \uXXXX (4 hex digits) — the emitter writes control chars this way,
+                        // so it must decode back identically.
+                        const hex = this.input.slice(this.pos + 1, this.pos + 5);
+                        if (hex.length < 4 || !/^[0-9a-fA-F]{4}$/.test(hex)) {
+                            throw new Error(`invalid \\u escape at pos ${this.pos}`);
+                        }
+                        result += String.fromCharCode(parseInt(hex, 16));
+                        this.pos += 4;
+                        break;
+                    }
                     default: result += this.input[this.pos];
                 }
             }
@@ -316,6 +331,22 @@ class PackedParser {
             this.pos++;
         }
         throw new Error('unterminated string');
+    }
+    // parseBytes decodes a b64"..." literal into a bytes value. The cursor is on
+    // the leading 'b'. Invalid base64 is a hard error (never coerced to a string).
+    parseBytes() {
+        this.pos += 3; // consume b64
+        this.expect('"');
+        const start = this.pos;
+        while (this.pos < this.input.length && this.input[this.pos] !== '"') {
+            this.pos++;
+        }
+        if (this.pos >= this.input.length) {
+            throw new Error('unterminated bytes literal');
+        }
+        const b64 = this.input.slice(start, this.pos);
+        this.pos++; // consume closing "
+        return types_1.GValue.bytes(base64ToBytes(b64));
     }
     parseBareString() {
         const start = this.pos;
@@ -389,9 +420,16 @@ class PackedParser {
                 throw new Error(`expected ':' or '=' after map key`);
             }
             this.pos++;
-            // Parse value
+            // Parse value. Duplicate-key policy: last value wins, replacing the
+            // earlier entry in place (preserves key position), matching Go/Python.
             const value = this.parseValue();
-            entries.push({ key, value });
+            const existing = entries.findIndex((e) => e.key === key);
+            if (existing >= 0) {
+                entries[existing].value = value;
+            }
+            else {
+                entries.push({ key, value });
+            }
         }
     }
     skipWhitespace() {
@@ -714,6 +752,10 @@ function parseScalarValue(s) {
         }
         return types_1.GValue.id('', ref);
     }
+    // Bytes: b64"..."
+    if (s.startsWith('b64"') && s.endsWith('"')) {
+        return types_1.GValue.bytes(base64ToBytes(s.slice(4, -1)));
+    }
     // Quoted string
     if (s.startsWith('"')) {
         return parseQuotedScalar(s);
@@ -765,6 +807,15 @@ function parseQuotedScalar(s) {
                 case '"':
                     result += '"';
                     break;
+                case 'u': {
+                    const hex = s.slice(i + 1, i + 5);
+                    if (hex.length < 4 || !/^[0-9a-fA-F]{4}$/.test(hex)) {
+                        throw new Error('invalid \\u escape');
+                    }
+                    result += String.fromCharCode(parseInt(hex, 16));
+                    i += 4;
+                    break;
+                }
                 default: result += s[i];
             }
         }
@@ -773,6 +824,18 @@ function parseQuotedScalar(s) {
         }
     }
     return types_1.GValue.str(result);
+}
+// base64ToBytes decodes standard base64 to a byte array. Mirrors the helper in
+// loose.ts (kept local per the file-local base64 convention in this codebase).
+function base64ToBytes(b64) {
+    if (typeof atob === 'function') {
+        const binary = atob(b64);
+        const out = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++)
+            out[i] = binary.charCodeAt(i);
+        return out;
+    }
+    return new Uint8Array(Buffer.from(b64, 'base64'));
 }
 function parseListScalar(s) {
     // Simple list parsing - tokenize content
@@ -796,7 +859,15 @@ function parseMapScalar(s) {
         if (sepIdx > 0) {
             const key = token.slice(0, sepIdx).trim();
             const valStr = token.slice(sepIdx + 1).trim();
-            entries.push({ key, value: parseScalarValue(valStr) });
+            // Duplicate-key policy: last value wins (replace in place), matching Go/Python.
+            const value = parseScalarValue(valStr);
+            const existing = entries.findIndex((e) => e.key === key);
+            if (existing >= 0) {
+                entries[existing].value = value;
+            }
+            else {
+                entries.push({ key, value });
+            }
         }
     }
     return types_1.GValue.map(...entries);
