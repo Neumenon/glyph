@@ -1,3 +1,5 @@
+> **Historical note:** The pool/blob subsystem (GLYPH+Pool) referenced in this report is PARKED in `attic/` and is not part of the current product surface. Numbers involving GLYPH+Pool are historical.
+
 # GLYPH Benchmark Reports Index
 
 **Last Updated:** December 26, 2024

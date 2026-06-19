@@ -61,7 +61,9 @@ The canonical fingerprint of a `.glyph` file is the SHA-256 hash of its UTF-8 by
 
 ## In Shard v2 Context
 
-When stored in a Shard v2 container:
+> **Status: Not implemented.** Shard v2 container support is specified here for reference but has not been built. The content type constant and index entry format are reserved; no implementation currently reads or writes `.glyph` files inside a Shard v2 container.
+
+When stored in a Shard v2 container (future):
 - Content type: `CONTENT_TYPE_GLYPH = 0x0004` (stored in index entry reserved field)
 - Entry name: typically ends in `.glyph` (e.g., `config.glyph`)
 - Compression: optional (zstd or lz4 at the shard level)

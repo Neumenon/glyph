@@ -21,13 +21,14 @@ If you only read three files, read these:
 ### Supporting Guides
 - [GUIDE.md](./GUIDE.md) — broader concepts and patterns
 - [SPECIFICATIONS.md](./SPECIFICATIONS.md) — overview-level technical summary
+- [GLYPH_FILE_FORMAT.md](./GLYPH_FILE_FORMAT.md) — `.glyph` file properties and shard context
 
 ### Language-Specific Docs
 - [../py/README.md](../py/README.md)
 - [../go/README.md](../go/README.md)
 - [../js/README.md](../js/README.md)
-- [../rust/glyph-codec/README.md](../rust/glyph-codec/README.md)
-- [../c/glyph-codec/README.md](../c/glyph-codec/README.md)
+- [../attic/rust/glyph-codec/README.md](../attic/rust/glyph-codec/README.md) — Rust (parked in attic/, emit-only, not a conformance port)
+- [../attic/c/glyph-codec/README.md](../attic/c/glyph-codec/README.md) — C (parked in attic/, emit-only, not a conformance port)
 
 ## Historical / Secondary Material
 
@@ -35,7 +36,7 @@ These files are still useful, but they are not the source of truth for the curre
 
 - [reports/README.md](./reports/README.md) — dated research and benchmark snapshots
 - [archive/README.md](./archive/README.md) — archived docs and experiments
-- `DEMO_README.md` / `DEMO_QUICK_REFERENCE.md` — legacy demo material (removed)
+- `DEMO_README.md` / `DEMO_QUICK_REFERENCE.md` — legacy demo material (moved to `attic/agents/`)
 - [visual-guide.html](./visual-guide.html) — visual explainer, not authoritative API/spec text
 - [../attic/](../attic/) — parked features (agent framework, blob/pool); preserved for history, not part of the lead surface
 

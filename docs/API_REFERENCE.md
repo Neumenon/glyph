@@ -11,8 +11,8 @@ The purpose is to give the current package names, import surfaces, and the core 
 | Python | `glyph-py` | [../py/README.md](../py/README.md) |
 | Go | `github.com/Neumenon/glyph` | [../go/README.md](../go/README.md) |
 | JavaScript / TypeScript | `cowrie-glyph` | [../js/README.md](../js/README.md) |
-| Rust | `glyph-rs` | [../rust/glyph-codec/README.md](../rust/glyph-codec/README.md) |
-| C | source build | [../c/glyph-codec/README.md](../c/glyph-codec/README.md) |
+| Rust | parked in `attic/` — emit-only, not published | [../attic/rust/glyph-codec/README.md](../attic/rust/glyph-codec/README.md) |
+| C | parked in `attic/` — emit-only, build from source | [../attic/c/glyph-codec/README.md](../attic/c/glyph-codec/README.md) |
 
 ## Shared Concepts
 
@@ -46,7 +46,7 @@ Where implemented, the schema layer covers:
 - schema evolution helpers
 
 ### Streaming
-The streaming layer covers:
+The streaming layer covers (Go and JS only — Python, Rust, and C do not implement GS1):
 - GS1 framing
 - stream cursors / readers / writers
 - UI event frames
@@ -80,10 +80,10 @@ import "github.com/Neumenon/glyph/glyph"
 Install `cowrie-glyph`. The package exports loose-mode helpers, schema helpers, patch utilities, stream helpers, and the streaming validator.
 
 ### Rust
-Install `glyph-rs`. In code, import it as `glyph_rs`.
+Parked in `attic/rust/glyph-codec/`. Emit-only (no text parser, no patch/GS1/pack). Not published; `cargo add glyph-rs` is not a valid install path. See the attic README for build instructions.
 
 ### C
-Build the library from `c/glyph-codec/` and include `glyph.h`.
+Parked in `attic/c/glyph-codec/`. Emit-only (no text parser, no patch/GS1/pack). Build from source and include `glyph.h`. See the attic README for build instructions.
 
 ## Scope Boundary
 

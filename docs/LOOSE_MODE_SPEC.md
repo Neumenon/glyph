@@ -37,6 +37,8 @@ GLYPH-Loose is the schema-optional subset of GLYPH. It provides a deterministic 
 - **Exponent format:** 2-digit minimum (`1e-06`, not `1e-6`)
 - **NaN/Infinity:** Rejected with error (not JSON-compatible)
 
+> **Known open divergence:** Float canonicalization is not yet fully unified. Go uses shortest-roundtrip formatting; Python and JS use a threshold-based rule. The outputs agree for common values but can differ for edge-case floats near the boundary. This divergence is unresolved and will be addressed in a future spec update. Do not rely on byte-identical float output across Go and Python/JS for edge cases.
+
 ### String Bare-Safe Rule
 
 A string is "bare-safe" (unquoted) if:
@@ -424,7 +426,7 @@ This enables:
 | `MinRows` | int | 3 | Minimum rows to trigger tabular |
 | `MaxCols` | int | 20 | Maximum columns allowed |
 | `AllowMissing` | bool | true | Allow rows with missing keys |
-| `NullStyle` | NullStyle | underscore | `symbol` for ∅, `underscore` for _ |
+| `NullStyle` | NullStyle | underscore | `symbol` for ∅, `underscore` for _. The fingerprint/no-tabular path always uses `_` (underscore) across Go, Python, and JS. |
 | `SchemaRef` | string | "" | Schema hash/id for @schema header |
 | `KeyDict` | []string | nil | Key dictionary for compact keys |
 | `UseCompactKeys` | bool | false | Emit #N instead of field names |
@@ -497,20 +499,6 @@ registry := glyph.NewSchemaRegistry()
 parsed, ctx, err := glyph.ParseLoosePayload(input, registry)
 ```
 
-### Python Usage
-
-```python
-from glyph import new_schema_context, SchemaRegistry, parse_loose_payload
-
-# Create schema context
-schema = new_schema_context(["role", "content", "tool_calls"])
-
-# Parse with registry
-registry = SchemaRegistry()
-parsed, ctx = parse_loose_payload(input_str, registry)
-role = parsed.get("role").as_str()  # "user"
-```
-
 ### TypeScript Usage
 
 ```typescript
@@ -564,14 +552,6 @@ const patch = new PatchBuilder(target)
     .withBaseValue(baseState)
     .set('score', g.int(5))
     .build();
-```
-
-**Python:**
-```python
-patch = PatchBuilder(target) \
-    .with_base_value(base_state) \
-    .set("score", Int(5)) \
-    .build()
 ```
 
 ---
