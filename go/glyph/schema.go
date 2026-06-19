@@ -235,11 +235,102 @@ func (s *Schema) GetWireKey(typeName, fieldName string) string {
 }
 
 // ComputeHash computes and sets the schema hash.
+//
+// The hash is taken over hashCanonical() (NOT the human-readable Canonical()
+// text) so that it covers every decoding-relevant bit. Two schemas that would
+// decode the same wire bytes differently — e.g. differing only in FID
+// assignment, the @pack/@tab flags, a field codec, a default, or wire keys —
+// hash differently, so a decoder can never silently mis-read an incompatible
+// packed payload as if the schemas matched.
 func (s *Schema) ComputeHash() string {
-	canonical := s.Canonical()
+	canonical := s.hashCanonical()
 	hash := sha256.Sum256([]byte(canonical))
 	s.Hash = hex.EncodeToString(hash[:16]) // First 16 bytes = 32 hex chars
 	return s.Hash
+}
+
+// hashCanonical returns the canonical preimage used for the schema hash. Unlike
+// Canonical() (which produces the human-readable schema text consumed by
+// EmitSchema and is intentionally limited to syntax the schema parser can read
+// back), this form is exhaustive and machine-oriented: it serializes the
+// packed/tabular/open flags and, per field, FID, wire key, optionality, sorted
+// constraints, keep-null, codec and default — and orders struct fields by FID.
+func (s *Schema) hashCanonical() string {
+	var sb strings.Builder
+	sb.WriteString("glyph-schema-hash-v1\n")
+
+	// Sort type names for deterministic output.
+	names := make([]string, 0, len(s.Types))
+	for name := range s.Types {
+		names = append(names, name)
+	}
+	sortStrings(names)
+
+	for _, name := range names {
+		writeTypeDefForHash(&sb, s.Types[name])
+	}
+	return sb.String()
+}
+
+func writeTypeDefForHash(sb *strings.Builder, td *TypeDef) {
+	fmt.Fprintf(sb, "type name=%s version=%s pack=%t tab=%t open=%t",
+		td.Name, td.Version, td.PackEnabled, td.TabEnabled, td.Open)
+
+	switch td.Kind {
+	case TypeDefStruct:
+		sb.WriteString(" kind=struct\n")
+		// Order by FID so two schemas that pack to the same layout hash equally
+		// regardless of declaration order, while a different FID assignment
+		// (which changes the packed layout) hashes differently.
+		for _, f := range td.FieldsByFID() {
+			writeFieldDefForHash(sb, f)
+		}
+	case TypeDefSum:
+		sb.WriteString(" kind=sum\n")
+		if td.Sum != nil {
+			variants := make([]*VariantDef, len(td.Sum.Variants))
+			copy(variants, td.Sum.Variants)
+			sortVariantsByTag(variants)
+			for _, v := range variants {
+				fmt.Fprintf(sb, "  variant tag=%s type=%s\n", v.Tag, v.Type.String())
+			}
+		}
+	}
+}
+
+func writeFieldDefForHash(sb *strings.Builder, f *FieldDef) {
+	fmt.Fprintf(sb, "  field fid=%d name=%s type=%s wire=%s opt=%t keepnull=%t codec=%s",
+		f.FID, f.Name, f.Type.String(), f.WireKey, f.Optional, f.KeepNull, f.Codec)
+
+	if len(f.Constraints) > 0 {
+		cs := make([]string, 0, len(f.Constraints))
+		for _, c := range f.Constraints {
+			cs = append(cs, c.String())
+		}
+		sortStrings(cs) // constraints are a set; sort for declaration-order stability
+		sb.WriteString(" constraints=[")
+		sb.WriteString(strings.Join(cs, ","))
+		sb.WriteString("]")
+	}
+
+	if f.Default != nil {
+		sb.WriteString(" default=")
+		sb.WriteString(Emit(f.Default))
+	}
+
+	sb.WriteString("\n")
+}
+
+// sortVariantsByTag sorts sum variants by tag (variants are matched by tag, so
+// declaration order is not decoding-relevant).
+func sortVariantsByTag(v []*VariantDef) {
+	for i := 0; i < len(v); i++ {
+		for j := i + 1; j < len(v); j++ {
+			if v[j].Tag < v[i].Tag {
+				v[i], v[j] = v[j], v[i]
+			}
+		}
+	}
 }
 
 // Canonical returns the canonical schema text.
