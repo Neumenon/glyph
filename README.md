@@ -31,7 +31,7 @@ External APIs / tools / model structured output
 - a JSON bridge in both directions
 - a state fingerprinting primitive (SHA-256 of canonical bytes in the Go/Python/JS surfaces)
 - a packed / tabular representation for repeated records
-- a patch / delta substrate that verifies against base fingerprints
+- a patch / delta substrate that records a base fingerprint (enforced by the GS1 stream cursor)
 - a stream framing protocol (GS1) for long-running agent workflows
 - cross-language conformance: Go, Python, JavaScript / TypeScript (Rust and C parked in attic/; emit-only)
 
@@ -149,7 +149,7 @@ Repeated keys are emitted once. The savings show up exactly where agent traces h
 ]
 ```
 
-A receiver applies the patch only if its current state's fingerprint matches `base`. Mismatched bases fail explicitly instead of silently corrupting state.
+The patch records a `base` fingerprint. In the GS1 stream layer, the cursor enforces it — rejecting any patch whose `base` does not match the current state's fingerprint, so a stale patch fails explicitly instead of silently corrupting state. (Standalone `apply_patch` records the base but does not itself verify it today; outside the stream layer the receiver must check the fingerprint before applying.)
 
 ### 5. Stream frame (GS1) — Go and JS only
 

@@ -10,10 +10,10 @@ GLYPH-Loose is the schema-optional subset of GLYPH. It provides a deterministic 
 
 ## Design Goals
 
-1. **Drop-in JSON replacement** - Any valid JSON is valid GLYPH-Loose input
+1. **JSON-compatible input** - Any valid JSON is valid GLYPH-Loose input
 2. **Deterministic canonical form** - Same data always produces same output
 3. **Cross-language parity** - Go, JS, and Python implementations produce identical output
-4. **Compact** - More token-efficient than JSON for LLM contexts
+4. **Compact** - Fewer characters than JSON; this usually reduces token count too, though exact token savings are tokenizer-dependent
 
 ---
 
