@@ -16,7 +16,7 @@ The purpose is to give the current package names, import surfaces, and the core 
 
 ## Shared Concepts
 
-Every implementation revolves around the same layers:
+The Go, Python, and JS implementations share the same layers (the parked Rust and C ports in `attic/` implement Loose emit only):
 
 ### Loose Mode
 - parse or bridge JSON-compatible data

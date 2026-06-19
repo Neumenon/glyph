@@ -7,7 +7,7 @@ Practical recipes for common use cases. All examples are copy-paste ready.
 ## Table of Contents
 
 1. [Tool Calling with Streaming Validation](#1-tool-calling-with-streaming-validation)
-2. [Drop-in JSON Replacement](#2-drop-in-json-replacement)
+2. [JSON Bridge](#2-json-bridge)
 3. [Agent Memory & State Management](#3-agent-memory--state-management)
 4. [Batch Data with Tabular Mode](#4-batch-data-with-tabular-mode)
 5. [Real-time Progress Streaming](#5-real-time-progress-streaming)
@@ -119,11 +119,11 @@ asyncio.run(stream_with_validation("What's the weather in Tokyo?"))
 
 ---
 
-## 2. Drop-in JSON Replacement
+## 2. JSON Bridge
 
-**Problem:** You have existing JSON-based code but want token savings without a rewrite.
+**Problem:** You have existing JSON-based code but want a more compact form without a rewrite.
 
-**Solution:** Use `from_json` and `to_json` for seamless conversion.
+**Solution:** Use `from_json` and `to_json` for lossless conversion of JSON-domain values.
 
 ```python
 import glyph
@@ -198,17 +198,18 @@ History:
 {chr(10).join(glyph.json_to_glyph(h) for h in history)}
 """
 
-# 35-45% fewer tokens in your context window
+# Fewer characters in your context window (illustrative ~35-45%;
+# actual token savings depend on your tokenizer)
 ```
 
-**Token savings by data type:**
+**Character reduction by data type (illustrative):** GLYPH removes structural characters deterministically; the resulting token savings track this but are tokenizer-dependent — see [Research Reports](reports/) for measured figures.
 
-| Data Shape | JSON | GLYPH | Savings |
-|------------|------|-------|---------|
-| Flat object (5 fields) | ~45 tokens | ~30 tokens | 33% |
-| Nested object (3 levels) | ~120 tokens | ~75 tokens | 38% |
-| Array of objects (10 items) | ~300 tokens | ~160 tokens | 47% |
-| API response (typical) | ~200 tokens | ~120 tokens | 40% |
+| Data Shape | JSON | GLYPH | Fewer chars |
+|------------|------|-------|-------------|
+| Flat object (5 fields) | ~45 | ~30 | ~33% |
+| Nested object (3 levels) | ~120 | ~75 | ~38% |
+| Array of objects (10 items) | ~300 | ~160 | ~47% |
+| API response (typical) | ~200 | ~120 | ~40% |
 
 ---
 
@@ -382,7 +383,7 @@ with open("agent_state.glyph", "w") as f:
 
 **Problem:** You're sending large datasets to/from LLMs (embeddings, search results, structured outputs) and JSON arrays are token-expensive.
 
-**Solution:** Use tabular mode for 50-70% token savings on homogeneous lists.
+**Solution:** Use tabular mode to emit repeated keys once on homogeneous lists (illustrative ~50-70% fewer characters; actual token savings depend on the tokenizer).
 
 ```python
 import glyph

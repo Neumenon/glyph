@@ -22,11 +22,11 @@
 
 ### Why GLYPH Exists
 
-**Problem 1: Token Waste**
-JSON requires quotes around keys, colons, commas. This adds up:
-- `{"action": "search"}` = 22 tokens
-- `{action=search}` = 13 tokens
-- **41% reduction** on a 2-field object
+**Problem 1: Syntax overhead**
+JSON spends characters on quotes around keys, colons, and commas:
+- `{"action": "search"}` = 20 characters
+- `{action=search}` = 15 characters
+- ~25% fewer characters on this small object; repeated and nested structures save proportionally more
 
 **Problem 2: Late Validation**
 Traditional flow: LLM generates → you parse → validate → discover error
@@ -34,7 +34,7 @@ GLYPH flow: LLM generates → validate as tokens stream → cancel immediately i
 
 **Problem 3: State Conflicts**
 Two agents update the same state → conflicts → data loss
-GLYPH: Base hash verification prevents applying patches to wrong version
+GLYPH: patches carry a base fingerprint; in the GS1 stream layer the cursor rejects any patch whose base doesn't match current state (standalone apply does not yet self-verify)
 
 ### Format Basics
 
@@ -62,17 +62,19 @@ Time:    2025-01-13T12:00:00Z
 
 ## Token Efficiency
 
+> **On the numbers below:** figures are **illustrative character counts**. Removing structural characters (quotes, colons, commas) is deterministic; the resulting *token* savings track it closely but depend on your tokenizer and data. See [Research Reports](reports/) for measured, tokenizer-specific benchmarks.
+
 ### How It Works
 
 GLYPH eliminates redundant syntax:
 
 ```json
-JSON (58 tokens):
+JSON (66 characters):
 {"action": "search", "query": "weather in NYC", "max_results": 10}
 ```
 
 ```glyph
-GLYPH (34 tokens):
+GLYPH (53 characters):
 {action=search query="weather in NYC" max_results=10}
 ```
 
@@ -82,14 +84,16 @@ GLYPH (34 tokens):
 - No commas: 2 tokens
 - Bare string values: 7 tokens
 
-### Token Savings by Data Shape
+### Character reduction by data shape (illustrative)
 
-| Structure | JSON | GLYPH | Savings |
-|-----------|------|-------|---------|
-| Flat object (5 fields) | 45 | 30 | 33% |
-| Nested (3 levels) | 120 | 75 | 38% |
-| Array of objects (10) | 300 | 160 | 47% |
-| Tabular (20 rows) | 500 | 220 | 56% |
+Approximate character counts on representative inputs; your data and tokenizer will differ.
+
+| Structure | JSON | GLYPH | Fewer chars |
+|-----------|------|-------|-------------|
+| Flat object (5 fields) | ~45 | ~30 | ~33% |
+| Nested (3 levels) | ~120 | ~75 | ~38% |
+| Array of objects (10) | ~300 | ~160 | ~47% |
+| Tabular (20 rows) | ~500 | ~220 | ~56% |
 
 ### When Token Savings Matter Most
 
@@ -102,7 +106,7 @@ GLYPH (34 tokens):
 **Example: Tool Definition**
 
 ```json
-JSON (180 tokens):
+JSON (195 characters, pretty-printed):
 {
   "name": "search",
   "description": "Search the web",
@@ -114,11 +118,11 @@ JSON (180 tokens):
 ```
 
 ```glyph
-GLYPH (98 tokens):
+GLYPH (129 characters):
 {name=search description="Search the web" parameters={query={type=string required=t} limit={type=integer minimum=1 maximum=100}}}
 ```
 
-**46% reduction** → Fits more tools in system prompt.
+**~34% fewer characters** than the pretty-printed JSON → fits more tools in the system prompt. (Against minified JSON the gap is smaller; against pretty-printed or repeated structures it is larger.)
 
 ---
 
@@ -203,7 +207,7 @@ for token in llm_stream:
 Homogeneous lists (same structure repeated) waste tokens on repeated keys:
 
 ```json
-JSON (120 tokens):
+JSON (168 characters):
 [
   {"id": "doc1", "score": 0.95, "title": "GLYPH Guide"},
   {"id": "doc2", "score": 0.89, "title": "API Docs"},
@@ -212,7 +216,7 @@ JSON (120 tokens):
 ```
 
 ```glyph
-GLYPH table (45 tokens):
+GLYPH table (95 characters):
 @tab _ [id score title]
 |doc1|0.95|GLYPH Guide|
 |doc2|0.89|API Docs|
@@ -220,7 +224,7 @@ GLYPH table (45 tokens):
 @end
 ```
 
-**62% reduction** → Keys appear once, not per row.
+**~43% fewer characters** → keys appear once, not per row.
 
 ### When Auto-Tabular Triggers
 
@@ -346,7 +350,7 @@ else:
 
 ## JSON Interoperability
 
-### Drop-In Replacement
+### JSON Bridge
 
 ```python
 import glyph
@@ -369,7 +373,7 @@ assert restored == data  # Perfect round-trip
 llm_output = '{"action": "search"}'
 parsed = json.loads(llm_output)
 
-# Convert to GLYPH for storage (40% smaller)
+# Convert to GLYPH for storage (~40% fewer characters)
 stored = glyph.json_to_glyph(parsed)
 save_to_db(stored)
 ```
@@ -441,7 +445,7 @@ conversation.append(
      "action": {"tool": "get_weather", "location": "NYC"}}
 )
 
-# Store efficiently (40% smaller than JSON); auto-tabular kicks in for homogeneous lists
+# Store efficiently (~40% fewer characters than JSON); auto-tabular kicks in for homogeneous lists
 stored = glyph.json_to_glyph(conversation)
 ```
 
@@ -500,7 +504,7 @@ bus.publish(text, fingerprint=fp)
 llm_output = generate(prompt)
 parsed = json.loads(llm_output)
 
-# Store as GLYPH (40% smaller)
+# Store as GLYPH (~40% fewer characters)
 glyph_text = glyph.json_to_glyph(parsed)
 save_to_db(glyph_text)
 
@@ -564,7 +568,7 @@ Tools available (JSON format):
 
 # After
 system = """
-Tools available (GLYPH format - 40% fewer tokens):
+Tools available (GLYPH format - ~40% fewer characters):
 {name=search parameters={query=string}}
 """
 ```

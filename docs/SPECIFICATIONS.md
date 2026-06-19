@@ -19,9 +19,9 @@
 GLYPH has two main specifications:
 
 **1. GLYPH-Loose** - Schema-optional JSON-compatible mode
-- Drop-in JSON replacement
+- JSON-compatible input (any valid JSON is valid input)
 - Deterministic canonical form
-- Cross-language parity
+- Cross-language parity (Go, Python, JS)
 
 **2. GS1 Stream** - Frame protocol for multiplexed streaming (Go and JS only)
 - Transport-agnostic (TCP, WebSocket, SSE, pipes)
@@ -37,10 +37,10 @@ GLYPH has two main specifications:
 
 ### Design Goals
 
-1. **Drop-in JSON replacement** - Any valid JSON is valid input
+1. **JSON-compatible input** - Any valid JSON is valid input
 2. **Deterministic canonical form** - Same data always produces same output
 3. **Cross-language parity** - Go, JS, Python produce identical output
-4. **Token efficiency** - More compact than JSON
+4. **Compact** - Fewer characters than JSON (token savings vary by tokenizer)
 
 ### Canonical Rules
 
