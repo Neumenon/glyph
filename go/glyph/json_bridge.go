@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 )
 
@@ -13,9 +14,28 @@ import (
 // ============================================================
 //
 // Converts between JSON and GValue for schema-free GLYPH usage.
+//
+// This is the LLM-facing / JSON-bridge layer. By maintainer decision it
+// INTENTIONALLY collapses to JSON-like semantics: in the default (strict) mode
+// typed values flatten into their nearest JSON shape and do NOT round-trip back
+// to their original GLYPH type:
+//   - time / id / bytes  -> plain strings
+//   - struct             -> object (the struct TypeName is dropped)
+//   - sum                -> { tag: value } object (indistinguishable from a map)
+// Recovering the original GLYPH types is the job of the canonical Parse/Emit
+// path only — not this bridge. Numbers follow JSON-like (float64) semantics on
+// input (FromJSONLoose), so a JSON integer above 2^53 collapses to its float
+// value to stay byte-identical across Go/Python/JS. The emit direction
+// (ToJSONLoose) does NOT lose precision: an Int GValue is written as a full
+// integer literal via json.Number (see toJSONValue).
+//
 // Supports two modes:
 //   - Strict (default): time/id/bytes become strings, fully JSON compatible
-//   - Extended: uses $glyph markers for lossless round-trip
+//   - Extended: uses $glyph markers for lossless round-trip of time/id/bytes.
+//     In extended mode the "$glyph" object key is RESERVED; emitting a map or
+//     struct that uses it is a loud error rather than a silently ambiguous
+//     marker (see toJSONValue), and only exactly-shaped marker objects are
+//     decoded back (see fromGlyphMarker).
 
 // BridgeOpts configures JSON bridge behavior.
 type BridgeOpts struct {
@@ -40,6 +60,14 @@ func FromJSONLoose(data []byte) (*GValue, error) {
 }
 
 // FromJSONLooseWithOpts converts JSON bytes to a GValue with options.
+//
+// Numbers are decoded with JSON-like (float64) semantics on purpose: a JSON
+// integer beyond float64's 2^53 exact range collapses to its float value rather
+// than being preserved. This keeps the Loose layer byte-identical across Go,
+// Python, and JS (JS `number` cannot hold such integers), which the cross-impl
+// parity gate enforces. Preserving full int64 precision is the typed Parse/Emit
+// path's job, not this JSON bridge. (The emit direction, ToJSONLoose, still
+// writes an Int GValue as a full integer literal — see toJSONValue.)
 func FromJSONLooseWithOpts(data []byte, opts BridgeOpts) (*GValue, error) {
 	var v interface{}
 	if err := json.Unmarshal(data, &v); err != nil {
@@ -98,7 +126,7 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 	case map[string]interface{}:
 		// Check for extended markers
 		if opts.Extended {
-			if glyph, ok := val["$glyph"].(string); ok {
+			if glyph, ok := val[glyphMarkerKey].(string); ok {
 				return fromGlyphMarker(glyph, val)
 			}
 		}
@@ -120,8 +148,31 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 }
 
 func fromGlyphMarker(markerType string, obj map[string]interface{}) (*GValue, error) {
+	// Collision-safety: in extended mode the "$glyph" key is reserved, so a
+	// marker object must have EXACTLY the keys its type expects. An object that
+	// carries extra keys is not a well-formed marker and is rejected loudly
+	// rather than silently dropping the extra data or being mistaken for one.
+	exactKeys := func(want ...string) error {
+		allowed := make(map[string]bool, len(want))
+		for _, k := range want {
+			allowed[k] = true
+			if _, ok := obj[k]; !ok {
+				return fmt.Errorf("$glyph %s marker missing %q", markerType, k)
+			}
+		}
+		for k := range obj {
+			if !allowed[k] {
+				return fmt.Errorf("$glyph %s marker has unexpected key %q", markerType, k)
+			}
+		}
+		return nil
+	}
+
 	switch markerType {
 	case "time":
+		if err := exactKeys("$glyph", "value"); err != nil {
+			return nil, err
+		}
 		value, ok := obj["value"].(string)
 		if !ok {
 			return nil, fmt.Errorf("$glyph time marker missing value")
@@ -133,6 +184,9 @@ func fromGlyphMarker(markerType string, obj map[string]interface{}) (*GValue, er
 		return Time(t), nil
 
 	case "id":
+		if err := exactKeys("$glyph", "value"); err != nil {
+			return nil, err
+		}
 		value, ok := obj["value"].(string)
 		if !ok {
 			return nil, fmt.Errorf("$glyph id marker missing value")
@@ -153,6 +207,9 @@ func fromGlyphMarker(markerType string, obj map[string]interface{}) (*GValue, er
 		return ID(prefix, val), nil
 
 	case "bytes":
+		if err := exactKeys("$glyph", "base64"); err != nil {
+			return nil, err
+		}
 		b64, ok := obj["base64"].(string)
 		if !ok {
 			return nil, fmt.Errorf("$glyph bytes marker missing base64")
@@ -166,6 +223,23 @@ func fromGlyphMarker(markerType string, obj map[string]interface{}) (*GValue, er
 	default:
 		return nil, fmt.Errorf("unknown $glyph marker type: %s", markerType)
 	}
+}
+
+// glyphMarkerKey is the reserved object key used for extended-mode $glyph
+// markers. In extended mode no user-supplied map/struct key or sum tag may use
+// it, because on decode such an object would be ambiguous with a real marker.
+const glyphMarkerKey = "$glyph"
+
+// guardReservedKey rejects user data that collides with the reserved $glyph
+// marker key when emitting in extended mode. Failing loudly here keeps the
+// extended round-trip unambiguous instead of producing a marker the decoder
+// would misinterpret. In strict mode "$glyph" is just ordinary data and is
+// allowed through.
+func guardReservedKey(key string, opts BridgeOpts) error {
+	if opts.Extended && key == glyphMarkerKey {
+		return fmt.Errorf("key %q collides with the reserved $glyph marker in extended mode", key)
+	}
+	return nil
 }
 
 // ============================================================
@@ -210,7 +284,9 @@ func toJSONValue(v *GValue, opts BridgeOpts) (interface{}, error) {
 		return v.boolVal, nil
 
 	case TypeInt:
-		return float64(v.intVal), nil
+		// Emit as json.Number so the full int64 range survives json.Marshal.
+		// float64(v.intVal) would silently lose precision above 2^53.
+		return json.Number(strconv.FormatInt(v.intVal, 10)), nil
 
 	case TypeFloat:
 		if math.IsNaN(v.floatVal) || math.IsInf(v.floatVal, 0) {
@@ -263,6 +339,9 @@ func toJSONValue(v *GValue, opts BridgeOpts) (interface{}, error) {
 	case TypeMap:
 		obj := make(map[string]interface{}, len(v.mapVal))
 		for _, entry := range v.mapVal {
+			if err := guardReservedKey(entry.Key, opts); err != nil {
+				return nil, err
+			}
 			jsonVal, err := toJSONValue(entry.Value, opts)
 			if err != nil {
 				return nil, err
@@ -272,9 +351,14 @@ func toJSONValue(v *GValue, opts BridgeOpts) (interface{}, error) {
 		return obj, nil
 
 	case TypeStruct:
-		// Structs become objects with fields as properties
+		// Structs become objects with fields as properties. The struct
+		// TypeName is intentionally dropped (see package doc): Loose is
+		// JSON-like; typed round-trip is the Parse/Emit path's job.
 		obj := make(map[string]interface{}, len(v.structVal.Fields))
 		for _, field := range v.structVal.Fields {
+			if err := guardReservedKey(field.Key, opts); err != nil {
+				return nil, err
+			}
 			jsonVal, err := toJSONValue(field.Value, opts)
 			if err != nil {
 				return nil, err
@@ -284,7 +368,11 @@ func toJSONValue(v *GValue, opts BridgeOpts) (interface{}, error) {
 		return obj, nil
 
 	case TypeSum:
-		// Sums become { tag: value }
+		// Sums collapse to { tag: value } — indistinguishable from a plain map
+		// by design (see package doc).
+		if err := guardReservedKey(v.sumVal.Tag, opts); err != nil {
+			return nil, err
+		}
 		tagVal, err := toJSONValue(v.sumVal.Value, opts)
 		if err != nil {
 			return nil, err

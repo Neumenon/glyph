@@ -176,8 +176,10 @@ func (c Constraint) String() string {
 	case ConstraintUnique:
 		return "unique"
 	case ConstraintRange:
+		// Unbracketed: writeTypeDef wraps every constraint in [...], so this
+		// renders as [min..max] and parses back via the .. range operator.
 		r := c.Value.([2]float64)
-		return fmt.Sprintf("[%v..%v]", r[0], r[1])
+		return fmt.Sprintf("%v..%v", r[0], r[1])
 	case ConstraintOptional:
 		return "optional"
 	default:
@@ -365,6 +367,14 @@ func writeTypeDef(sb *strings.Builder, td *TypeDef) {
 
 	switch td.Kind {
 	case TypeDefStruct:
+		// Type-level flags (round-trip via parseTypeDef). Emitted in a fixed
+		// order so EmitSchema is deterministic.
+		if td.PackEnabled {
+			sb.WriteString("@pack ")
+		}
+		if td.TabEnabled {
+			sb.WriteString("@tab ")
+		}
 		if td.Open {
 			sb.WriteString("@open ")
 		}
@@ -379,9 +389,28 @@ func writeTypeDef(sb *strings.Builder, td *TypeDef) {
 				sb.WriteString(c.String())
 				sb.WriteString("]")
 			}
+			// Field-level annotations (round-trip via parseFieldDef).
+			if f.FID > 0 {
+				sb.WriteString(" @fid(")
+				sb.WriteString(fmt.Sprintf("%d", f.FID))
+				sb.WriteString(")")
+			}
 			if f.WireKey != "" {
 				sb.WriteString(" @k(")
 				sb.WriteString(f.WireKey)
+				sb.WriteString(")")
+			}
+			if f.Codec != "" {
+				sb.WriteString(" @codec(")
+				sb.WriteString(f.Codec)
+				sb.WriteString(")")
+			}
+			if f.KeepNull {
+				sb.WriteString(" @keepnull")
+			}
+			if f.Default != nil {
+				sb.WriteString(" @default(")
+				sb.WriteString(Emit(f.Default))
 				sb.WriteString(")")
 			}
 			if f.Optional {

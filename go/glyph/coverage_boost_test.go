@@ -1,6 +1,7 @@
 package glyph
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -873,8 +874,10 @@ func TestToJSONValueLoose(t *testing.T) {
 	if !ok {
 		t.Fatal("expected map")
 	}
-	if m["a"] != float64(1) {
-		t.Errorf("expected 1, got %v", m["a"])
+	// Integers are now preserved as json.Number (not float64) so int64 values
+	// above 2^53 do not lose precision.
+	if n, ok := m["a"].(json.Number); !ok || n.String() != "1" {
+		t.Errorf("expected json.Number(1), got %T %v", m["a"], m["a"])
 	}
 }
 

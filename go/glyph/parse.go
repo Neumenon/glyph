@@ -662,15 +662,35 @@ func (p *schemaParser) parseTypeDef() (*TypeDef, error) {
 		}
 	}
 
+	td := &TypeDef{
+		Name:    name,
+		Version: version,
+	}
+
+	// Type-level flags: @pack @tab @open (emitted by writeTypeDef). These
+	// appear between the name/version and the struct/sum keyword.
+	for p.stream.Peek().Type == TokenAt {
+		p.stream.Advance() // consume @
+		flag, err := p.stream.Expect(TokenIdent)
+		if err != nil {
+			return nil, fmt.Errorf("expected type annotation name after @")
+		}
+		switch flag.Value {
+		case "pack":
+			td.PackEnabled = true
+		case "tab":
+			td.TabEnabled = true
+		case "open":
+			td.Open = true
+		default:
+			return nil, fmt.Errorf("unknown type annotation @%s", flag.Value)
+		}
+	}
+
 	// struct or sum
 	kindTok, err := p.stream.Expect(TokenIdent)
 	if err != nil {
 		return nil, err
-	}
-
-	td := &TypeDef{
-		Name:    name,
-		Version: version,
 	}
 
 	switch kindTok.Value {
@@ -762,10 +782,14 @@ func (p *schemaParser) parseFieldDef() (*FieldDef, error) {
 		}
 
 		if tok.Type == TokenAt {
-			p.stream.Advance()
-			annot := p.stream.Peek()
-			if annot.Type == TokenIdent && annot.Value == "k" {
-				p.stream.Advance()
+			p.stream.Advance() // consume @
+			annot, err := p.stream.Expect(TokenIdent)
+			if err != nil {
+				return nil, fmt.Errorf("expected annotation name after @")
+			}
+			switch annot.Value {
+			case "k":
+				// @k(wireKey)
 				if !p.stream.Match(TokenLParen) {
 					return nil, fmt.Errorf("expected ( after @k")
 				}
@@ -777,6 +801,53 @@ func (p *schemaParser) parseFieldDef() (*FieldDef, error) {
 				if !p.stream.Match(TokenRParen) {
 					return nil, fmt.Errorf("expected ) after wire key")
 				}
+			case "fid":
+				// @fid(N)
+				if !p.stream.Match(TokenLParen) {
+					return nil, fmt.Errorf("expected ( after @fid")
+				}
+				numTok, err := p.stream.Expect(TokenInt)
+				if err != nil {
+					return nil, fmt.Errorf("expected integer in @fid(...)")
+				}
+				fid, err := strconv.Atoi(numTok.Value)
+				if err != nil {
+					return nil, fmt.Errorf("invalid @fid value %q: %w", numTok.Value, err)
+				}
+				field.FID = fid
+				if !p.stream.Match(TokenRParen) {
+					return nil, fmt.Errorf("expected ) after @fid value")
+				}
+			case "codec":
+				// @codec(name)
+				if !p.stream.Match(TokenLParen) {
+					return nil, fmt.Errorf("expected ( after @codec")
+				}
+				codecTok, err := p.stream.Expect(TokenIdent)
+				if err != nil {
+					return nil, fmt.Errorf("expected codec name in @codec(...)")
+				}
+				field.Codec = codecTok.Value
+				if !p.stream.Match(TokenRParen) {
+					return nil, fmt.Errorf("expected ) after @codec name")
+				}
+			case "keepnull":
+				field.KeepNull = true
+			case "default":
+				// @default(value) — scalar values only (see parseSchemaDefault).
+				if !p.stream.Match(TokenLParen) {
+					return nil, fmt.Errorf("expected ( after @default")
+				}
+				def, err := p.parseSchemaDefault()
+				if err != nil {
+					return nil, err
+				}
+				field.Default = def
+				if !p.stream.Match(TokenRParen) {
+					return nil, fmt.Errorf("expected ) after @default value")
+				}
+			default:
+				return nil, fmt.Errorf("unknown field annotation @%s", annot.Value)
 			}
 			continue
 		}
@@ -785,6 +856,55 @@ func (p *schemaParser) parseFieldDef() (*FieldDef, error) {
 	}
 
 	return field, nil
+}
+
+// parseSchemaDefault parses a scalar default value inside @default(...).
+// Containers (list/map) and bytes are not supported here; they round-trip only
+// through the programmatic schema API, not schema text (noted in the PR).
+func (p *schemaParser) parseSchemaDefault() (*GValue, error) {
+	tok := p.stream.Advance()
+	switch tok.Type {
+	case TokenInt:
+		n, err := strconv.ParseInt(tok.Value, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid @default int %q: %w", tok.Value, err)
+		}
+		return Int(n), nil
+	case TokenFloat:
+		f, err := strconv.ParseFloat(tok.Value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid @default float %q: %w", tok.Value, err)
+		}
+		return Float(f), nil
+	case TokenString, TokenBareStr, TokenIdent:
+		return Str(tok.Value), nil
+	case TokenTrue:
+		return Bool(true), nil
+	case TokenFalse:
+		return Bool(false), nil
+	case TokenNull:
+		return Null(), nil
+	case TokenRef:
+		// ^prefix:value
+		prefix, value := "", tok.Value
+		for i := 0; i < len(tok.Value); i++ {
+			if tok.Value[i] == ':' {
+				prefix = tok.Value[:i]
+				value = tok.Value[i+1:]
+				break
+			}
+		}
+		return ID(prefix, value), nil
+	case TokenTime:
+		for _, format := range []string{time.RFC3339, time.RFC3339Nano, "2006-01-02T15:04:05Z", "2006-01-02"} {
+			if t, err := time.Parse(format, tok.Value); err == nil {
+				return Time(t), nil
+			}
+		}
+		return nil, fmt.Errorf("invalid @default time %q", tok.Value)
+	default:
+		return nil, fmt.Errorf("unsupported @default value token %s", tok.Type)
+	}
 }
 
 func (p *schemaParser) parseTypeSpec() (TypeSpec, error) {
@@ -885,13 +1005,10 @@ func (p *schemaParser) parseConstraint() (Constraint, error) {
 		}
 
 	case TokenInt, TokenFloat:
-		// Range constraint: [0..10] or [min=0 max=10]
+		// Range constraint: [0..10]
 		v1, err := strconv.ParseFloat(tok.Value, 64)
 		p.stream.Advance()
-		// Check for ..
-		if err == nil && (p.stream.Peek().Value == ".." || (p.stream.Peek().Type == TokenIdent)) {
-			// Skip ..
-			p.stream.Advance()
+		if err == nil && p.stream.Match(TokenDotDot) {
 			v2Tok := p.stream.Advance()
 			if v2, err := strconv.ParseFloat(v2Tok.Value, 64); err == nil {
 				constraint = RangeConstraint(v1, v2)
