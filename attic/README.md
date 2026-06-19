@@ -13,6 +13,11 @@ not maintained for parity with the core codec.
 - (subsequent commits) `blob_pool/` — Blob and Pool subsystems across Go,
   Python, JS, Rust. Removed from the lead-path types and emitter; sources
   preserved here for reference.
+- (subsequent commits) `rust/glyph-codec/` — Rust port. Emit-only, fixed but
+  not shipped. Not a conformance port; not published to crates.io. Preserved
+  for reference.
+- (subsequent commits) `c/glyph-codec/` — C port. Emit-only, fixed but not
+  shipped. Not a conformance port. Preserved for reference.
 
 ## Reviving
 

@@ -8,11 +8,12 @@ SRC_DIR = src
 INCLUDE_DIR = include
 BUILD_DIR = build
 
-SRCS = $(SRC_DIR)/glyph.c $(SRC_DIR)/json.c $(SRC_DIR)/decimal128.c $(SRC_DIR)/schema_evolution.c $(SRC_DIR)/stream_validator.c
-OBJS = $(BUILD_DIR)/glyph.o $(BUILD_DIR)/json.o $(BUILD_DIR)/decimal128.o $(BUILD_DIR)/schema_evolution.o $(BUILD_DIR)/stream_validator.o
+SRCS = $(SRC_DIR)/glyph.c $(SRC_DIR)/json.c $(SRC_DIR)/decimal128.c $(SRC_DIR)/schema_evolution.c $(SRC_DIR)/stream_validator.c $(SRC_DIR)/sha256.c
+OBJS = $(BUILD_DIR)/glyph.o $(BUILD_DIR)/json.o $(BUILD_DIR)/decimal128.o $(BUILD_DIR)/schema_evolution.o $(BUILD_DIR)/stream_validator.o $(BUILD_DIR)/sha256.o
 
 LIB = $(BUILD_DIR)/libglyph.a
 TEST = $(BUILD_DIR)/test_glyph
+TEST_TRUTH = $(BUILD_DIR)/test_truth_table
 
 .PHONY: all clean test coverage
 
@@ -36,14 +37,21 @@ $(BUILD_DIR)/schema_evolution.o: $(SRC_DIR)/schema_evolution.c $(INCLUDE_DIR)/sc
 $(BUILD_DIR)/stream_validator.o: $(SRC_DIR)/stream_validator.c $(INCLUDE_DIR)/stream_validator.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/sha256.o: $(SRC_DIR)/sha256.c $(INCLUDE_DIR)/sha256.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(LIB): $(OBJS)
 	ar rcs $@ $^
 
 $(TEST): test/test_glyph.c $(LIB)
 	$(CC) $(CFLAGS) $< -L$(BUILD_DIR) -lglyph $(LDFLAGS) -o $@
 
-test: $(TEST)
+$(TEST_TRUTH): test/test_truth_table.c $(LIB)
+	$(CC) $(CFLAGS) $< -L$(BUILD_DIR) -lglyph $(LDFLAGS) -o $@
+
+test: $(TEST) $(TEST_TRUTH)
 	./$(TEST)
+	./$(TEST_TRUTH)
 
 coverage: CFLAGS = -Wall -Wextra -std=c11 -O0 -I./include -fprofile-arcs -ftest-coverage
 coverage: LDFLAGS += -lgcov

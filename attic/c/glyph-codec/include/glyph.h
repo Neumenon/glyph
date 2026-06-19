@@ -219,7 +219,7 @@ char *glyph_canonicalize_loose_with_opts(const glyph_value_t *v, const glyph_can
 /** Get fingerprint (same as canonicalize). Returns malloc'd string. */
 char *glyph_fingerprint_loose(const glyph_value_t *v);
 
-/** Get SHA-256 hash (first 16 hex chars). Returns malloc'd string. */
+/** Get SHA-256-derived hash: first 16 hex chars of SHA-256(canonical form). Returns malloc'd string. */
 char *glyph_hash_loose(const glyph_value_t *v);
 
 /** Check if two values are equal */

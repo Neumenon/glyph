@@ -155,14 +155,17 @@ fn test_hash_loose() {
     let gv = from_json(&json!({"test": "value"}));
     let h = hash_loose(&gv).unwrap();
 
-    assert_eq!(h.len(), 16); // 8 bytes = 16 hex chars
+    assert_eq!(h.len(), 64); // SHA-256 = 32 bytes = 64 hex chars
+    // Must be all hex characters
+    assert!(h.chars().all(|c| c.is_ascii_hexdigit()), "hash must be hex: {}", h);
 }
 
 #[test]
 fn test_unicode() {
+    // Per spec, bare-safe is [a-zA-Z0-9._-] only; unicode is not bare-safe and must be quoted.
     let gv = GValue::str("你好世界");
     let result = canonicalize_loose(&gv).unwrap();
-    assert_eq!(result, "你好世界");
+    assert_eq!(result, "\"你好世界\"");
 }
 
 #[test]
@@ -207,7 +210,7 @@ fn test_opts_llm() {
     let opts = LooseCanonOpts::llm();
     assert!(opts.auto_tabular);
     assert_eq!(opts.min_rows, 3);
-    assert_eq!(opts.max_cols, 64);
+    assert_eq!(opts.max_cols, 20);
     assert!(opts.allow_missing);
     assert_eq!(opts.null_style, NullStyle::Underscore);
 }

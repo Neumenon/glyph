@@ -1,3 +1,6 @@
+> **PARKED: emit-only Rust port, not a conformance port (no GLYPH text
+> parser, no patch/GS1/pack). Lives in attic/. Kept for reference.**
+
 # GLYPH Codec - Rust
 
 Rust implementation of the GLYPH codec.
@@ -42,9 +45,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - loose-mode canonicalization
 - JSON bridge
-- 16-hex hash helper plus canonical-form fingerprint helper
+- 64-hex SHA-256 fingerprint (`hash_loose` / `fingerprint_loose`): hashes the
+  no-tabular canonical form and returns the full 64-character hex digest,
+  matching Go/Python/JS `FingerprintLoose` semantics
 - schema evolution helpers
 - streaming validator
+
+**Known limitation — float formatting**: this port formats floats with a
+hand-rolled decimal/exponential printer that may diverge from the canonical
+shortest-roundtrip representation used by the Go, Python, and JS ports. Float
+formatting unification is deferred and out of scope for this port.
 
 This crate is currently best read as the Rust codec implementation, not as the full spec surface for every GLYPH feature described elsewhere in the repo.
 
