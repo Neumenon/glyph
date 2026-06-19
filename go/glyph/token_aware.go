@@ -285,6 +285,11 @@ var CombinedDict = func() *KeyDict {
 // ============================================================
 
 // EmitTokenAware converts a GValue to token-optimized GLYPH-T text.
+//
+// DEPRECATED / EXPERIMENTAL: zero production callers. It is not one of the two
+// supported emitter layers — use Loose (CanonicalizeLoose, LLM-facing) or Typed
+// (Emit, schema-bound) instead. Kept for experimentation; may change or be
+// removed. See PARITY_ROADMAP.md (P4).
 func EmitTokenAware(v *GValue) string {
 	return EmitTokenAwareWithOptions(v, DefaultTokenAwareOptions())
 }

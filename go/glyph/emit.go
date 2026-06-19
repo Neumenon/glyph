@@ -373,6 +373,12 @@ func sortMapEntries(entries []MapEntry) []MapEntry {
 // ============================================================
 
 // CanonicalHash returns a hash of the canonical representation.
+//
+// DEPRECATED / EXPERIMENTAL: zero production callers, and the non-cryptographic
+// FNV-1a digest here is not the canonical fingerprint. Use FingerprintLoose
+// (SHA-256 over the Loose canonical form, cross-language stable) for hashing/
+// deduplication. Kept for experimentation; may change or be removed.
+// See PARITY_ROADMAP.md (P4).
 func CanonicalHash(v *GValue) string {
 	opts := EmitOptions{
 		UseWireKeys: false,
