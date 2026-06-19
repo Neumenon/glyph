@@ -72,8 +72,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.fingerprintLoose = exports.canonicalizeLooseWithOpts = exports.canonicalizeLooseNoTabular = exports.canonicalizeLoose = exports.mapKeySeg = exports.listIdxSeg = exports.fieldSeg = exports.parsePathToSegs = exports.applyPatch = exports.parsePatch = exports.emitPatch = exports.PatchBuilder = exports.parseHeader = exports.parseTabular = exports.parsePacked = exports.emitHeader = exports.emitV2 = exports.emitTabular = exports.emitPacked = exports.emit = exports.normalizeJson = exports.stringifyJson = exports.parseJson = exports.toJson = exports.fromJson = exports.t = exports.SchemaBuilder = exports.Schema = exports.resolvePoolRefs = exports.parseDocument = exports.splitDocument = exports.parsePool = exports.emitPool = exports.parsePoolRef = exports.isPoolRefId = exports.ParsePoolError = exports.PoolRegistry = exports.PoolKind = exports.Pool = exports.ParseBlobError = exports.MemoryBlobRegistry = exports.parseBlobRef = exports.emitBlob = exports.blobHash = exports.blobAlgorithm = exports.blobFromContent = exports.computeCid = exports.field = exports.g = exports.GValue = void 0;
-exports.defaultToolRegistry = exports.DEFAULT_MAX_ERRORS = exports.DEFAULT_MAX_FIELDS = exports.DEFAULT_MAX_BUFFER = exports.ErrorCode = exports.ValidatorState = exports.ToolRegistry = exports.StreamingValidator = exports.versionedSchema = exports.formatVersionHeader = exports.parseVersionHeader = exports.compareVersions = exports.EvolutionMode = exports.EvolvingField = exports.VersionSchema = exports.VersionedSchema = exports.parseDecimalLiteral = exports.isDecimalLiteral = exports.decimal = exports.DecimalError = exports.Decimal128 = exports.stream = exports.parseTabularLooseHeaderWithMeta = exports.parseSchemaHeader = exports.buildKeyDictFromValue = exports.canonicalizeLooseWithSchema = exports.llmLooseCanonOpts = exports.noTabularLooseCanonOpts = exports.defaultLooseCanonOpts = exports.unescapeTabularCell = exports.parseTabularLoose = exports.jsonEqual = exports.stringifyJsonLoose = exports.parseJsonLoose = exports.toJsonLoose = exports.fromJsonLoose = exports.equalLoose = void 0;
+exports.decimal = exports.DecimalError = exports.Decimal128 = exports.stream = exports.parseTabularLooseHeaderWithMeta = exports.parseSchemaHeader = exports.buildKeyDictFromValue = exports.canonicalizeLooseWithSchema = exports.llmLooseCanonOpts = exports.noTabularLooseCanonOpts = exports.defaultLooseCanonOpts = exports.unescapeTabularCell = exports.parseTabularLoose = exports.jsonEqual = exports.stringifyJsonLoose = exports.parseJsonLoose = exports.toJsonLoose = exports.fromJsonLoose = exports.equalLoose = exports.fingerprintLoose = exports.canonicalizeLooseWithOpts = exports.canonicalizeLooseNoTabular = exports.canonicalizeLoose = exports.mapKeySeg = exports.listIdxSeg = exports.fieldSeg = exports.parsePathToSegs = exports.applyPatch = exports.parsePatch = exports.emitPatch = exports.PatchBuilder = exports.parseHeader = exports.parseTabular = exports.parsePacked = exports.emitHeader = exports.emitV2 = exports.emitTabular = exports.emitPacked = exports.emit = exports.normalizeJson = exports.stringifyJson = exports.parseJson = exports.toJson = exports.fromJson = exports.t = exports.SchemaBuilder = exports.Schema = exports.field = exports.g = exports.GValue = void 0;
+exports.defaultToolRegistry = exports.DEFAULT_MAX_ERRORS = exports.DEFAULT_MAX_FIELDS = exports.DEFAULT_MAX_BUFFER = exports.ErrorCode = exports.ValidatorState = exports.ToolRegistry = exports.StreamingValidator = exports.versionedSchema = exports.formatVersionHeader = exports.parseVersionHeader = exports.compareVersions = exports.EvolutionMode = exports.EvolvingField = exports.VersionSchema = exports.VersionedSchema = exports.parseDecimalLiteral = exports.isDecimalLiteral = void 0;
 exports.jsonToPacked = jsonToPacked;
 exports.jsonToTabular = jsonToTabular;
 exports.jsonToLyph = jsonToLyph;
@@ -84,29 +84,6 @@ var types_1 = require("./types");
 Object.defineProperty(exports, "GValue", { enumerable: true, get: function () { return types_1.GValue; } });
 Object.defineProperty(exports, "g", { enumerable: true, get: function () { return types_1.g; } });
 Object.defineProperty(exports, "field", { enumerable: true, get: function () { return types_1.field; } });
-// Blob (content-addressed references)
-var blob_1 = require("./blob");
-Object.defineProperty(exports, "computeCid", { enumerable: true, get: function () { return blob_1.computeCid; } });
-Object.defineProperty(exports, "blobFromContent", { enumerable: true, get: function () { return blob_1.blobFromContent; } });
-Object.defineProperty(exports, "blobAlgorithm", { enumerable: true, get: function () { return blob_1.blobAlgorithm; } });
-Object.defineProperty(exports, "blobHash", { enumerable: true, get: function () { return blob_1.blobHash; } });
-Object.defineProperty(exports, "emitBlob", { enumerable: true, get: function () { return blob_1.emitBlob; } });
-Object.defineProperty(exports, "parseBlobRef", { enumerable: true, get: function () { return blob_1.parseBlobRef; } });
-Object.defineProperty(exports, "MemoryBlobRegistry", { enumerable: true, get: function () { return blob_1.MemoryBlobRegistry; } });
-Object.defineProperty(exports, "ParseBlobError", { enumerable: true, get: function () { return blob_1.ParseBlobError; } });
-// Pool (deduplication)
-var pool_1 = require("./pool");
-Object.defineProperty(exports, "Pool", { enumerable: true, get: function () { return pool_1.Pool; } });
-Object.defineProperty(exports, "PoolKind", { enumerable: true, get: function () { return pool_1.PoolKind; } });
-Object.defineProperty(exports, "PoolRegistry", { enumerable: true, get: function () { return pool_1.PoolRegistry; } });
-Object.defineProperty(exports, "ParsePoolError", { enumerable: true, get: function () { return pool_1.ParsePoolError; } });
-Object.defineProperty(exports, "isPoolRefId", { enumerable: true, get: function () { return pool_1.isPoolRefId; } });
-Object.defineProperty(exports, "parsePoolRef", { enumerable: true, get: function () { return pool_1.parsePoolRef; } });
-Object.defineProperty(exports, "emitPool", { enumerable: true, get: function () { return pool_1.emitPool; } });
-Object.defineProperty(exports, "parsePool", { enumerable: true, get: function () { return pool_1.parsePool; } });
-Object.defineProperty(exports, "splitDocument", { enumerable: true, get: function () { return pool_1.splitDocument; } });
-Object.defineProperty(exports, "parseDocument", { enumerable: true, get: function () { return pool_1.parseDocument; } });
-Object.defineProperty(exports, "resolvePoolRefs", { enumerable: true, get: function () { return pool_1.resolvePoolRefs; } });
 // Schema
 var schema_1 = require("./schema");
 Object.defineProperty(exports, "Schema", { enumerable: true, get: function () { return schema_1.Schema; } });
@@ -222,13 +199,22 @@ function jsonToLyph(json, schema, options = {}) {
 // Token Counting Utilities
 // ============================================================
 /**
- * Estimate token count for a string (simple whitespace-based estimate)
+ * Estimate token count for a string (simple whitespace-based estimate).
+ *
+ * @deprecated This is NOT a real tokenizer — it splits on whitespace and
+ * produces wildly inaccurate counts (e.g. -733% reported savings) because
+ * GLYPH emits dense, whitespace-free output while JSON is whitespace-free
+ * when stringified. Use a proper BPE tokenizer (e.g. tiktoken) instead.
  */
 function estimateTokens(s) {
     return s.split(/\s+/).filter(Boolean).length;
 }
 /**
- * Compare token counts between JSON and GLYPH representations
+ * Compare token counts between JSON and GLYPH representations.
+ *
+ * @deprecated Relies on {@link estimateTokens} which is not a real tokenizer.
+ * The savingsPercent value is not meaningful. Use a proper BPE tokenizer
+ * (e.g. tiktoken) for accurate token comparisons.
  */
 function compareTokens(json, schema, options = {}) {
     const jsonStr = JSON.stringify(json);

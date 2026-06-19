@@ -33,7 +33,7 @@ External APIs / tools / model structured output
 - a packed / tabular representation for repeated records
 - a patch / delta substrate that verifies against base fingerprints
 - a stream framing protocol (GS1) for long-running agent workflows
-- cross-language: Go, Python, JavaScript / TypeScript, Rust, C
+- cross-language conformance: Go, Python, JavaScript / TypeScript (Rust and C parked in attic/; emit-only)
 
 ## What GLYPH is not
 
@@ -86,8 +86,10 @@ Poor fits:
 | Python | `pip install glyph-py` | [Python README](./py/README.md) |
 | Go | `go get github.com/Neumenon/glyph` | [Go README](./go/README.md) |
 | JavaScript / TypeScript | `npm install cowrie-glyph` | [JS README](./js/README.md) |
-| Rust | `cargo add glyph-rs` | [Rust README](./rust/glyph-codec/README.md) |
-| C | build from source | [C README](./c/glyph-codec/README.md) |
+| Rust | parked in `attic/rust/glyph-codec/` — emit-only, not published | [Rust README](./attic/rust/glyph-codec/README.md) |
+| C | parked in `attic/c/glyph-codec/` — emit-only, build from source | [C README](./attic/c/glyph-codec/README.md) |
+
+> **Note:** Rust and C ports are parked in `attic/`. They emit canonical GLYPH-Loose but are not conformance ports (no text parser, no patch/GS1/pack). They are not published; `cargo add glyph-rs` is not a valid install path.
 
 ## Examples
 
@@ -113,7 +115,7 @@ fp = glyph.fingerprint_loose(glyph.parse("{a=1 b=2}"))
 # f35719430d98a2fe1336b584d828e31c0e2182c1b4c8464f75a03b38418ec9a7
 ```
 
-The same input produces the same 64-char hex digest in the Go, Python, and JavaScript / TypeScript implementations. Use it for state caching, deduplication, and patch base verification when both sides use the same fingerprint helper.
+The same input produces the same 64-char hex digest in the Go, Python, and JavaScript / TypeScript implementations (including null-containing values). Use it for state caching, deduplication, and patch base verification when both sides use the same fingerprint helper.
 
 ### 3. Repeated records — tabular packing
 
@@ -149,14 +151,14 @@ Repeated keys are emitted once. The savings show up exactly where agent traces h
 
 A receiver applies the patch only if its current state's fingerprint matches `base`. Mismatched bases fail explicitly instead of silently corrupting state.
 
-### 5. Stream frame (GS1)
+### 5. Stream frame (GS1) — Go and JS only
 
 ```glyph
 @frame{v=1 sid=42 seq=7 kind=patch len=128 base=sha256:abc...}
 <patch payload>
 ```
 
-Length-delimited, sequence-numbered, kind-tagged frames carry `doc`, `row`, `patch`, `ui`, `ack`, `err`, `ping`, and `pong` payloads over a single stream.
+Length-delimited, sequence-numbered, kind-tagged frames carry `doc`, `row`, `patch`, `ui`, `ack`, `err`, `ping`, and `pong` payloads over a single stream. GS1 framing is implemented in Go and JavaScript / TypeScript only.
 
 ## Why not just JSON?
 
@@ -187,9 +189,10 @@ These hold across the conformance-tested implementation surface:
 parse(emit(x))           = x
 emit(parse(s))           = canonical(s)
 fingerprint(x)           = SHA256(canonical_no_tabular_bytes(x))  # Go/Python/JS value identity
-patch applies            iff current_fingerprint == patch.base
+patch.base               records the fingerprint of the base state; GS1 cursor layer enforces
+                         base matching on the stream; standalone ApplyPatch does NOT verify
 JSON ↔ GLYPH             preserves JSON-domain meaning
-conformance impls        agree byte-for-byte on canonical form for the shared corpus
+conformance impls        (Go/Python/JS) agree byte-for-byte on canonical form for the shared corpus
 ```
 
 If you find a case where any of these break, that is a spec-level bug — please file it.
@@ -209,8 +212,8 @@ If you find a case where any of these break, that is a spec-level bug — please
 - [Python](./py/README.md)
 - [Go](./go/README.md)
 - [JavaScript / TypeScript](./js/README.md)
-- [Rust](./rust/glyph-codec/README.md)
-- [C](./c/glyph-codec/README.md)
+- [Rust (attic — parked)](./attic/rust/glyph-codec/README.md)
+- [C (attic — parked)](./attic/c/glyph-codec/README.md)
 
 ### Examples and history
 - [Research Reports](./docs/reports/README.md) — dated benchmark snapshots
@@ -224,8 +227,7 @@ glyph/
 ├── go/      Go implementation
 ├── py/      Python implementation
 ├── js/      JavaScript / TypeScript implementation
-├── rust/    Rust implementation
-├── c/       C implementation
+├── attic/   parked material (rust/glyph-codec, c/glyph-codec, agents, blob_pool)
 └── tests/   cross-implementation parity fixtures
 ```
 

@@ -121,7 +121,7 @@ The streaming validator enables incremental validation of GLYPH tool calls as to
 
 ### JavaScript
 ```typescript
-import { StreamingValidator, ToolRegistry, defaultToolRegistry } from 'glyph-codec';
+import { StreamingValidator, ToolRegistry, defaultToolRegistry } from 'cowrie-glyph';
 
 // Use default tools
 const registry = defaultToolRegistry();
@@ -233,4 +233,4 @@ All implementations have comprehensive test coverage including:
   - Added Unicode null (∅) support
   - Added `getParsed()` method
   - Added tool name before brace syntax support
-  - Added comprehensive test suite (59 tests)
+  - Added comprehensive test suite

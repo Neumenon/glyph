@@ -1,3 +1,5 @@
+> **Historical note:** The pool/blob subsystem (GLYPH+Pool) referenced in this report is PARKED in `attic/` and is not part of the current product surface. Numbers involving GLYPH+Pool are historical.
+
 # GLYPH vs TOON vs ZON: Comprehensive Codec Benchmark Report
 
 **Date:** December 25, 2024

@@ -1,8 +1,10 @@
 /**
- * Truth table tests for glyph - 12 cases from truth_cases.json.
+ * Truth table tests for glyph - 12 cases from truth_cases.json,
+ * plus decimal128 carry-path tests for u128_mul10.
  */
 
 #include "glyph.h"
+#include "decimal128.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -171,6 +173,47 @@ TEST(truth_null_canonical_form) {
 }
 
 /* ============================================================
+ * decimal128 u128_mul10 carry-path tests
+ *
+ * u128_mul10 is static; we test it indirectly via from_string/to_string
+ * round-trips on values that require carry from the low 64-bit limb
+ * into the high 64-bit limb (i.e., values >= 2^64 / 10 ≈ 1.8e18).
+ * ============================================================ */
+
+/*
+ * A 19-digit value: 9999999999999999999 (< 2^64 but forces carry during
+ * the digit loop because each successive mul10+add digit can push the
+ * accumulated value above UINT64_MAX).
+ * from_string → to_string must round-trip exactly.
+ */
+TEST(u128_mul10_carry_19digit) {
+    const char *input = "9999999999999999999";
+    decimal128_t d;
+    ASSERT_TRUE(decimal128_from_string(input, &d) == DECIMAL_OK);
+    char *s = decimal128_to_string(&d);
+    ASSERT_TRUE(s != NULL);
+    ASSERT_STR_EQ(input, s);
+    free(s);
+}
+
+/*
+ * UINT64_MAX = 18446744073709551615 (20 digits).
+ * Parsing this requires carry into coef_high during the last few digits.
+ * The previously broken carry calculation returned high=24 for this value;
+ * the fixed __uint128_t path must return high=0 (it fits exactly in 64 bits
+ * as an intermediate), and the final coefficient should be UINT64_MAX itself.
+ */
+TEST(u128_mul10_carry_uint64max) {
+    const char *input = "18446744073709551615";
+    decimal128_t d;
+    ASSERT_TRUE(decimal128_from_string(input, &d) == DECIMAL_OK);
+    char *s = decimal128_to_string(&d);
+    ASSERT_TRUE(s != NULL);
+    ASSERT_STR_EQ(input, s);
+    free(s);
+}
+
+/* ============================================================
  * Main
  * ============================================================ */
 
@@ -189,6 +232,10 @@ int main(void) {
     RUN_TEST(truth_bare_string_safe);
     RUN_TEST(truth_string_with_spaces_quoted);
     RUN_TEST(truth_null_canonical_form);
+
+    printf("\n--- decimal128 carry-path ---\n");
+    RUN_TEST(u128_mul10_carry_19digit);
+    RUN_TEST(u128_mul10_carry_uint64max);
 
     printf("\n===================\n");
     printf("Results: %d passed, %d failed\n", tests_passed, tests_failed);

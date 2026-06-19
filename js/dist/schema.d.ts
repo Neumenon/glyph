@@ -57,7 +57,8 @@ export declare class Schema {
      */
     optionalFieldsByFid(typeName: string): FieldDef[];
     /**
-     * Compute schema hash
+     * Compute schema hash (SHA-256, first 16 bytes = 32 hex chars).
+     * Matches Go schema.go:238 (sha256.Sum256[:16] → hex.EncodeToString).
      */
     computeHash(): string;
     /**

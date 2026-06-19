@@ -30,6 +30,9 @@ func (r *ParseResult) HasErrors() bool {
 	return len(r.Errors) > 0
 }
 
+// maxParseDepth is the maximum nesting depth allowed by the recursive parser.
+const maxParseDepth = 128
+
 // Parser parses GLYPH-T text into GValues.
 type Parser struct {
 	stream   *TokenStream
@@ -37,6 +40,7 @@ type Parser struct {
 	errors   []ParseError
 	warnings []ParseError
 	tolerant bool // Enable tolerant parsing mode
+	depth    int  // Current recursive descent depth
 }
 
 // ParseOptions configures the parser behavior.
@@ -95,6 +99,16 @@ func ParseWithOptions(input string, opts ParseOptions) (*ParseResult, error) {
 
 // parseValue parses any value.
 func (p *Parser) parseValue() *GValue {
+	p.depth++
+	defer func() { p.depth-- }()
+	// p.depth counts every value frame, including the top-level value and the
+	// innermost leaf; the nesting depth (enclosing containers) is p.depth-1.
+	if p.depth-1 > maxParseDepth {
+		tok := p.stream.Peek()
+		p.addError(tok.Pos, "max nesting depth %d exceeded", maxParseDepth)
+		return nil
+	}
+
 	tok := p.stream.Peek()
 
 	switch tok.Type {

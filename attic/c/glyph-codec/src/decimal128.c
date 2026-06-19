@@ -51,21 +51,10 @@ static bool u128_is_zero(uint64_t high, uint64_t low) {
 
 /* Multiply 128-bit by 10 */
 static void u128_mul10(uint64_t *high, uint64_t *low) {
-    /* Split into 32-bit parts for overflow-safe multiplication */
-    uint64_t l = *low;
-    uint64_t h = *high;
-
-    uint64_t new_low = l * 10;
-    uint64_t overflow = 0;
-
-    /* Check for overflow in low multiplication */
-    if (l > UINT64_MAX / 10) {
-        /* Calculate overflow using high part */
-        overflow = (l >> 60) + ((l & 0x0FFFFFFFFFFFFFFFULL) * 10 >> 60);
-    }
-
-    *low = new_low;
-    *high = h * 10 + overflow;
+    __uint128_t val = ((__uint128_t)(*high) << 64) | (*low);
+    val *= 10;
+    *high = (uint64_t)(val >> 64);
+    *low  = (uint64_t)val;
 }
 
 /* Divide 128-bit by 10, return remainder */

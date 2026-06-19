@@ -9,8 +9,8 @@ Get a verified feel for the codec in a few minutes.
 | Python | `pip install glyph-py` |
 | Go | `go get github.com/Neumenon/glyph` |
 | JavaScript / TypeScript | `npm install cowrie-glyph` |
-| Rust | `cargo add glyph-rs` |
-| C | build from `../c/glyph-codec/` |
+| Rust | parked in `attic/rust/glyph-codec/` — not published |
+| C | parked in `attic/c/glyph-codec/` — build from source |
 
 ## Python
 
@@ -64,24 +64,6 @@ const value = fromJsonLoose({
 
 console.log(canonicalizeLoose(value));
 // {action=search limit=5 query="glyph codec"}
-```
-
-## Rust
-
-```rust
-use glyph_rs::{from_json, canonicalize_loose};
-use serde_json::json;
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let value = from_json(&json!({
-        "action": "search",
-        "query": "glyph codec",
-        "limit": 5
-    }));
-
-    println!("{}", canonicalize_loose(&value)?);
-    Ok(())
-}
 ```
 
 ## What To Read Next

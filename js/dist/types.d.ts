@@ -3,22 +3,10 @@
  *
  * GValue is the universal value type for GLYPH/GGLYPH data.
  */
-export type GType = 'null' | 'bool' | 'int' | 'float' | 'str' | 'bytes' | 'time' | 'id' | 'list' | 'map' | 'struct' | 'sum' | 'blob' | 'poolRef';
+export type GType = 'null' | 'bool' | 'int' | 'float' | 'str' | 'bytes' | 'time' | 'id' | 'list' | 'map' | 'struct' | 'sum';
 export interface RefID {
     prefix: string;
     value: string;
-}
-export interface BlobRef {
-    cid: string;
-    mime: string;
-    bytes: number;
-    name?: string;
-    caption?: string;
-    preview?: string;
-}
-export interface PoolRef {
-    poolId: string;
-    index: number;
 }
 export interface MapEntry {
     key: string;
@@ -48,8 +36,6 @@ export declare class GValue {
     private _map?;
     private _struct?;
     private _sum?;
-    private _blob?;
-    private _poolRef?;
     private constructor();
     static null(): GValue;
     static bool(v: boolean): GValue;
@@ -64,8 +50,6 @@ export declare class GValue {
     static map(...entries: MapEntry[]): GValue;
     static struct(typeName: string, ...fields: MapEntry[]): GValue;
     static sum(tag: string, value: GValue | null): GValue;
-    static blob(ref: BlobRef): GValue;
-    static poolRef(poolId: string, index: number): GValue;
     isNull(): boolean;
     asBool(): boolean;
     asInt(): number;
@@ -78,8 +62,6 @@ export declare class GValue {
     asMap(): MapEntry[];
     asStruct(): StructValue;
     asSum(): SumValue;
-    asBlob(): BlobRef;
-    asPoolRef(): PoolRef;
     /**
      * Get numeric value as number (works for int or float)
      */
@@ -126,8 +108,6 @@ export declare const g: {
     map: typeof GValue.map;
     struct: typeof GValue.struct;
     sum: typeof GValue.sum;
-    blob: typeof GValue.blob;
-    poolRef: typeof GValue.poolRef;
     field: typeof field;
 };
 //# sourceMappingURL=types.d.ts.map

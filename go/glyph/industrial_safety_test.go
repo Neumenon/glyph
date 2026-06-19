@@ -90,6 +90,40 @@ func TestIndustrial_DeepNesting_Struct(t *testing.T) {
 	}
 }
 
+// TestParseDepthLimit verifies that input nested past maxParseDepth returns a
+// parse error (not a panic or OOM). The limit is 128 levels deep.
+func TestParseDepthLimit(t *testing.T) {
+	// depth exactly at the limit should succeed
+	var ok strings.Builder
+	for i := 0; i < maxParseDepth; i++ {
+		ok.WriteString("{a: ")
+	}
+	ok.WriteString("1")
+	for i := 0; i < maxParseDepth; i++ {
+		ok.WriteString("}")
+	}
+	res, _ := Parse(ok.String())
+	if res.HasErrors() {
+		t.Errorf("depth %d (at limit) should not produce parse errors; got: %v", maxParseDepth, res.Errors)
+	}
+
+	// depth one past the limit must produce a parse error
+	var over strings.Builder
+	for i := 0; i < maxParseDepth+1; i++ {
+		over.WriteString("{a: ")
+	}
+	over.WriteString("1")
+	for i := 0; i < maxParseDepth+1; i++ {
+		over.WriteString("}")
+	}
+	mustNotPanic(t, func() {
+		res, _ := Parse(over.String())
+		if !res.HasErrors() {
+			t.Error("depth exceeded maxParseDepth but no parse error returned")
+		}
+	})
+}
+
 func TestIndustrial_DeepNesting_Emit(t *testing.T) {
 	var v *GValue = Int(42)
 	for i := 0; i < 1000; i++ {

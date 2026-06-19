@@ -23,7 +23,7 @@ GLYPH has two main specifications:
 - Deterministic canonical form
 - Cross-language parity
 
-**2. GS1 Stream** - Frame protocol for multiplexed streaming
+**2. GS1 Stream** - Frame protocol for multiplexed streaming (Go and JS only)
 - Transport-agnostic (TCP, WebSocket, SSE, pipes)
 - CRC-32 integrity checking
 - SHA-256 state verification
@@ -198,9 +198,11 @@ hash = glyph.fingerprint_loose(glyph.from_json(data))
 ```
 
 **Properties:**
-- Same data → same hash in Go/Python/JS value-identity helpers
+- Same data → same hash in Go/Python/JS value-identity helpers (including null-containing values)
 - Different data → different hash (collision-resistant)
 - Used for state verification and patch safety
+
+> **Known open divergence:** Float canonicalization is not yet fully unified across implementations. Go uses shortest-roundtrip; Python and JS use a threshold-based rule. Outputs agree for common values but may differ at edge-case float boundaries. This is unresolved.
 
 ---
 
@@ -319,31 +321,22 @@ Receiver MUST NOT apply patch if `receiverStateHash != base`.
 - Emit an `err` frame, OR
 - Emit an `ack` with failure payload
 
-**Example:**
+**Example (pseudocode — GS1 framing is Go/JS only; hash logic shown for clarity):**
 ```python
 import glyph
 import hashlib
 
-# Sender side
+# Sender: compute base hash using GLYPH canonical bytes
 current_state = {"user": "alice", "count": 5}
 state_bytes = glyph.json_to_glyph(current_state).encode("utf-8")
 base_hash = hashlib.sha256(state_bytes).hexdigest()
+# base=sha256:<base_hash> is embedded in the GS1 frame header by the Go/JS GS1 writer
 
-patch = {"count": 6}
-frame = {
-    "v": 1,
-    "sid": 1,
-    "seq": 10,
-    "kind": "patch",
-    "base": f"sha256:{base_hash}",
-    "payload": glyph.json_to_glyph(patch),
-}
-
-# Receiver side
+# Receiver: recompute and compare
 receiver_bytes = glyph.json_to_glyph(receiver_state).encode("utf-8")
 receiver_hash = hashlib.sha256(receiver_bytes).hexdigest()
-if f"sha256:{receiver_hash}" == frame["base"]:
-    apply_patch(frame["payload"])
+if receiver_hash == base_hash:
+    apply_patch(patch_payload)
 else:
     request_snapshot()  # State diverged
 ```
@@ -439,7 +432,7 @@ status enum[pending,active,complete]
 6. Accept any valid JSON as input
 7. Produce valid JSON as output
 
-**GS1 Streaming:**
+**GS1 Streaming (Go and JS only):**
 1. Parse frame headers correctly
 2. Read payload using `len`, not delimiters
 3. Verify CRC-32 if present
@@ -449,7 +442,7 @@ status enum[pending,active,complete]
 
 ### Cross-Language Compatibility
 
-All implementations MUST produce byte-identical canonical forms.
+The conformance surface is **Go, Python, and JavaScript / TypeScript**. These three implementations MUST produce byte-identical canonical forms. Rust and C are parked in `attic/` as emit-only ports; they are not part of the conformance test surface.
 
 **Test corpus:** `testdata/loose_json/` contains 50+ test cases:
 - Deep nesting (10-20 levels)

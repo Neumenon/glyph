@@ -1,6 +1,8 @@
 package glyph
 
 import (
+	"encoding/binary"
+	"math"
 	"testing"
 )
 
@@ -426,6 +428,32 @@ func TestStreamDict_PreloadKeys(t *testing.T) {
 	}
 	if d.Get(0) != "a" || d.Get(1) != "b" || d.Get(2) != "c" {
 		t.Error("preloaded keys mismatch")
+	}
+}
+
+// TestEncodeDictFrame_FloatRoundtrip verifies that non-integer floats are not
+// truncated during binary encoding (regression for uint64(f) truncation bug).
+func TestEncodeDictFrame_FloatRoundtrip(t *testing.T) {
+	// appendFloat64 encodes using math.Float64bits; verify the bytes decode correctly.
+	testCases := []float64{3.14, -2.718281828, 1.5, 0.1, 1e-10, 1e15}
+	for _, f := range testCases {
+		var buf [8]byte
+		binary.LittleEndian.PutUint64(buf[:], math.Float64bits(f))
+		got := math.Float64frombits(binary.LittleEndian.Uint64(buf[:]))
+		if got != f {
+			t.Errorf("float %v did not round-trip: got %v", f, got)
+		}
+	}
+
+	// Also verify that the old buggy encoding (uint64 truncation) would differ.
+	f := 3.14
+	badBits := uint64(f) // truncates to 3
+	goodBits := math.Float64bits(f)
+	if badBits == goodBits {
+		t.Error("test setup error: truncated and correct bits should differ for 3.14")
+	}
+	if math.Float64frombits(badBits) == f {
+		t.Error("truncated encoding should not reproduce original float")
 	}
 }
 

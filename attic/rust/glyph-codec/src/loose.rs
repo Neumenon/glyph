@@ -39,7 +39,7 @@ impl Default for LooseCanonOpts {
         Self {
             auto_tabular: true,
             min_rows: 3,
-            max_cols: 64,
+            max_cols: 20,
             allow_missing: true,
             null_style: NullStyle::Underscore,
         }
@@ -92,22 +92,25 @@ pub fn canonicalize_loose_with_opts(v: &GValue, opts: &LooseCanonOpts) -> Result
     Ok(buf)
 }
 
-/// Get fingerprint (canonical form) of a GValue.
+/// Get the full 64-hex SHA-256 fingerprint of a GValue (no-tabular canonical form).
+///
+/// Matches Go/Python/JS FingerprintLoose semantics: hashes the no-tabular canonical
+/// string and returns the full 64-character hex digest.
 ///
 /// Returns `Err(GlyphError::InvalidFloat)` if the value tree contains NaN or Inf.
 pub fn fingerprint_loose(v: &GValue) -> Result<String, GlyphError> {
-    canonicalize_loose(v)
+    hash_loose(v)
 }
 
-/// Get SHA-256 hash of canonical form (first 16 hex chars).
+/// Get full 64-hex SHA-256 digest of the no-tabular canonical form.
 ///
 /// Returns `Err(GlyphError::InvalidFloat)` if the value tree contains NaN or Inf.
 pub fn hash_loose(v: &GValue) -> Result<String, GlyphError> {
-    let canonical = canonicalize_loose(v)?;
+    let canonical = canonicalize_loose_no_tabular(v)?;
     let mut hasher = Sha256::new();
     hasher.update(canonical.as_bytes());
     let result = hasher.finalize();
-    Ok(hex::encode(&result[..8]))
+    Ok(hex_encode(&result))
 }
 
 /// Check if two GValues are semantically equal.
@@ -209,15 +212,14 @@ fn is_bare_safe(s: &str) -> bool {
     }
 
     // Reserved words
-    let reserved = ["t", "f", "true", "false", "null", "_"];
+    let reserved = ["t", "f", "true", "false", "null", "_", "none", "nil"];
     if reserved.contains(&s) {
         return false;
     }
 
-    // Must contain only safe characters
+    // Must contain only safe characters: [a-zA-Z0-9._-]
     s.chars().all(|c| {
-        c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '/' || c == '@' || c == ':'
-            || (c as u32 > 127) // Allow unicode
+        c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'
     })
 }
 
@@ -453,9 +455,6 @@ fn get_object_values(v: &GValue) -> std::collections::HashMap<String, &GValue> {
     }
 }
 
-// Add hex encoding for hash
-mod hex {
-    pub fn encode(data: &[u8]) -> String {
-        data.iter().map(|b| format!("{:02x}", b)).collect()
-    }
+fn hex_encode(data: &[u8]) -> String {
+    data.iter().map(|b| format!("{:02x}", b)).collect()
 }

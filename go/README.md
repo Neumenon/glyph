@@ -1,6 +1,6 @@
 # GLYPH Go
 
-Go implementation of the GLYPH codec and GS1 stream tooling.
+Go implementation of the GLYPH codec and GS1 stream tooling. Together with Python and JavaScript, Go is one of the three conformance-surface implementations; Rust and C ports are parked in `attic/`.
 
 ## Install
 

@@ -330,6 +330,51 @@ func TestReader_PayloadTooLarge(t *testing.T) {
 	}
 }
 
+// TestReader_VersionEnforcement verifies that GS1-T frames with v != 1
+// are rejected per §3.1 of docs/GS1_SPEC.md.
+func TestReader_VersionEnforcement(t *testing.T) {
+	// v=1 must be accepted
+	valid := "@frame{v=1 sid=0 seq=0 kind=doc len=2}\n{}\n"
+	r := NewReader(strings.NewReader(valid))
+	if _, err := r.Next(); err != nil {
+		t.Errorf("v=1 should be accepted, got error: %v", err)
+	}
+
+	// v=0 must be rejected
+	v0 := "@frame{v=0 sid=0 seq=0 kind=doc len=0}\n\n"
+	r = NewReader(strings.NewReader(v0))
+	_, err := r.Next()
+	if err == nil {
+		t.Error("v=0 should be rejected")
+	}
+
+	// v=2 must be rejected
+	v2 := "@frame{v=2 sid=0 seq=0 kind=doc len=0}\n\n"
+	r = NewReader(strings.NewReader(v2))
+	_, err = r.Next()
+	if err == nil {
+		t.Error("v=2 should be rejected")
+	}
+}
+
+// TestReader_HeaderTooLong verifies that a header line exceeding MaxHeaderSize
+// is rejected without allocating unbounded memory.
+func TestReader_HeaderTooLong(t *testing.T) {
+	// Build a header line longer than MaxHeaderSize without a newline.
+	oversized := make([]byte, MaxHeaderSize+1)
+	copy(oversized, "@frame{v=1 sid=0 seq=0 kind=doc ")
+	for i := 34; i < len(oversized); i++ {
+		oversized[i] = 'x'
+	}
+	// No trailing newline — simulates a line that never terminates within the limit.
+
+	r := NewReader(strings.NewReader(string(oversized)))
+	_, err := r.Next()
+	if err == nil {
+		t.Error("expected error for over-long header line")
+	}
+}
+
 // ============================================================
 // Round-trip Tests
 // ============================================================

@@ -3,6 +3,8 @@
  */
 
 #include "glyph.h"
+#include "sha256.h"
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -476,7 +478,7 @@ static void write_json_value(json_buf_t *buf, const glyph_value_t *v) {
 
         case GLYPH_INT: {
             char num[32];
-            snprintf(num, sizeof(num), "%ld", (long)v->int_val);
+            snprintf(num, sizeof(num), "%" PRId64, v->int_val);
             json_buf_append(buf, num);
             break;
         }
@@ -573,8 +575,12 @@ static void write_json_value(json_buf_t *buf, const glyph_value_t *v) {
             char ts[32];
             time_t t = v->time_val / 1000;
             struct tm *tm = gmtime(&t);
-            strftime(ts, sizeof(ts), "\"%Y-%m-%dT%H:%M:%SZ\"", tm);
-            json_buf_append(buf, ts);
+            if (!tm) {
+                json_buf_append(buf, "\"1970-01-01T00:00:00Z\"");
+            } else {
+                strftime(ts, sizeof(ts), "\"%Y-%m-%dT%H:%M:%SZ\"", tm);
+                json_buf_append(buf, ts);
+            }
             break;
         }
     }
@@ -592,26 +598,27 @@ char *glyph_to_json(const glyph_value_t *v) {
 }
 
 /* ============================================================
- * Hash (simple implementation)
+ * Hash (SHA-256-derived, first 16 hex chars)
  * ============================================================ */
 
-/* Simple SHA-256 implementation would be too long here.
-   For production, link against a crypto library. */
 char *glyph_hash_loose(const glyph_value_t *v) {
     char *canonical = glyph_canonicalize_loose(v);
     if (!canonical) return NULL;
 
-    /* Simple hash for demonstration (not cryptographic!) */
-    unsigned long hash = 5381;
-    for (const char *p = canonical; *p; p++) {
-        hash = ((hash << 5) + hash) + (unsigned char)*p;
-    }
+    sha256_ctx_t ctx;
+    uint8_t digest[SHA256_BLOCK_SIZE];
+    sha256_init(&ctx);
+    sha256_update(&ctx, (const uint8_t *)canonical, strlen(canonical));
+    sha256_final(&ctx, digest);
+    free(canonical);
 
+    /* Return the first 16 hex characters (8 bytes) of the SHA-256 digest */
     char *result = malloc(17);
     if (result) {
-        snprintf(result, 17, "%016lx", hash);
+        snprintf(result, 17,
+                 "%02x%02x%02x%02x%02x%02x%02x%02x",
+                 digest[0], digest[1], digest[2], digest[3],
+                 digest[4], digest[5], digest[6], digest[7]);
     }
-
-    free(canonical);
     return result;
 }

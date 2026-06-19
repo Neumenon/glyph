@@ -37,9 +37,7 @@
  * const backToJson = toJson(team, { includeTypeMarkers: true });
  * ```
  */
-export { GValue, GType, RefID, MapEntry, StructValue, SumValue, BlobRef, PoolRef, g, field, } from './types';
-export { computeCid, blobFromContent, blobAlgorithm, blobHash, emitBlob, parseBlobRef, MemoryBlobRegistry, ParseBlobError, } from './blob';
-export { Pool, PoolKind, PoolRegistry, ParsePoolError, ParsedDocument, isPoolRefId, parsePoolRef, emitPool, parsePool, splitDocument, parseDocument, resolvePoolRefs, } from './pool';
+export { GValue, GType, RefID, MapEntry, StructValue, SumValue, g, field, } from './types';
 export { Schema, SchemaBuilder, TypeDef, FieldDef, TypeSpec, TypeSpecKind, Constraint, VariantDef, t, } from './schema';
 export { fromJson, toJson, parseJson, stringifyJson, normalizeJson, FromJsonOptions, ToJsonOptions, } from './json';
 export { emit, emitPacked, emitTabular, emitV2, emitHeader, EmitOptions, PackedOptions, TabularOptions, HeaderOptions, V2Options, KeyMode, } from './emit';
@@ -68,11 +66,20 @@ export declare function jsonToTabular(json: unknown, schema: Schema, options?: F
  */
 export declare function jsonToLyph(json: unknown, schema: Schema, options?: FromJsonOptions & V2Options): string;
 /**
- * Estimate token count for a string (simple whitespace-based estimate)
+ * Estimate token count for a string (simple whitespace-based estimate).
+ *
+ * @deprecated This is NOT a real tokenizer — it splits on whitespace and
+ * produces wildly inaccurate counts (e.g. -733% reported savings) because
+ * GLYPH emits dense, whitespace-free output while JSON is whitespace-free
+ * when stringified. Use a proper BPE tokenizer (e.g. tiktoken) instead.
  */
 export declare function estimateTokens(s: string): number;
 /**
- * Compare token counts between JSON and GLYPH representations
+ * Compare token counts between JSON and GLYPH representations.
+ *
+ * @deprecated Relies on {@link estimateTokens} which is not a real tokenizer.
+ * The savingsPercent value is not meaningful. Use a proper BPE tokenizer
+ * (e.g. tiktoken) for accurate token comparisons.
  */
 export declare function compareTokens(json: unknown, schema: Schema, options?: FromJsonOptions & V2Options): {
     json: number;

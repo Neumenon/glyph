@@ -3,6 +3,7 @@
  */
 
 #include "glyph.h"
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -363,7 +364,7 @@ glyph_canon_opts_t glyph_canon_opts_default(void) {
     return (glyph_canon_opts_t){
         .auto_tabular = true,
         .min_rows = 3,
-        .max_cols = 64,
+        .max_cols = 20,
         .allow_missing = true,
         .null_style = GLYPH_NULL_UNDERSCORE,
     };
@@ -405,7 +406,8 @@ static bool is_bare_safe(const char *s) {
     /* Reserved words */
     if (strcmp(s, "t") == 0 || strcmp(s, "f") == 0 ||
         strcmp(s, "true") == 0 || strcmp(s, "false") == 0 ||
-        strcmp(s, "null") == 0 || strcmp(s, "_") == 0) {
+        strcmp(s, "null") == 0 || strcmp(s, "_") == 0 ||
+        strcmp(s, "none") == 0 || strcmp(s, "nil") == 0) {
         return false;
     }
 
@@ -715,7 +717,7 @@ static bool write_canon_value(strbuf_t *buf, const glyph_value_t *v,
 
         case GLYPH_INT: {
             char num[32];
-            snprintf(num, sizeof(num), "%ld", (long)v->int_val);
+            snprintf(num, sizeof(num), "%" PRId64, v->int_val);
             strbuf_append(buf, num);
             break;
         }
@@ -732,7 +734,7 @@ static bool write_canon_value(strbuf_t *buf, const glyph_value_t *v,
             /* Check if whole number */
             if (f == floor(f) && fabs(f) < 1e15) {
                 char num[32];
-                snprintf(num, sizeof(num), "%ld", (long)f);
+                snprintf(num, sizeof(num), "%" PRId64, (int64_t)f);
                 strbuf_append(buf, num);
             } else {
                 char num[64];
@@ -771,8 +773,12 @@ static bool write_canon_value(strbuf_t *buf, const glyph_value_t *v,
             char ts[32];
             time_t t = v->time_val / 1000;
             struct tm *tm = gmtime(&t);
-            strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", tm);
-            strbuf_append(buf, ts);
+            if (!tm) {
+                strbuf_append(buf, "1970-01-01T00:00:00Z");
+            } else {
+                strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", tm);
+                strbuf_append(buf, ts);
+            }
             break;
         }
 

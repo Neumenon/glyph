@@ -29,7 +29,7 @@ function canonRef(ref: RefID): string {
 }
 
 function canonTime(d: Date): string {
-  return d.toISOString().replace('.000Z', 'Z');
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 // ============================================================

@@ -15,6 +15,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"hash/fnv"
+	"math"
 	"sync"
 )
 
@@ -616,7 +617,7 @@ func appendVarint64(buf []byte, x int64) []byte {
 
 func appendFloat64(buf []byte, f float64) []byte {
 	var tmp [8]byte
-	binary.LittleEndian.PutUint64(tmp[:], uint64(f))
+	binary.LittleEndian.PutUint64(tmp[:], math.Float64bits(f))
 	return append(buf, tmp[:]...)
 }
 

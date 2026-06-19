@@ -1,5 +1,7 @@
 # GLYPH Codec - C
 
+> **PARKED: emit-only C port, not a conformance port (no GLYPH text parser). Lives in attic/.**
+
 Token-efficient serialization for AI agents.
 
 ## Build

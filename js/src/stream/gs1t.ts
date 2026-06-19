@@ -154,6 +154,9 @@ export class Reader {
     
     // Parse header
     const header = this.parseHeader(headerLine);
+    if (header.version !== 1) {
+      throw new ParseError(`unsupported version: ${header.version} (only v=1 is supported)`);
+    }
     if (header.payloadLen > this.maxPayload) {
       throw new ParseError(`payload too large: ${header.payloadLen} > ${this.maxPayload}`);
     }

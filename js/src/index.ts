@@ -246,14 +246,23 @@ export function jsonToLyph(
 // ============================================================
 
 /**
- * Estimate token count for a string (simple whitespace-based estimate)
+ * Estimate token count for a string (simple whitespace-based estimate).
+ *
+ * @deprecated This is NOT a real tokenizer — it splits on whitespace and
+ * produces wildly inaccurate counts (e.g. -733% reported savings) because
+ * GLYPH emits dense, whitespace-free output while JSON is whitespace-free
+ * when stringified. Use a proper BPE tokenizer (e.g. tiktoken) instead.
  */
 export function estimateTokens(s: string): number {
   return s.split(/\s+/).filter(Boolean).length;
 }
 
 /**
- * Compare token counts between JSON and GLYPH representations
+ * Compare token counts between JSON and GLYPH representations.
+ *
+ * @deprecated Relies on {@link estimateTokens} which is not a real tokenizer.
+ * The savingsPercent value is not meaningful. Use a proper BPE tokenizer
+ * (e.g. tiktoken) for accurate token comparisons.
  */
 export function compareTokens(
   json: unknown,
@@ -262,11 +271,11 @@ export function compareTokens(
 ): { json: number; lyph: number; savings: number; savingsPercent: number } {
   const jsonStr = JSON.stringify(json);
   const lyphStr = jsonToLyph(json, schema, options);
-  
+
   const jsonTokens = estimateTokens(jsonStr);
   const lyphTokens = estimateTokens(lyphStr);
   const savings = jsonTokens - lyphTokens;
   const savingsPercent = jsonTokens > 0 ? (savings / jsonTokens) * 100 : 0;
-  
+
   return { json: jsonTokens, lyph: lyphTokens, savings, savingsPercent };
 }

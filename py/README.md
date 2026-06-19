@@ -1,6 +1,6 @@
 # GLYPH Python
 
-Python implementation of the GLYPH codec.
+Python implementation of the GLYPH codec. Together with Go and JavaScript, Python is one of the three conformance-surface implementations; Rust and C ports are parked in `attic/`.
 
 The primary surface is still codec-first:
 - parse and emit values
@@ -84,6 +84,11 @@ assert result.complete
 assert result.valid
 assert result.tool_name == "search"
 ```
+
+## Notes
+
+- Python has no GS1 stream framing and no `pack` surface.
+- Fingerprint output is byte-identical to Go and JavaScript.
 
 ## Attic
 

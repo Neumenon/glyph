@@ -4,6 +4,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.t = exports.SchemaBuilder = exports.Schema = void 0;
+const crypto_1 = require("crypto");
 // ============================================================
 // Schema
 // ============================================================
@@ -43,18 +44,13 @@ class Schema {
         return this.fieldsByFid(typeName).filter(f => f.optional);
     }
     /**
-     * Compute schema hash
+     * Compute schema hash (SHA-256, first 16 bytes = 32 hex chars).
+     * Matches Go schema.go:238 (sha256.Sum256[:16] → hex.EncodeToString).
      */
     computeHash() {
         const canonical = this.canonical();
-        // Simple hash for browser compatibility
-        let hash = 0;
-        for (let i = 0; i < canonical.length; i++) {
-            const char = canonical.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-        }
-        this.hash = Math.abs(hash).toString(16).padStart(8, '0');
+        const digest = (0, crypto_1.createHash)('sha256').update(canonical).digest();
+        this.hash = digest.slice(0, 16).toString('hex');
         return this.hash;
     }
     /**

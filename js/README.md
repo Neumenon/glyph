@@ -59,5 +59,8 @@ const parsed = parsePacked(text, schema);
 
 - The npm package name is `cowrie-glyph`.
 - Some older docs in this repo still say `glyph-js`; those references are historical and should not be treated as current install instructions.
+- Together with Go and Python, JavaScript is one of the three conformance-surface implementations; Rust and C ports are parked in `attic/`.
+- JavaScript includes GS1 stream framing (`stream` sub-export) and the `StreamingValidator`. Python has the streaming validator but no GS1 framing; Python also has no `pack` surface.
+- Fingerprint output is byte-identical to Go and Python.
 
 For the repo-wide doc map, start at [../README.md](../README.md).

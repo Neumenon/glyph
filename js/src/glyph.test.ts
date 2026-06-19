@@ -119,9 +119,22 @@ describe('Schema', () => {
         .field('req', t.str(), { fid: 1 })
         .field('opt', t.str(), { fid: 2, optional: true })
       .build();
-    
+
     expect(schema.requiredFieldsByFid('Test').length).toBe(1);
     expect(schema.optionalFieldsByFid('Test').length).toBe(1);
+  });
+
+  test('computeHash uses SHA-256 first 16 bytes (32 hex chars)', () => {
+    // Pin the hash for a known schema so regressions are caught.
+    // Computed from sha256(canonical)[:16] in hex — matches Go schema.go:238.
+    const schema = new SchemaBuilder()
+      .addStruct('Point', 'v1')
+        .field('x', t.float(), { fid: 1 })
+        .field('y', t.float(), { fid: 2 })
+      .build();
+
+    expect(schema.hash).toHaveLength(32);
+    expect(schema.hash).toBe('fbb24db2d7a4bbc1e11e50421bceadd6');
   });
 });
 
@@ -241,6 +254,22 @@ describe('Emit', () => {
   test('emit packed', () => {
     const result = emitPacked(team, schema);
     expect(result).toBe('Team@(^t:ARS Arsenal EPL)');
+  });
+
+  test('canonTime strips any 3-digit millisecond group (not just .000)', () => {
+    // .000Z case (exact-zero ms) — already worked before
+    const zeroMs = new Date('2025-01-15T10:30:00.000Z');
+    const v0 = emit(g.time(zeroMs));
+    expect(v0).toBe('2025-01-15T10:30:00Z');
+
+    // non-zero ms — previously would NOT strip (left "2025-01-15T10:30:00.123Z")
+    const nonZeroMs = new Date('2025-01-15T10:30:00.123Z');
+    const v1 = emit(g.time(nonZeroMs));
+    expect(v1).toBe('2025-01-15T10:30:00Z');
+
+    // another non-zero ms value
+    const v2 = emit(g.time(new Date('2025-06-19T23:59:59.999Z')));
+    expect(v2).toBe('2025-06-19T23:59:59Z');
   });
 
   test('emit tabular', () => {

@@ -241,6 +241,17 @@ update
 
     expect(() => decodeFrame(encoder.encode(input))).toThrow(ParseError);
   });
+
+  test('rejects frames whose version != 1 (GS1_SPEC §3.1)', () => {
+    // v=2 must be rejected — only v=1 is supported per GS1 spec
+    const input = '@frame{v=2 sid=0 seq=0 kind=doc len=2}\n{}\n';
+    expect(() => decodeFrame(encoder.encode(input))).toThrow(ParseError);
+    expect(() => decodeFrame(encoder.encode(input))).toThrow('unsupported version: 2');
+
+    // v=0 must also be rejected
+    const input0 = '@frame{v=0 sid=0 seq=0 kind=doc len=2}\n{}\n';
+    expect(() => decodeFrame(encoder.encode(input0))).toThrow(ParseError);
+  });
 });
 
 // ============================================================

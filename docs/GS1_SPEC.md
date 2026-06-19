@@ -1,8 +1,10 @@
 # GLYPH Stream v1 (GS1) Specification
 
 **Spec ID:** `gs1-1.0.0`  
-**Date:** 2025-06-20  
+**Date:** 2026-01-13  
 **Status:** Frozen (v1.0)
+
+> **Implementation scope:** GS1 framing is currently implemented in Go and JavaScript / TypeScript only. Python, Rust, and C do not implement GS1.
 
 > This document specifies the GS1 stream framing protocol for GLYPH payloads.
 > GS1 headers are NOT part of GLYPH canonicalization.
@@ -78,7 +80,7 @@ Inside `{}` is a space-separated or comma-separated list of `key=value` pairs.
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `v` | uint8 | Protocol version (MUST be 1) |
+| `v` | uint8 | Protocol version (MUST be 1; enforced in Go and JS — frames with v ≠ 1 are rejected) |
 | `sid` | uint64 | Stream identifier |
 | `seq` | uint64 | Sequence number (per-SID, monotonic) |
 | `kind` | string/uint8 | Frame kind (name or number) |
@@ -292,7 +294,7 @@ Payload: (empty)
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0 | 2025-06-20 | Initial frozen spec (GS1-T only) |
+| 1.0.0 | 2026-01-13 | Initial frozen spec (GS1-T only) |
 
 ---
 

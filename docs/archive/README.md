@@ -63,7 +63,7 @@ For active documentation, see:
 ### Getting Started
 - [Quickstart](../QUICKSTART.md) - Get running in 5 minutes
 - [Complete Guide](../GUIDE.md) - Features, patterns, best practices
-- [AI Agent Patterns](../AGENTS.md) - LLM integration
+- [AI Agent Patterns](../../attic/docs/AGENTS.md) - LLM integration (parked)
 
 ### Reference
 - [Specifications](../SPECIFICATIONS.md) - Loose Mode, GS1, type system
