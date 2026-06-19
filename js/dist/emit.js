@@ -22,7 +22,7 @@ function canonRef(ref) {
     return `^${(0, codec_primitives_1.quoteString)(full)}`;
 }
 function canonTime(d) {
-    return d.toISOString().replace('.000Z', 'Z');
+    return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 // ============================================================
 // Bitmap Encoding
@@ -76,15 +76,6 @@ function emitValue(gv, opts) {
             return emitStruct(gv, opts);
         case 'sum':
             return emitSum(gv, opts);
-        case 'blob': {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { emitBlob } = require('./blob');
-            return emitBlob(gv.asBlob());
-        }
-        case 'poolRef': {
-            const pr = gv.asPoolRef();
-            return `^${pr.poolId}:${pr.index}`;
-        }
     }
 }
 function emitList(gv, opts) {
@@ -258,15 +249,6 @@ function emitPackedValue(gv, schema, opts) {
                 return `${sum.tag}()`;
             }
             return `${sum.tag}(${emitPackedValue(sum.value, schema, opts)})`;
-        }
-        case 'blob': {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { emitBlob } = require('./blob');
-            return emitBlob(gv.asBlob());
-        }
-        case 'poolRef': {
-            const pr = gv.asPoolRef();
-            return `^${pr.poolId}:${pr.index}`;
         }
     }
 }

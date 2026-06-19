@@ -10,7 +10,6 @@ exports.parseHeader = parseHeader;
 exports.parseTabular = parseTabular;
 exports.parseScalarValue = parseScalarValue;
 const types_1 = require("./types");
-const pool_1 = require("./pool");
 function parsePacked(input, schema) {
     const parser = new PackedParser(input, schema);
     return parser.parse();
@@ -711,9 +710,6 @@ function parseScalarValue(s) {
         if (colonIdx > 0) {
             const first = ref.slice(0, colonIdx);
             const second = ref.slice(colonIdx + 1);
-            if ((0, pool_1.isPoolRefId)(first) && /^\d+$/.test(second)) {
-                return types_1.GValue.poolRef(first, parseInt(second, 10));
-            }
             return types_1.GValue.id(first, second);
         }
         return types_1.GValue.id('', ref);

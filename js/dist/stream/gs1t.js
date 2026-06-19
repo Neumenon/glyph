@@ -122,6 +122,9 @@ class Reader {
         const headerLine = decoder.decode(this.buffer.slice(this.offset, headerEnd));
         // Parse header
         const header = this.parseHeader(headerLine);
+        if (header.version !== 1) {
+            throw new types_1.ParseError(`unsupported version: ${header.version} (only v=1 is supported)`);
+        }
         if (header.payloadLen > this.maxPayload) {
             throw new types_1.ParseError(`payload too large: ${header.payloadLen} > ${this.maxPayload}`);
         }

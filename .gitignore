@@ -7,6 +7,10 @@ build/
 
 # Node
 node_modules/
+*.tsbuildinfo
+
+# Rust
+target/
 
 # Go
 *.exe
