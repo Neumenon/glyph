@@ -35,6 +35,7 @@ const (
 	TokenEq       // = or :
 	TokenComma    // , (optional)
 	TokenPipe     // |
+	TokenDotDot   // .. (range operator in schema constraints, e.g. [0..10])
 
 	// Schema-related
 	TokenAt   // @
@@ -91,6 +92,8 @@ func (t TokenType) String() string {
 		return ","
 	case TokenPipe:
 		return "|"
+	case TokenDotDot:
+		return ".."
 	case TokenAt:
 		return "@"
 	case TokenHash:
@@ -211,6 +214,15 @@ func (l *Lexer) nextToken() Token {
 	case '>':
 		l.advance()
 		return Token{Type: TokenGT, Value: ">", Pos: startPos}
+	case '.':
+		// ".." is the schema range operator (e.g. [0..10]). A lone "." is not a
+		// valid standalone token (numbers/times consume their own '.' inside
+		// scanNumber before reaching here).
+		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '.' {
+			l.advance()
+			l.advance()
+			return Token{Type: TokenDotDot, Value: "..", Pos: startPos}
+		}
 	case '"':
 		return l.scanString()
 	case '^':
