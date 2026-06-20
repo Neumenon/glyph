@@ -577,7 +577,7 @@ func ResolvePathFIDs(path []PathSeg, rootType string, schema *Schema) error {
 		case PathSegListIdx:
 			// For list, get element type
 			td := schema.GetType(currentType)
-			if td != nil {
+			if td != nil && td.Struct != nil {
 				for _, fd := range td.Struct.Fields {
 					if fd.Type.Kind == TypeSpecList && fd.Type.Elem != nil {
 						if fd.Type.Elem.Kind == TypeSpecRef {
@@ -601,6 +601,10 @@ func ResolvePathFIDs(path []PathSeg, rootType string, schema *Schema) error {
 // ============================================================
 
 // ApplyPatch applies a patch set to a value and returns the modified copy.
+//
+// Paths must already be name-resolved (seg.Field populated). FID-mode patches —
+// whose parsed segments carry only a FID with an empty Field — must instead be
+// applied with ApplyPatchWithSchema, which runs the FID-resolution pre-pass.
 func ApplyPatch(v *GValue, p *Patch) (*GValue, error) {
 	if v == nil {
 		return nil, fmt.Errorf("cannot apply patch to nil value")
@@ -618,6 +622,45 @@ func ApplyPatch(v *GValue, p *Patch) (*GValue, error) {
 	}
 
 	return result, nil
+}
+
+// ApplyPatchWithSchema resolves FID/wire-key path segments using the schema (a
+// required pre-pass for FID-mode patches, whose parsed segments have an empty
+// Field) and then applies the patch. The root type for resolution is taken from
+// p.TargetType, falling back to the root struct's own type name when the patch
+// was parsed from wire text (which does not carry the type name).
+func ApplyPatchWithSchema(v *GValue, p *Patch, schema *Schema) (*GValue, error) {
+	if v == nil {
+		return nil, fmt.Errorf("cannot apply patch to nil value")
+	}
+	if schema != nil {
+		rootType := p.TargetType
+		if rootType == "" && v.typ == TypeStruct && v.structVal != nil {
+			rootType = v.structVal.TypeName
+		}
+		if rootType != "" {
+			if err := p.ResolveFIDs(rootType, schema); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return ApplyPatch(v, p)
+}
+
+// ResolveFIDs resolves every operation path against the schema, populating
+// seg.Field from FIDs (and normalizing wire keys / names to canonical field
+// names). It is the single FID-resolution pre-pass shared by build, parse and
+// apply so that ApplyPatch can navigate purely by seg.Field.
+func (p *Patch) ResolveFIDs(rootType string, schema *Schema) error {
+	if schema == nil || rootType == "" {
+		return nil
+	}
+	for _, op := range p.Ops {
+		if err := ResolvePathFIDs(op.Path, rootType, schema); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // applyOp applies a single operation to a value.
@@ -650,6 +693,9 @@ func applyAtPathSegs(v *GValue, path []PathSeg, op *PatchOp) (*GValue, error) {
 	switch seg.Kind {
 	case PathSegField:
 		key := seg.Field
+		if key == "" && seg.FID > 0 {
+			return nil, fmt.Errorf("unresolved FID #%d in path; apply with ApplyPatchWithSchema", seg.FID)
+		}
 		if v.typ != TypeStruct {
 			return nil, fmt.Errorf("cannot navigate into %s with field", v.typ)
 		}
@@ -704,9 +750,18 @@ func applyAtPathSegs(v *GValue, path []PathSeg, op *PatchOp) (*GValue, error) {
 
 // applyToParentSeg applies an operation to a field/key of the parent value.
 func applyToParentSeg(v *GValue, seg PathSeg, op *PatchOp) (*GValue, error) {
+	// A list-index leaf operates positionally on the list itself, not via a
+	// keyed Set/Get (which would panic on a non-map/struct).
+	if seg.Kind == PathSegListIdx {
+		return applyToListSeg(v, seg, op)
+	}
+
 	key := seg.Field
 	if seg.Kind == PathSegMapKey {
 		key = seg.MapKey
+	}
+	if key == "" && seg.FID > 0 {
+		return nil, fmt.Errorf("unresolved FID #%d in path; apply with ApplyPatchWithSchema", seg.FID)
 	}
 
 	switch op.Op {
@@ -783,6 +838,74 @@ func applyToParentSeg(v *GValue, seg PathSeg, op *PatchOp) (*GValue, error) {
 	default:
 		return nil, fmt.Errorf("unknown operation: %s", op.Op)
 	}
+}
+
+// applyToListSeg applies an operation positionally at a list index. This covers
+// both a list-index leaf reached via a parent (e.g. items[0]) and a root-list
+// operation (a path whose only segment is a list index).
+func applyToListSeg(v *GValue, seg PathSeg, op *PatchOp) (*GValue, error) {
+	if v == nil || v.typ != TypeList {
+		return nil, fmt.Errorf("cannot apply %s at list index to %s", op.Op, typeName(v))
+	}
+	idx := seg.ListIdx
+
+	switch op.Op {
+	case OpSet:
+		if idx < 0 || idx >= len(v.listVal) {
+			return nil, fmt.Errorf("list index out of bounds: %d (len=%d)", idx, len(v.listVal))
+		}
+		v.listVal[idx] = op.Value
+		return v, nil
+
+	case OpAppend:
+		// Insert before idx; idx == len appends at the end.
+		if idx < 0 || idx > len(v.listVal) {
+			return nil, fmt.Errorf("list insert index out of bounds: %d (len=%d)", idx, len(v.listVal))
+		}
+		newList := make([]*GValue, 0, len(v.listVal)+1)
+		newList = append(newList, v.listVal[:idx]...)
+		newList = append(newList, op.Value)
+		newList = append(newList, v.listVal[idx:]...)
+		v.listVal = newList
+		return v, nil
+
+	case OpDelete:
+		if idx < 0 || idx >= len(v.listVal) {
+			return nil, fmt.Errorf("list index out of bounds: %d (len=%d)", idx, len(v.listVal))
+		}
+		v.listVal = append(v.listVal[:idx], v.listVal[idx+1:]...)
+		return v, nil
+
+	case OpDelta:
+		if idx < 0 || idx >= len(v.listVal) {
+			return nil, fmt.Errorf("list index out of bounds: %d (len=%d)", idx, len(v.listVal))
+		}
+		existing := v.listVal[idx]
+		delta, ok := op.Value.Number()
+		if !ok {
+			return nil, fmt.Errorf("delta value must be numeric")
+		}
+		switch existing.typ {
+		case TypeInt:
+			existing.intVal += int64(delta)
+		case TypeFloat:
+			existing.floatVal += delta
+		default:
+			return nil, fmt.Errorf("cannot apply delta to %s", existing.typ)
+		}
+		return v, nil
+
+	default:
+		return nil, fmt.Errorf("unknown operation: %s", op.Op)
+	}
+}
+
+// typeName returns a printable type name, tolerating a nil value.
+func typeName(v *GValue) string {
+	if v == nil {
+		return "nil"
+	}
+	return v.typ.String()
 }
 
 // deepCopy creates a deep copy of a GValue.
@@ -939,8 +1062,16 @@ func (pb *PatchBuilder) Delta(path string, amount float64) *PatchBuilder {
 	return pb
 }
 
-// Build returns the completed patch set.
+// Build returns the completed patch set. When a schema and target type are set,
+// FID/wire-key path segments are resolved as a pre-pass so the patch can be
+// applied directly. Resolution errors are deferred to apply time (Build has no
+// error channel); ApplyPatchWithSchema re-runs the pre-pass and surfaces them.
 func (pb *PatchBuilder) Build() *Patch {
+	if pb.schema != nil && pb.patch.TargetType != "" {
+		// Best-effort: ignore errors here so a partially-specified builder still
+		// returns a patch; ApplyPatchWithSchema reports any unresolved segment.
+		_ = pb.patch.ResolveFIDs(pb.patch.TargetType, pb.schema)
+	}
 	return pb.patch
 }
 
