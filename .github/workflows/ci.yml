@@ -30,6 +30,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build JS bridge
+        # Go cross-impl tests (loose_test.go) shell out to js/dist, which is no
+        # longer committed (it is a build artifact); build it so they don't fail
+        # with "Cannot find module './codec_primitives'".
+        run: cd js && npm ci && npm run build
 
       - name: Vet
         run: cd go && go vet ./...
