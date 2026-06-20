@@ -105,6 +105,11 @@ type IncrementalParser struct {
 	maxValueLen int
 
 	handlingErrorEvent bool
+
+	// atEnd is set by End() so the final, otherwise-extensible token (a number,
+	// identifier or reference that reaches the buffer end) can be flushed
+	// instead of waiting for input that will never arrive.
+	atEnd bool
 }
 
 type parseState int
@@ -126,6 +131,7 @@ type parseStackFrame struct {
 	typeName string // For structs
 	tag      string // For sums
 	count    int    // Number of items parsed
+	pathLen  int    // len(path) when this container was entered (for clean unwinding)
 }
 
 // IncrementalParserOptions configures the parser.
@@ -186,16 +192,7 @@ func (p *IncrementalParser) Feed(data []byte) (int, error) {
 	// Append to buffer
 	p.buffer = append(p.buffer, data...)
 
-	// Process as much as possible
-	startLen := len(p.buffer)
-	for p.pos < len(p.buffer) && p.state != stateError && p.state != stateDone {
-		consumed := p.processNext()
-		if consumed == 0 {
-			// Need more data
-			p.emitEvent(ParseEvent{Type: EventNeedMore})
-			break
-		}
-	}
+	p.process()
 
 	// Compact buffer
 	if p.pos > 0 {
@@ -206,7 +203,28 @@ func (p *IncrementalParser) Feed(data []byte) (int, error) {
 		return consumed, p.err
 	}
 
-	return startLen - len(p.buffer), p.err
+	return 0, p.err
+}
+
+// process consumes as much of the buffer as possible. A state, stack or path
+// change counts as progress even when zero bytes are consumed, so zero-width
+// transitions (closing a container, an implicit item separator) never stall the
+// loop. Genuine lack of progress means the current token needs more input.
+func (p *IncrementalParser) process() {
+	for p.pos < len(p.buffer) && p.state != stateError && p.state != stateDone {
+		beforePos, beforeState := p.pos, p.state
+		beforeStack, beforePath := len(p.stack), len(p.path)
+
+		consumed := p.processNext()
+
+		if consumed == 0 && p.pos == beforePos && p.state == beforeState &&
+			len(p.stack) == beforeStack && len(p.path) == beforePath {
+			if !p.atEnd {
+				p.emitEvent(ParseEvent{Type: EventNeedMore})
+			}
+			break
+		}
+	}
 }
 
 // End signals end of input.
@@ -218,8 +236,18 @@ func (p *IncrementalParser) End() error {
 		return p.err
 	}
 
-	// Check for incomplete parse
-	if len(p.stack) > 0 {
+	// No more input is coming: flush any pending extensible token (e.g. a
+	// trailing number/identifier/reference that was waiting for a terminator).
+	p.atEnd = true
+	p.process()
+
+	if p.state == stateError {
+		return p.err
+	}
+
+	// Check for incomplete parse (unclosed container, or a dangling key/colon).
+	if len(p.stack) > 0 || p.state == stateExpectKey || p.state == stateExpectColon ||
+		p.state == stateExpectValue {
 		p.setError(errors.New("unexpected end of input"))
 		return p.err
 	}
@@ -240,6 +268,7 @@ func (p *IncrementalParser) Reset() {
 	p.stack = p.stack[:0]
 	p.err = nil
 	p.handlingErrorEvent = false
+	p.atEnd = false
 }
 
 // Path returns the current parse path.
@@ -270,10 +299,7 @@ func (p *IncrementalParser) processNext() int {
 
 	case stateInObject, stateExpectKey:
 		if ch == '}' {
-			p.pos++
-			p.popStack()
-			p.emitEvent(ParseEvent{Type: EventEndObject, Path: p.copyPath()})
-			return 1
+			return p.closeContainer('}')
 		}
 		return p.parseKey()
 
@@ -288,53 +314,101 @@ func (p *IncrementalParser) processNext() int {
 
 	case stateInList:
 		if ch == ']' {
-			p.pos++
-			p.popStack()
-			p.emitEvent(ParseEvent{Type: EventEndList, Path: p.copyPath()})
-			return 1
+			return p.closeContainer(']')
 		}
-		// Update path index
+		// Set the path index for this element before parsing it. Done before the
+		// value parse (and idempotently on a need-more re-entry) so that the
+		// count is only advanced once the element actually completes.
 		if len(p.stack) > 0 {
-			frame := &p.stack[len(p.stack)-1]
-			p.updatePathIndex(frame.count)
-			frame.count++
+			p.updatePathIndex(&p.stack[len(p.stack)-1])
 		}
-		return p.parseValue()
+		n := p.parseValue()
+		if n > 0 && len(p.stack) > 0 {
+			p.stack[len(p.stack)-1].count++
+		}
+		return n
 
 	case stateAfterValue:
-		// After a value, expect comma or closing bracket/brace
+		// After a value: a separator (',' or whitespace), or a closing token.
+		if ch == '}' || ch == ']' || ch == ')' {
+			return p.closeContainer(ch)
+		}
+		var frame *parseStackFrame
+		if len(p.stack) > 0 {
+			frame = &p.stack[len(p.stack)-1]
+		}
 		if ch == ',' {
 			p.pos++
-			if len(p.stack) > 0 {
-				frame := &p.stack[len(p.stack)-1]
-				if frame.state == stateInList {
-					p.state = stateInList
-				} else {
-					p.state = stateExpectKey
-				}
-			}
+			p.advanceToNextItem(frame)
 			return 1
 		}
-		if ch == '}' || ch == ']' || ch == ')' {
-			// Let the parent state handle it
-			if len(p.stack) > 0 {
-				p.state = p.stack[len(p.stack)-1].state
-			}
+		// Implicit (whitespace-only) separator between items.
+		if frame == nil {
+			// Trailing content after a complete top-level value.
 			return 0
 		}
-		// Implicit comma - switch to next state
-		if len(p.stack) > 0 {
-			frame := &p.stack[len(p.stack)-1]
-			if frame.state == stateInList {
-				p.state = stateInList
-			} else {
-				p.state = stateExpectKey
-			}
-		}
+		p.advanceToNextItem(frame)
 		return 0
 
 	default:
 		return 0
+	}
+}
+
+// closeContainer consumes a closing token, unwinds the path to the container's
+// entry depth, pops the frame and emits the matching End event.
+func (p *IncrementalParser) closeContainer(ch byte) int {
+	if len(p.stack) == 0 {
+		p.setError(fmt.Errorf("unexpected '%c'", ch))
+		return 0
+	}
+	frame := p.stack[len(p.stack)-1]
+
+	var evt ParseEventType
+	var match bool
+	switch frame.state {
+	case stateInObject:
+		match, evt = ch == '}', EventEndObject
+	case stateInList:
+		match, evt = ch == ']', EventEndList
+	case stateExpectValue: // sum frame
+		match, evt = ch == ')', EventEndSum
+	}
+	if !match {
+		p.setError(fmt.Errorf("mismatched '%c'", ch))
+		return 0
+	}
+
+	p.pos++
+	if len(p.path) > frame.pathLen {
+		p.path = p.path[:frame.pathLen]
+	}
+	p.stack = p.stack[:len(p.stack)-1]
+	if len(p.stack) > 0 {
+		p.state = stateAfterValue
+	} else {
+		p.state = stateDone
+	}
+	p.emitEvent(ParseEvent{Type: evt, Path: p.copyPath()})
+	return 1
+}
+
+// advanceToNextItem transitions from stateAfterValue to the state that reads the
+// next item of the enclosing container, unwinding any per-item path element.
+func (p *IncrementalParser) advanceToNextItem(frame *parseStackFrame) {
+	if frame == nil {
+		return
+	}
+	switch frame.state {
+	case stateInList:
+		p.state = stateInList
+	case stateExpectValue:
+		// A sum holds a single value; only its closing ')' is valid next.
+	default: // object
+		if len(p.path) > frame.pathLen {
+			p.path = p.path[:frame.pathLen] // pop the completed field's key
+		}
+		p.state = stateExpectKey
 	}
 }
 
@@ -345,43 +419,25 @@ func (p *IncrementalParser) parseValue() int {
 
 	ch := p.buffer[p.pos]
 
-	// Null (∅ or null/none/nil)
-	if ch == 0xE2 && p.pos+2 < len(p.buffer) && string(p.buffer[p.pos:p.pos+3]) == "∅" {
-		p.pos += 3
-		p.emitEvent(ParseEvent{Type: EventValue, Value: Null(), Path: p.copyPath()})
-		p.state = stateAfterValue
-		return 3
+	// Empty sum: Tag() — a closing token where a value was expected.
+	if ch == ')' || ch == '}' || ch == ']' {
+		return p.closeContainer(ch)
 	}
 
-	// Boolean
-	if ch == 't' {
-		if p.matchKeyword("true") {
-			p.emitEvent(ParseEvent{Type: EventValue, Value: Bool(true), Path: p.copyPath()})
-			p.state = stateAfterValue
-			return 4
+	// Null symbol ∅ (3-byte UTF-8). Wait for the full sequence if it is split.
+	if ch == 0xE2 {
+		if p.pos+3 <= len(p.buffer) {
+			if string(p.buffer[p.pos:p.pos+3]) == "∅" {
+				p.pos += 3
+				p.emitEvent(ParseEvent{Type: EventValue, Value: Null(), Path: p.copyPath()})
+				p.state = stateAfterValue
+				return 3
+			}
+		} else if !p.atEnd {
+			return 0 // need the rest of the symbol
 		}
-		p.pos++
-		p.emitEvent(ParseEvent{Type: EventValue, Value: Bool(true), Path: p.copyPath()})
-		p.state = stateAfterValue
-		return 1
-	}
-	if ch == 'f' {
-		if p.matchKeyword("false") {
-			p.emitEvent(ParseEvent{Type: EventValue, Value: Bool(false), Path: p.copyPath()})
-			p.state = stateAfterValue
-			return 5
-		}
-		p.pos++
-		p.emitEvent(ParseEvent{Type: EventValue, Value: Bool(false), Path: p.copyPath()})
-		p.state = stateAfterValue
-		return 1
-	}
-
-	// Null keywords
-	if p.matchKeyword("null") || p.matchKeyword("none") || p.matchKeyword("nil") {
-		p.emitEvent(ParseEvent{Type: EventValue, Value: Null(), Path: p.copyPath()})
-		p.state = stateAfterValue
-		return 4
+		p.setError(errors.New("unexpected character"))
+		return 0
 	}
 
 	// Number
@@ -421,7 +477,8 @@ func (p *IncrementalParser) parseValue() int {
 		return p.parseRef()
 	}
 
-	// Identifier (could be struct type, sum tag, or bare string)
+	// Identifier: keyword (true/t/false/f/null/none/nil), struct type, sum tag,
+	// or bare string. Resolved in parseIdentifier once the full token is known.
 	if isIdentStart(ch) {
 		return p.parseIdentifier()
 	}
@@ -457,10 +514,16 @@ func (p *IncrementalParser) parseKey() int {
 	// Bare identifier key
 	if isIdentStart(ch) {
 		start := p.pos
-		for p.pos < len(p.buffer) && isIdentContinue(p.buffer[p.pos]) {
-			p.pos++
+		j := p.pos
+		for j < len(p.buffer) && isIdentContinue(p.buffer[j]) {
+			j++
 		}
-		key := string(p.buffer[start:p.pos])
+		// A bare key running to the buffer end may still be extended.
+		if j == len(p.buffer) && !p.atEnd {
+			return 0
+		}
+		key := string(p.buffer[start:j])
+		p.pos = j
 		if len(key) > p.maxKeyLen {
 			p.setError(fmt.Errorf("key too long: %d > %d", len(key), p.maxKeyLen))
 			return 0
@@ -477,44 +540,54 @@ func (p *IncrementalParser) parseKey() int {
 
 func (p *IncrementalParser) parseNumber() int {
 	start := p.pos
+	buf := p.buffer
+	j := p.pos
 
-	// Skip sign
-	if p.pos < len(p.buffer) && p.buffer[p.pos] == '-' {
-		p.pos++
+	// Sign
+	if j < len(buf) && buf[j] == '-' {
+		j++
 	}
 
 	// Integer part
-	for p.pos < len(p.buffer) && p.buffer[p.pos] >= '0' && p.buffer[p.pos] <= '9' {
-		p.pos++
+	for j < len(buf) && isDigit(buf[j]) {
+		j++
 	}
 
 	isFloat := false
 
 	// Decimal part
-	if p.pos < len(p.buffer) && p.buffer[p.pos] == '.' {
-		next := p.pos + 1
-		if next < len(p.buffer) && p.buffer[next] >= '0' && p.buffer[next] <= '9' {
+	if j < len(buf) && buf[j] == '.' {
+		if j+1 < len(buf) && isDigit(buf[j+1]) {
 			isFloat = true
-			p.pos++
-			for p.pos < len(p.buffer) && p.buffer[p.pos] >= '0' && p.buffer[p.pos] <= '9' {
-				p.pos++
+			j += 2
+			for j < len(buf) && isDigit(buf[j]) {
+				j++
 			}
+		} else if j+1 == len(buf) && !p.atEnd {
+			// A trailing '.' might begin a fractional part once more arrives.
+			return 0
 		}
 	}
 
 	// Exponent
-	if p.pos < len(p.buffer) && (p.buffer[p.pos] == 'e' || p.buffer[p.pos] == 'E') {
+	if j < len(buf) && (buf[j] == 'e' || buf[j] == 'E') {
 		isFloat = true
-		p.pos++
-		if p.pos < len(p.buffer) && (p.buffer[p.pos] == '+' || p.buffer[p.pos] == '-') {
-			p.pos++
+		j++
+		if j < len(buf) && (buf[j] == '+' || buf[j] == '-') {
+			j++
 		}
-		for p.pos < len(p.buffer) && p.buffer[p.pos] >= '0' && p.buffer[p.pos] <= '9' {
-			p.pos++
+		for j < len(buf) && isDigit(buf[j]) {
+			j++
 		}
 	}
 
-	numStr := string(p.buffer[start:p.pos])
+	// If the number runs to the buffer end it may be extended by more input.
+	if j == len(buf) && !p.atEnd {
+		return 0
+	}
+
+	p.pos = j
+	numStr := string(buf[start:j])
 	if len(numStr) > p.maxValueLen {
 		p.setError(fmt.Errorf("value too long: %d > %d", len(numStr), p.maxValueLen))
 		return 0
@@ -545,6 +618,9 @@ func (p *IncrementalParser) parseNumber() int {
 func (p *IncrementalParser) parseString() int {
 	str, consumed := p.scanString()
 	if consumed == 0 {
+		if p.atEnd {
+			p.setError(errors.New("unterminated string"))
+		}
 		return 0
 	}
 	p.emitEvent(ParseEvent{Type: EventValue, Value: Str(str), Path: p.copyPath()})
@@ -606,17 +682,21 @@ func (p *IncrementalParser) scanString() (string, int) {
 
 func (p *IncrementalParser) parseRef() int {
 	start := p.pos
-	p.pos++ // Skip ^
-
-	var refStr []byte
-	for p.pos < len(p.buffer) && isRefChar(p.buffer[p.pos]) {
-		refStr = append(refStr, p.buffer[p.pos])
-		p.pos++
-		if len(refStr) > p.maxValueLen {
-			p.setError(fmt.Errorf("value too long: %d > %d", len(refStr), p.maxValueLen))
-			return 0
-		}
+	j := p.pos + 1 // skip ^
+	for j < len(p.buffer) && isRefChar(p.buffer[j]) {
+		j++
 	}
+	// A reference that runs to the buffer end may have more characters coming.
+	if j == len(p.buffer) && !p.atEnd {
+		return 0
+	}
+	if j-(start+1) > p.maxValueLen {
+		p.setError(fmt.Errorf("value too long: %d > %d", j-(start+1), p.maxValueLen))
+		return 0
+	}
+
+	refStr := p.buffer[start+1 : j]
+	p.pos = j
 
 	// Parse prefix:value
 	prefix, value := "", string(refStr)
@@ -635,34 +715,36 @@ func (p *IncrementalParser) parseRef() int {
 
 func (p *IncrementalParser) parseIdentifier() int {
 	start := p.pos
-	for p.pos < len(p.buffer) && isIdentContinue(p.buffer[p.pos]) {
-		p.pos++
+	j := p.pos
+	for j < len(p.buffer) && isIdentContinue(p.buffer[j]) {
+		j++
 	}
 
-	ident := string(p.buffer[start:p.pos])
-	if len(ident) > p.maxValueLen {
-		p.setError(fmt.Errorf("value too long: %d > %d", len(ident), p.maxValueLen))
+	// If the identifier reaches the buffer end it may be extended, and we cannot
+	// yet see whether a '{' (struct) or '(' (sum) follows. Wait for more input.
+	if j == len(p.buffer) && !p.atEnd {
 		return 0
 	}
 
-	// Check what follows
-	if p.pos < len(p.buffer) {
-		ch := p.buffer[p.pos]
+	if j-start > p.maxValueLen {
+		p.setError(fmt.Errorf("value too long: %d > %d", j-start, p.maxValueLen))
+		return 0
+	}
+	ident := string(p.buffer[start:j])
 
-		// Struct: Type{...}
-		if ch == '{' {
-			p.pos++
+	// Struct / sum are determined by the immediately following delimiter.
+	if j < len(p.buffer) {
+		switch p.buffer[j] {
+		case '{':
+			p.pos = j + 1
 			if !p.pushStack(stateInObject, ident, "") {
 				return 0
 			}
 			p.emitEvent(ParseEvent{Type: EventStartObject, TypeName: ident, Path: p.copyPath()})
 			p.state = stateExpectKey
 			return p.pos - start
-		}
-
-		// Sum: Tag(...) or Tag{...}
-		if ch == '(' {
-			p.pos++
+		case '(':
+			p.pos = j + 1
 			if !p.pushStack(stateExpectValue, "", ident) {
 				return 0
 			}
@@ -672,27 +754,22 @@ func (p *IncrementalParser) parseIdentifier() int {
 		}
 	}
 
-	// Bare string value
-	p.emitEvent(ParseEvent{Type: EventValue, Value: Str(ident), Path: p.copyPath()})
+	// Keyword / boolean / null, else a bare string.
+	p.pos = j
+	var value *GValue
+	switch ident {
+	case "true", "t":
+		value = Bool(true)
+	case "false", "f":
+		value = Bool(false)
+	case "null", "none", "nil":
+		value = Null()
+	default:
+		value = Str(ident)
+	}
+	p.emitEvent(ParseEvent{Type: EventValue, Value: value, Path: p.copyPath()})
 	p.state = stateAfterValue
 	return p.pos - start
-}
-
-func (p *IncrementalParser) matchKeyword(keyword string) bool {
-	if p.pos+len(keyword) > len(p.buffer) {
-		return false
-	}
-	for i := 0; i < len(keyword); i++ {
-		if p.buffer[p.pos+i] != keyword[i] {
-			return false
-		}
-	}
-	// Check that keyword is not followed by identifier char
-	if p.pos+len(keyword) < len(p.buffer) && isIdentContinue(p.buffer[p.pos+len(keyword)]) {
-		return false
-	}
-	p.pos += len(keyword)
-	return true
 }
 
 func (p *IncrementalParser) pushStack(state parseState, typeName, tag string) bool {
@@ -705,30 +782,21 @@ func (p *IncrementalParser) pushStack(state parseState, typeName, tag string) bo
 		typeName: typeName,
 		tag:      tag,
 		count:    0,
+		pathLen:  len(p.path),
 	})
 	return true
 }
 
-func (p *IncrementalParser) popStack() {
-	if len(p.stack) > 0 {
-		p.stack = p.stack[:len(p.stack)-1]
+// updatePathIndex sets the path element for the current item of the list frame.
+// The element lives at frame.pathLen; deeper elements (from a previous sibling's
+// children) are truncated so nested lists get correctly nested indices.
+func (p *IncrementalParser) updatePathIndex(frame *parseStackFrame) {
+	if len(p.path) == frame.pathLen {
+		p.path = append(p.path, PathElement{IsIndex: true, Index: frame.count})
+		return
 	}
-	if len(p.path) > 0 {
-		p.path = p.path[:len(p.path)-1]
-	}
-	if len(p.stack) > 0 {
-		p.state = stateAfterValue
-	} else {
-		p.state = stateDone
-	}
-}
-
-func (p *IncrementalParser) updatePathIndex(index int) {
-	if len(p.path) > 0 && p.path[len(p.path)-1].IsIndex {
-		p.path[len(p.path)-1].Index = index
-	} else {
-		p.path = append(p.path, PathElement{IsIndex: true, Index: index})
-	}
+	p.path = p.path[:frame.pathLen+1]
+	p.path[frame.pathLen] = PathElement{IsIndex: true, Index: frame.count}
 }
 
 func (p *IncrementalParser) copyPath() []PathElement {
