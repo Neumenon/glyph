@@ -46,11 +46,15 @@ jobs:
         run: cd go && go build ./...
 
       - name: Test with coverage
-        # Skip the memory-heavy industrial/perf bombs (50MB lists, 10MB strings,
-        # 100K-key maps) in the PR gate — under the race detector they OOM-kill
-        # the runner (signal: killed). They run in the nightly 'robustness' job.
-        # -p 1 keeps peak memory low for the remaining race build.
-        run: cd go && go test -race -p 1 -timeout 20m -skip 'Industrial|PerfCliff|Perf_|Cliff|Savings|Benchmark' -coverprofile=coverage.out -covermode=atomic ./...
+        # No -race here: the memory-heavy industrial bombs (50MB lists, 10MB
+        # strings, 100K-key maps) OOM-kill the runner under the race detector,
+        # but run fine without it — and they contribute coverage, so include them.
+        # Skip only the timing-flaky perf/cliff tests. -p 1 caps peak memory.
+        run: cd go && go test -p 1 -timeout 20m -skip 'PerfCliff|Perf_|Cliff|Savings|Benchmark' -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Race detector (non-bomb tests)
+        # Race detection on everything except the bombs (which OOM under -race).
+        run: cd go && go test -race -p 1 -timeout 15m -skip 'Industrial|PerfCliff|Perf_|Cliff|Savings|Benchmark' ./...
 
       - name: Check coverage threshold
         if: matrix.os == 'ubuntu-latest'
