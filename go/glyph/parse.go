@@ -1,6 +1,7 @@
 package glyph
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -126,17 +127,29 @@ func (p *Parser) parseValue() *GValue {
 
 	case TokenInt:
 		p.stream.Advance()
-		v, _ := strconv.ParseInt(tok.Value, 10, 64)
+		v, err := strconv.ParseInt(tok.Value, 10, 64)
+		if err != nil {
+			p.addError(tok.Pos, "invalid integer %q: %v", tok.Value, err)
+			return Null()
+		}
 		return Int(v)
 
 	case TokenFloat:
 		p.stream.Advance()
-		v, _ := strconv.ParseFloat(tok.Value, 64)
+		v, err := strconv.ParseFloat(tok.Value, 64)
+		if err != nil {
+			p.addError(tok.Pos, "invalid float %q: %v", tok.Value, err)
+			return Null()
+		}
 		return Float(v)
 
 	case TokenString:
 		p.stream.Advance()
 		return Str(tok.Value)
+
+	case TokenBytes:
+		p.stream.Advance()
+		return p.parseBytes(tok.Value, tok.Pos)
 
 	case TokenRef:
 		p.stream.Advance()
@@ -166,8 +179,10 @@ func (p *Parser) parseValue() *GValue {
 
 	default:
 		if p.tolerant {
-			// Try to recover
-			p.addWarning(tok.Pos, "unexpected token %s, skipping", tok.Type)
+			// Recover by coercing to null, but make the substitution loud: a
+			// silent null could be mistaken for an intentional value by a
+			// downstream tool-execution consumer.
+			p.addWarning(tok.Pos, "unexpected token %s; coercing to null (value discarded)", tok.Type)
 			p.stream.Advance()
 			return Null()
 		}
@@ -184,6 +199,18 @@ func (p *Parser) parseRef(value string) *GValue {
 		return ID(value[:idx], value[idx+1:])
 	}
 	return ID("", value)
+}
+
+// parseBytes decodes the base64 body of a b64"..." literal into TypeBytes.
+// Invalid base64 is a hard error (never silently coerced to a string), so that
+// corrupt binary payloads can't masquerade as valid data.
+func (p *Parser) parseBytes(value string, pos Position) *GValue {
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		p.addError(pos, "invalid base64 in bytes literal: %v", err)
+		return Null()
+	}
+	return Bytes(decoded)
 }
 
 // parseTime parses an ISO-8601 time value.
@@ -250,6 +277,10 @@ func (p *Parser) parseList() *GValue {
 }
 
 // parseMap parses a map: {k:v k2:v2} or {k=v, k2=v2}
+//
+// Duplicate-key policy: last value wins. A repeated key replaces the earlier
+// entry in place (preserving the original key position) and emits a warning, so
+// the result is deterministic and free of ambiguous duplicate keys.
 func (p *Parser) parseMap() *GValue {
 	p.stream.Advance() // consume {
 
@@ -279,11 +310,23 @@ func (p *Parser) parseMap() *GValue {
 
 		entry := p.parseMapEntry()
 		if entry != nil {
-			entries = append(entries, *entry)
+			entries = p.appendMapEntry(entries, *entry, tok.Pos)
 		}
 	}
 
 	return Map(entries...)
+}
+
+// appendMapEntry adds an entry, applying the last-wins duplicate-key policy.
+func (p *Parser) appendMapEntry(entries []MapEntry, entry MapEntry, pos Position) []MapEntry {
+	for i := range entries {
+		if entries[i].Key == entry.Key {
+			p.addWarning(pos, "duplicate map key %q; last value wins", entry.Key)
+			entries[i].Value = entry.Value
+			return entries
+		}
+	}
+	return append(entries, entry)
 }
 
 // parseMapEntry parses a single key:value or key=value pair.
@@ -843,10 +886,10 @@ func (p *schemaParser) parseConstraint() (Constraint, error) {
 
 	case TokenInt, TokenFloat:
 		// Range constraint: [0..10] or [min=0 max=10]
-		v1, _ := strconv.ParseFloat(tok.Value, 64)
+		v1, err := strconv.ParseFloat(tok.Value, 64)
 		p.stream.Advance()
 		// Check for ..
-		if p.stream.Peek().Value == ".." || (p.stream.Peek().Type == TokenIdent) {
+		if err == nil && (p.stream.Peek().Value == ".." || (p.stream.Peek().Type == TokenIdent)) {
 			// Skip ..
 			p.stream.Advance()
 			v2Tok := p.stream.Advance()

@@ -3,7 +3,6 @@ package glyph
 import (
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -24,6 +23,7 @@ const (
 	TokenBareStr // bare_identifier
 	TokenRef     // ^prefix:value
 	TokenTime    // 2025-12-19T20:00Z
+	TokenBytes   // b64"base64..."
 
 	// Structural
 	TokenLBrace   // {
@@ -71,6 +71,8 @@ func (t TokenType) String() string {
 		return "REF"
 	case TokenTime:
 		return "TIME"
+	case TokenBytes:
+		return "BYTES"
 	case TokenLBrace:
 		return "{"
 	case TokenRBrace:
@@ -275,6 +277,15 @@ func (l *Lexer) scanString() Token {
 				sb.WriteByte('\\')
 			case '"':
 				sb.WriteByte('"')
+			case 'u':
+				// \uXXXX unicode escape (4 hex digits). The emitter uses this
+				// for control characters, so it must decode back identically.
+				r, ok := l.scanUnicodeEscape()
+				if !ok {
+					l.err = fmt.Errorf("invalid \\u escape at %s", startPos)
+					return Token{Type: TokenError, Value: sb.String(), Pos: startPos}
+				}
+				sb.WriteRune(r)
 			default:
 				sb.WriteByte(escaped)
 			}
@@ -292,6 +303,55 @@ func (l *Lexer) scanString() Token {
 		str = strings.ToValidUTF8(str, "\uFFFD")
 	}
 	return Token{Type: TokenString, Value: str, Pos: startPos}
+}
+
+// scanUnicodeEscape reads exactly four hex digits (the body of a \uXXXX escape,
+// with the leading "\u" already consumed) and returns the decoded rune.
+func (l *Lexer) scanUnicodeEscape() (rune, bool) {
+	var code rune
+	for i := 0; i < 4; i++ {
+		if l.pos >= len(l.input) {
+			return 0, false
+		}
+		ch := l.peek()
+		var d rune
+		switch {
+		case ch >= '0' && ch <= '9':
+			d = rune(ch - '0')
+		case ch >= 'a' && ch <= 'f':
+			d = rune(ch-'a') + 10
+		case ch >= 'A' && ch <= 'F':
+			d = rune(ch-'A') + 10
+		default:
+			return 0, false
+		}
+		code = code<<4 | d
+		l.advance()
+	}
+	return code, true
+}
+
+// scanBytesLiteral scans the quoted base64 body of a b64"..." literal. The
+// "b64" prefix has already been consumed; the cursor is on the opening quote.
+// The raw base64 text is returned as the token value; decoding (and base64
+// validation) happens in the parser so errors carry a source position.
+func (l *Lexer) scanBytesLiteral(startPos Position) Token {
+	l.advance() // consume opening "
+	var sb strings.Builder
+	for {
+		if l.pos >= len(l.input) {
+			l.err = fmt.Errorf("unterminated bytes literal at %s", startPos)
+			return Token{Type: TokenError, Value: sb.String(), Pos: startPos}
+		}
+		ch := l.peek()
+		if ch == '"' {
+			l.advance() // consume closing "
+			break
+		}
+		sb.WriteByte(ch)
+		l.advance()
+	}
+	return Token{Type: TokenBytes, Value: sb.String(), Pos: startPos}
 }
 
 // scanRef scans a reference (^prefix:value).
@@ -402,6 +462,11 @@ func (l *Lexer) scanIdentOrKeyword() Token {
 
 	value := l.input[start:l.pos]
 
+	// Bytes literal: b64"..." (the prefix lexes as an identifier first).
+	if value == "b64" && l.peek() == '"' {
+		return l.scanBytesLiteral(startPos)
+	}
+
 	// Check for keywords
 	switch value {
 	case "null", "none", "nil":
@@ -499,28 +564,27 @@ func isTimeChar(ch byte) bool {
 	return isDigit(ch) || ch == '-' || ch == ':' || ch == 'T' || ch == 'Z' || ch == '+' || ch == '.'
 }
 
-// isValidBareString checks if a string can be represented without quotes.
+// isValidBareString reports whether a string can be emitted without quotes and
+// read back as the identical string. It is deliberately conservative: it mirrors
+// exactly what the lexer accepts as an identifier (ASCII letters, digits and
+// underscore, with a non-digit first character). Anything the ASCII lexer would
+// reject or re-tokenize differently — Unicode letters, '-', '/', '.', spaces —
+// must be quoted, otherwise emit-then-parse is not a round trip.
 func isValidBareString(s string) bool {
 	if len(s) == 0 {
 		return false
 	}
 
-	// Check first character
-	r, size := utf8.DecodeRuneInString(s)
-	if !unicode.IsLetter(r) && r != '_' {
+	if !isIdentStart(s[0]) {
 		return false
 	}
-
-	// Check remaining characters
-	for i := size; i < len(s); {
-		r, size = utf8.DecodeRuneInString(s[i:])
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
+	for i := 1; i < len(s); i++ {
+		if !isIdentContinue(s[i]) {
 			return false
 		}
-		i += size
 	}
 
-	// Check it's not a keyword
+	// Check it's not a keyword the lexer would tokenize as a non-string.
 	switch s {
 	case "null", "none", "nil", "true", "false", "t", "f", "struct", "sum", "list", "map",
 		"NaN", "Inf":
