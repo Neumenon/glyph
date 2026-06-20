@@ -2,7 +2,6 @@ package glyph
 
 import (
 	"bufio"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"strings"
@@ -363,11 +362,7 @@ func (p *tabularRowParser) parseValue(fd *FieldDef) (*GValue, error) {
 				return nil, err
 			}
 			body, _ := s.AsStr()
-			decoded, err := base64.StdEncoding.DecodeString(body)
-			if err != nil {
-				return nil, fmt.Errorf("invalid base64 in bytes literal: %v", err)
-			}
-			return Bytes(decoded), nil
+			return decodeBytesLiteral(body)
 		}
 		// Not a bytes literal — fall through to type-name / bare-string handling.
 		return p.parseNestedPackedOrBareString()

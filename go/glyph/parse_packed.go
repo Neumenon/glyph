@@ -1,7 +1,6 @@
 package glyph
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -299,11 +298,7 @@ func (p *packedParser) parseValue(fd *FieldDef) (*GValue, error) {
 				return nil, err
 			}
 			body, _ := s.AsStr()
-			decoded, err := base64.StdEncoding.DecodeString(body)
-			if err != nil {
-				return nil, fmt.Errorf("invalid base64 in bytes literal: %v", err)
-			}
-			return Bytes(decoded), nil
+			return decodeBytesLiteral(body)
 		}
 		// Not a bytes literal — fall through to type-name / bare-string handling.
 		saved := p.pos

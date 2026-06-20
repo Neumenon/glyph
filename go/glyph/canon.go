@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 )
 
 // ============================================================
@@ -106,45 +104,6 @@ func canonRef(r RefID) string {
 // ============================================================
 // Safety Checks
 // ============================================================
-
-// isBareSafeV2 checks if a string can be represented without quotes.
-// Pattern: ^[A-Za-z_][A-Za-z0-9_\-./]*$
-// Must not be a reserved word: t, f, _, null, none, nil, true, false
-func isBareSafeV2(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-
-	// Check reserved words
-	switch s {
-	case "t", "f", "_", "true", "false", "null", "none", "nil":
-		return false
-	}
-
-	// Check first character: must be letter or underscore
-	r, size := utf8.DecodeRuneInString(s)
-	if r == utf8.RuneError {
-		return false
-	}
-	if !unicode.IsLetter(r) && r != '_' {
-		return false
-	}
-
-	// Check remaining characters: letter, digit, _, -, ., /
-	for i := size; i < len(s); {
-		r, size = utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError {
-			return false
-		}
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) &&
-			r != '_' && r != '-' && r != '.' && r != '/' {
-			return false
-		}
-		i += size
-	}
-
-	return true
-}
 
 // isRefSafe reports whether the full ref string (prefix:value, no leading ^)
 // can be emitted as a bare ^prefix:value token. Rules per D7+D8:

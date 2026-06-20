@@ -19,7 +19,27 @@ export function canonInt(n: number): string {
   return String(Math.floor(n));
 }
 
+/** Normalize a JS exponential string to Go's format: always e+XX or e-XX, 2-digit exp. */
+function normalizeExpStr(jsExp: string): string {
+  return jsExp.replace(/[eE]([+-]?)(\d+)$/, (_match: string, sign: string, digits: string) => {
+    const signChar = sign === '-' ? '-' : '+';
+    const paddedDigits = digits.length === 1 ? '0' + digits : digits;
+    return 'e' + signChar + paddedDigits;
+  });
+}
+
+/** Convert a non-zero absolute float to Go exponential form using JS toExponential(). */
+function decimalToGoExp(absF: number): string {
+  let expStr = absF.toExponential();
+  expStr = expStr.replace(/\.?0+(e)/, '$1');
+  return normalizeExpStr(expStr);
+}
+
 export function canonFloat(f: number): string {
+  // Finding 4: guard NaN/Inf — typed path returns bare tokens, never "NaN.0"
+  if (Number.isNaN(f)) return 'NaN';
+  if (f === Infinity) return 'Inf';
+  if (f === -Infinity) return '-Inf';
   // D4: -0 and 0 → '0.0'
   if (f === 0 || Object.is(f, -0)) return '0.0';
 
@@ -29,33 +49,21 @@ export function canonFloat(f: number): string {
 
   let s: string;
   if (jsStr.includes('e') || jsStr.includes('E')) {
-    // Normalize existing exponential form: ensure e+XX or e-XX with 2-digit exp
-    s = jsStr.replace(/[eE]([+-]?)(\d+)$/, (_match: string, sign: string, digits: string) => {
-      const signChar = sign === '-' ? '-' : '+';
-      const paddedDigits = digits.length === 1 ? '0' + digits : digits;
-      return 'e' + signChar + paddedDigits;
-    });
-  } else if (absF < 1e-4) {
-    // Small number: Go uses exponential; convert via toExponential
-    let expStr = absF.toExponential().replace(/\.?0+(e)/, '$1');
-    s = expStr.replace(/e([+-]?)(\d+)$/, (_match: string, sign: string, digits: string) => {
-      const signChar = sign === '-' ? '-' : '+';
-      const paddedDigits = digits.length === 1 ? '0' + digits : digits;
-      return 'e' + signChar + paddedDigits;
-    });
-  } else if (absF >= 1e6 && !jsStr.includes('.')) {
-    // Large integer-valued float: Go uses exponential
-    let expStr = absF.toExponential().replace(/\.?0+(e)/, '$1');
-    s = expStr.replace(/e([+-]?)(\d+)$/, (_match: string, sign: string, digits: string) => {
-      const signChar = sign === '-' ? '-' : '+';
-      const paddedDigits = digits.length === 1 ? '0' + digits : digits;
-      return 'e' + signChar + paddedDigits;
-    });
+    // Normalize existing exponential form to Go format.
+    s = normalizeExpStr(jsStr);
   } else {
-    s = jsStr;
-    // D4: ensure decimal point for whole-number floats
-    if (!s.includes('.') && !s.includes('e')) {
-      s = s + '.0';
+    // JS gave decimal form. Apply Go's threshold: E = floor(log10(absF)).
+    const E = Math.floor(Math.log10(absF));
+    if (E >= 6 || E <= -5) {
+      // Go uses exponential; JS used decimal — convert.
+      s = decimalToGoExp(absF);
+    } else {
+      // Go uses decimal — JS form is correct.
+      s = jsStr;
+      // D4: ensure decimal point so token is unambiguously float.
+      if (!s.includes('.') && !s.includes('e')) {
+        s = s + '.0';
+      }
     }
   }
 
@@ -100,14 +108,34 @@ export function isBareSafe(s: string): boolean {
   return true;
 }
 
+/** isRefPartChar: ASCII [A-Za-z0-9_.-] — excludes ':' and '/' per D7. */
+export function isRefPartChar(c: number): boolean {
+  return isLetter(c) || isDigit(c) || c === 95 /* _ */ || c === 45 /* - */ || c === 46 /* . */;
+}
+
+/**
+ * isRefSafe mirrors Go canon.go isRefSafe:
+ * - All chars in prefix must pass isRefPartChar (excludes ':' and '/')
+ * - All chars in value must pass isRefPartChar AND value must not contain ':'
+ * - '/' anywhere forces quoting (typed lexer rejects it)
+ */
 export function isRefSafe(s: string): boolean {
   if (s.length === 0) return false;
-  // D7: '/' (47) is NOT safe; ASCII letters/digits/underscore/dash/dot/colon only
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (!isLetter(c) && !isDigit(c) && c !== 95 && c !== 45 && c !== 46 && c !== 58) {
-      return false;
+  const colonIdx = s.indexOf(':');
+  if (colonIdx < 0) {
+    for (let i = 0; i < s.length; i++) {
+      if (!isRefPartChar(s.charCodeAt(i))) return false;
     }
+    return true;
+  }
+  const prefix = s.slice(0, colonIdx);
+  const value = s.slice(colonIdx + 1);
+  for (let i = 0; i < prefix.length; i++) {
+    if (!isRefPartChar(prefix.charCodeAt(i))) return false;
+  }
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    if (c === 58 /* : */ || !isRefPartChar(c)) return false;
   }
   return true;
 }

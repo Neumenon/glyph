@@ -1,6 +1,7 @@
 package glyph
 
 import (
+	"encoding/base64"
 	"fmt"
 	"time"
 	"unicode/utf8"
@@ -120,6 +121,17 @@ func parseQuotedStringShared(input string, pos int) (string, int, error) {
 		}
 	}
 	return "", pos, fmt.Errorf("unterminated string")
+}
+
+// decodeBytesLiteral decodes a b64"<base64>" literal where the opening 'b', '6', '4'
+// have already been consumed and s is the quoted body (the string returned by parseQuotedString).
+// Used by both parse_packed.go and parse_tabular.go to avoid duplication.
+func decodeBytesLiteral(quotedBody string) (*GValue, error) {
+	decoded, err := base64.StdEncoding.DecodeString(quotedBody)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 in bytes literal: %v", err)
+	}
+	return Bytes(decoded), nil
 }
 
 // replaceInvalidUTF8 replaces invalid UTF-8 sequences with U+FFFD, mirroring

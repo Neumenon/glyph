@@ -114,24 +114,80 @@ def canon_int(n: int) -> str:
 def canon_float(f: float) -> str:
     """Canonicalize float with shortest roundtrip representation per D4.
 
-    Rules (mirrors Go canon.go canonFloat):
+    Byte-matches Go strconv.FormatFloat(f, 'g', -1, 64) then lowercases E
+    and appends ".0" iff the result has neither '.' nor 'e'.
+
+    Rules:
     - Non-finite (NaN/Inf) -> ValueError (Loose mode rejects them)
     - -0.0 and 0.0 both -> "0.0"  (always a decimal point, D4)
-    - All other values -> repr(f) which gives shortest round-trip digits;
-      repr always includes "." or "e" for non-integer floats and uses
-      Python's own g-format threshold for the scientific/decimal switch.
+    - All other values: use shortest round-trip digits from repr(), then apply
+      Go's decimal-vs-exponential rule: use exponential iff the magnitude
+      exponent E = floor(log10(|f|)) satisfies E >= 6 OR E <= -5.
+      Exponent format: e+06, e-05 (always 2-digit zero-padded, always signed).
     """
     if not math.isfinite(f):
         raise ValueError("non-finite floats are not supported")
     # -0.0 and 0.0 both canonicalize to "0.0" (D4: always decimal point)
     if f == 0.0:
         return "0.0"
-    # repr(f) gives the shortest decimal round-trip string in Python 3.1+.
-    # It always includes "." or "e", so the result is unambiguously a float.
-    s = repr(f)
-    # Normalize uppercase E (Python does not emit it, but guard anyway)
-    s = s.replace("E", "e")
-    return s
+
+    neg = math.copysign(1.0, f) < 0
+    abs_f = abs(f)
+
+    # repr() gives the shortest round-trip decimal string in Python 3.1+.
+    r = repr(abs_f)
+
+    if 'e' in r:
+        # Python already chose exponential (e.g. "1e-05", "1.5e-10").
+        # Go also uses exponential here — just reformat the exponent sign/padding.
+        mant_str, exp_str = r.split('e')
+        py_exp = int(exp_str)
+        # Re-emit with Go-style exponent: e+06, e-05
+        abs_exp = abs(py_exp)
+        sign_char = '+' if py_exp >= 0 else '-'
+        s = f"{mant_str}e{sign_char}{abs_exp:02d}"
+    else:
+        # Python gave decimal form. Compute the magnitude exponent E EXACTLY from
+        # the decimal digits — math.log10 rounds the wrong way for values just
+        # below a power of ten (e.g. repr 999999999999999.8 -> true E is 14, but
+        # math.log10 yields 15.0), which would diverge from Go/JS.
+        if '.' in r:
+            _int_p, _frac_p = r.split('.')
+        else:
+            _int_p, _frac_p = r, ''
+        if _int_p != '0':
+            E = len(_int_p) - 1
+        else:
+            _stripped = _frac_p.lstrip('0')
+            E = -(len(_frac_p) - len(_stripped)) - 1
+        if E >= 6 or E <= -5:
+            # Go uses exponential; Python used decimal.
+            # Extract significant digits from Python's repr.
+            if '.' in r:
+                int_p, frac_p = r.split('.')
+                if int_p == '0':
+                    all_digits = frac_p.lstrip('0').rstrip('0') or '0'
+                else:
+                    all_digits = (int_p + frac_p).rstrip('0') or '0'
+            else:
+                all_digits = r.rstrip('0') or '0'
+
+            if len(all_digits) == 1:
+                mant = all_digits
+            else:
+                mant = all_digits[0] + '.' + all_digits[1:]
+
+            abs_exp = abs(E)
+            sign_char = '+' if E >= 0 else '-'
+            s = f"{mant}e{sign_char}{abs_exp:02d}"
+        else:
+            # Go uses decimal; Python's repr is already correct.
+            s = r
+            # D4: ensure decimal point so token is unambiguously float.
+            if '.' not in s and 'e' not in s:
+                s += '.0'
+
+    return ('-' if neg else '') + s
 
 
 def is_bare_safe(s: str) -> bool:

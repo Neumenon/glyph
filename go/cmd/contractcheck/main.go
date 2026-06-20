@@ -122,10 +122,23 @@ func main() {
 	scalar("time-offset", glyph.Time(time.Date(2026, 6, 19, 12, 0, 0, 0, time.FixedZone("x", 5*3600+1800))),
 		"2026-06-19T06:30:00Z", "2026-06-19T06:30:00Z")
 
+	// --- float: divergent range (E>=6 uses exponential, E<=5 uses decimal) ---
+	scalar("float-1e6", glyph.Float(1e6), "1e+06", "1e+06")
+	scalar("float-1.5e6", glyph.Float(1.5e6), "1.5e+06", "1.5e+06")
+	scalar("float-1234567", glyph.Float(1234567.0), "1.234567e+06", "1.234567e+06")
+	scalar("float-1234567.5", glyph.Float(1234567.5), "1.2345675e+06", "1.2345675e+06")
+	scalar("float-1e15", glyph.Float(1e15), "1e+15", "1e+15")
+	scalar("float-9999999", glyph.Float(9999999.0), "9.999999e+06", "9.999999e+06")
+	scalar("float-1e-5", glyph.Float(1e-5), "1e-05", "1e-05")
+	scalar("float-999999", glyph.Float(999999.0), "999999.0", "999999.0")
+	scalar("float-100000", glyph.Float(100000.0), "100000.0", "100000.0")
+
 	// --- refs/IDs: bare when safe, quoted ^"..." when unsafe (D7/D8) ---
 	scalar("id-simple", glyph.ID("p", "smith"), "^p:smith", "^p:smith")
 	scalar("id-slash", glyph.ID("ns", "path/value"), `^"ns:path/value"`, `^"ns:path/value"`)
 	scalar("id-colon", glyph.ID("ns", "a:b"), `^"ns:a:b"`, `^"ns:a:b"`)
+	scalar("id-colon-ns-ab", glyph.ID("ns", "a:b"), `^"ns:a:b"`, `^"ns:a:b"`)
+	scalar("id-slash-ns-ab", glyph.ID("ns", "a/b"), `^"ns:a/b"`, `^"ns:a/b"`)
 
 	// --- containers round-trip ---
 	rt("list", glyph.List(glyph.Int(1), glyph.Str("a"), glyph.Bytes([]byte{0x02})))

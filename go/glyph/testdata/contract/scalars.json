@@ -151,9 +151,73 @@
     "typeName": "Float",
     "construct": "NewFloat(1.23456789e15)",
     "looseExpected": "1.23456789e+15",
-    "typedExpected": "1.23456789e+15",
-    "currentlyBuggy": true,
-    "bugDescription": "emit.go 'f'/-1 format produces full decimal expansion instead of shortest exponent form"
+    "typedExpected": "1.23456789e+15"
+  },
+  {
+    "_comment": "=== FLOAT divergent range: E>=6 uses exponential, E<=5 uses decimal ===",
+    "id": "float-1e6",
+    "typeName": "Float",
+    "construct": "NewFloat(1e6)",
+    "looseExpected": "1e+06",
+    "typedExpected": "1e+06"
+  },
+  {
+    "id": "float-1.5e6",
+    "typeName": "Float",
+    "construct": "NewFloat(1.5e6)",
+    "looseExpected": "1.5e+06",
+    "typedExpected": "1.5e+06"
+  },
+  {
+    "id": "float-1234567",
+    "typeName": "Float",
+    "construct": "NewFloat(1234567.0)",
+    "looseExpected": "1.234567e+06",
+    "typedExpected": "1.234567e+06"
+  },
+  {
+    "id": "float-1234567.5",
+    "typeName": "Float",
+    "construct": "NewFloat(1234567.5)",
+    "looseExpected": "1.2345675e+06",
+    "typedExpected": "1.2345675e+06"
+  },
+  {
+    "id": "float-1e15",
+    "typeName": "Float",
+    "construct": "NewFloat(1e15)",
+    "looseExpected": "1e+15",
+    "typedExpected": "1e+15"
+  },
+  {
+    "id": "float-9999999",
+    "typeName": "Float",
+    "construct": "NewFloat(9999999.0)",
+    "looseExpected": "9.999999e+06",
+    "typedExpected": "9.999999e+06"
+  },
+  {
+    "id": "float-1e-5",
+    "typeName": "Float",
+    "construct": "NewFloat(1e-5)",
+    "looseExpected": "1e-05",
+    "typedExpected": "1e-05"
+  },
+  {
+    "id": "float-999999",
+    "typeName": "Float",
+    "construct": "NewFloat(999999.0)",
+    "looseExpected": "999999.0",
+    "typedExpected": "999999.0",
+    "_note": "E=5 stays decimal"
+  },
+  {
+    "id": "float-100000",
+    "typeName": "Float",
+    "construct": "NewFloat(100000.0)",
+    "looseExpected": "100000.0",
+    "typedExpected": "100000.0",
+    "_note": "E=5 stays decimal"
   },
 
   {
@@ -456,14 +520,28 @@
     "_note": "Colon in value would cause first-: split to misparse. Must quote (D7)."
   },
   {
-    "_comment": "G3: slash in value — isRefSafe allows '/' but Typed lexer isRefChar does not; must quote (D8/C4)",
+    "_comment": "G3: slash in value forces quoting (D7/D8: typed lexer isRefChar rejects '/')",
     "id": "ref-slash-in-value",
     "typeName": "ID",
     "construct": "NewID(\"ns\", \"path/value\")",
     "looseExpected": "^\"ns:path/value\"",
-    "typedExpected": "^\"ns:path/value\"",
-    "currentlyBuggy": true,
-    "bugDescription": "isRefSafe (canon.go:143) allows '/' so canonRef currently emits ^ns:path/value bare. But Typed lexer isRefChar rejects '/', so scanRef stops at '/' producing an incomplete token. W2 must tighten isRefSafe to reject '/'."
+    "typedExpected": "^\"ns:path/value\""
+  },
+  {
+    "_comment": "colon in value forces quoting to prevent first-: mis-split (D7)",
+    "id": "ref-colon-in-value-ab",
+    "typeName": "ID",
+    "construct": "NewID(\"ns\", \"a:b\")",
+    "looseExpected": "^\"ns:a:b\"",
+    "typedExpected": "^\"ns:a:b\""
+  },
+  {
+    "_comment": "slash in value, no prefix",
+    "id": "ref-slash-no-prefix",
+    "typeName": "ID",
+    "construct": "NewID(\"ns\", \"a/b\")",
+    "looseExpected": "^\"ns:a/b\"",
+    "typedExpected": "^\"ns:a/b\""
   },
   {
     "id": "ref-space-in-value",

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"unicode/utf8"
 )
@@ -711,6 +712,35 @@ func (p *IncrementalParser) scanString() (string, int) {
 
 func (p *IncrementalParser) parseRef() int {
 	start := p.pos
+	// p.buffer[start] == '^'
+
+	// Quoted ref: ^"..." — parse the quoted body using scanString machinery.
+	if start+1 < len(p.buffer) && p.buffer[start+1] == '"' {
+		// Temporarily advance past '^' so scanString sees the opening quote.
+		p.pos = start + 1
+		str, consumed := p.scanString()
+		if consumed == 0 {
+			// scanString returns 0 when the string is unterminated in the buffer.
+			if p.atEnd {
+				p.setError(fmt.Errorf("unterminated quoted ref"))
+			}
+			// Otherwise wait for more data; restore pos.
+			p.pos = start
+			return 0
+		}
+		// p.pos has already been advanced past the closing quote by scanString.
+		// Split prefix:value at the first ':'.
+		prefix, value := "", str
+		if idx := strings.IndexByte(str, ':'); idx >= 0 {
+			prefix = str[:idx]
+			value = str[idx+1:]
+		}
+		p.emitEvent(ParseEvent{Type: EventValue, Value: ID(prefix, value), Path: p.copyPath()})
+		p.state = stateAfterValue
+		return p.pos - start
+	}
+
+	// Bare ref: ^prefix:value — consume isRefChar bytes.
 	j := p.pos + 1 // skip ^
 	for j < len(p.buffer) && isRefChar(p.buffer[j]) {
 		j++

@@ -41,6 +41,10 @@ TEST_CASES = [
     ("sparse keys", '[{"a": 1}, {"b": 2}, {"c": 3}]', "[{a=1} {b=2} {c=3}]"),
     # Empty objects - should NOT become tabular
     ("empty objects", "[{}, {}, {}]", "[{} {} {}]"),
+    # Float in divergent range (E>=6 => exponential; use non-integer values to force float type)
+    ("float 1234567.5", "1234567.5", "1.2345675e+06"),
+    ("float 1.5e6", "1500000.5", "1.5000005e+06"),
+    ("float 0.00001", "0.00001", "1e-05"),
 ]
 
 _go_bin = None

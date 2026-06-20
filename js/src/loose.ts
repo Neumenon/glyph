@@ -196,43 +196,35 @@ function canonFloat(f: number): string {
 }
 
 /**
- * Formats a non-zero, finite float64 using Go's strconv.FormatFloat(f, 'g', -1, 64) rules.
+ * Formats a non-zero, finite float64 to byte-match Go's strconv.FormatFloat(f,'g',-1,64).
  * D4: always includes a decimal point or exponent character.
  *
- * Key divergences between JS String() and Go strconv:
- *   - Small: JS gives "0.00001" for 1e-5, Go gives "1e-05" (threshold: abs < 1e-4)
- *   - Large: JS gives "1000000" for 1e6, Go gives "1e+06" (threshold: abs >= 1e6 for all-integer values)
- *   - Exponent sign: JS "1e+21" matches Go; but JS may omit sign in some cases
+ * Go uses exponential form iff floor(log10(|f|)) >= 6 OR floor(log10(|f|)) <= -5.
+ * Exponent is always signed and zero-padded to 2 digits: e+06, e-05.
  */
 function goFormatFloat(f: number): string {
   const absF = Math.abs(f);
   const neg = f < 0;
 
+  const jsStr = String(absF);
   let s: string;
 
-  // JS String() already produces the right value for the 1e-4 to <1e6 range
-  // and for values with non-trivial fractional parts.
-  // We need to handle cases where JS decimal form differs from Go exponential form.
-
-  const jsStr = String(absF);
-
   if (jsStr.includes('e') || jsStr.includes('E')) {
-    // JS already chose exponential form; normalize to Go format
+    // JS chose exponential form — normalize to Go format.
     s = normalizeExpStr(jsStr);
-  } else if (absF < 1e-4) {
-    // Small number: Go uses exponential, JS uses decimal
-    // Convert to Go exponential form using toExponential() for digit extraction
-    s = decimalToGoExp(absF);
-  } else if (absF >= 1e6 && !jsStr.includes('.')) {
-    // Large integer-valued float: Go uses exponential, JS uses decimal
-    // Use toExponential() to get the shortest-round-trip exponential form
-    s = decimalToGoExp(absF);
   } else {
-    // Normal range: JS decimal form is correct
-    s = jsStr;
-    // D4: ensure decimal point
-    if (!s.includes('.') && !s.includes('e')) {
-      s = s + '.0';
+    // JS gave decimal form. Apply Go's threshold: exp E = floor(log10(absF)).
+    const E = Math.floor(Math.log10(absF));
+    if (E >= 6 || E <= -5) {
+      // Go uses exponential; JS used decimal — convert.
+      s = decimalToGoExp(absF);
+    } else {
+      // Go uses decimal — JS form is correct.
+      s = jsStr;
+      // D4: ensure decimal point so token is unambiguously float.
+      if (!s.includes('.') && !s.includes('e')) {
+        s = s + '.0';
+      }
     }
   }
 
@@ -334,14 +326,39 @@ function isDigitCodepoint(c: number): boolean {
   return c > 127 && /\p{Nd}/u.test(String.fromCodePoint(c));
 }
 
+/** isRefPartChar: ASCII [A-Za-z0-9_.-] — excludes ':' and '/' per D7. */
+function isRefPartChar(c: number): boolean {
+  return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) ||
+         c === 95 /* _ */ || c === 45 /* - */ || c === 46 /* . */;
+}
+
+/**
+ * isRefSafe mirrors Go canon.go isRefSafe and Python canon_id:
+ * - All chars in prefix must pass isRefPartChar (excludes ':' and '/')
+ * - All chars in value must pass isRefPartChar (excludes ':' and '/')
+ * - A ':' in value forces quoting (first-':' split would mis-parse)
+ * - '/' anywhere forces quoting (typed lexer isRefChar rejects it)
+ */
 function isRefSafe(s: string): boolean {
   if (s.length === 0) return false;
-  // D7: '/' (47) is NOT safe for refs; ASCII letters/digits/underscore/dash/dot/colon only
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 95 || c === 45 || c === 46 || c === 58)) {
-      return false;
+  const colonIdx = s.indexOf(':');
+  if (colonIdx < 0) {
+    // No prefix — whole string is the value; must not contain ':' or '/'.
+    for (let i = 0; i < s.length; i++) {
+      if (!isRefPartChar(s.charCodeAt(i))) return false;
     }
+    return true;
+  }
+  // Has prefix:value split.
+  const prefix = s.slice(0, colonIdx);
+  const value = s.slice(colonIdx + 1);
+  for (let i = 0; i < prefix.length; i++) {
+    if (!isRefPartChar(prefix.charCodeAt(i))) return false;
+  }
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    // ':' in value forces quoting; '/' already excluded by isRefPartChar.
+    if (c === 58 /* : */ || !isRefPartChar(c)) return false;
   }
   return true;
 }
