@@ -46,11 +46,12 @@ jobs:
         run: cd go && go build ./...
 
       - name: Test with coverage
-        # Skip the memory-heavy industrial/perf bombs (50MB lists, 10MB strings,
-        # 100K-key maps): they OOM-kill CI runners with OR without -race. They run
-        # in the nightly 'robustness' job. -p 1 caps peak memory. Coverage is
-        # reported but not gated below, since the bombs that would lift it past
-        # 80% cannot run here.
+        # The memory-heavy tests (industrial/perf bombs, coverage_boost, benchmarks)
+        # are isolated behind the `heavy` build tag, so this DEFAULT build compiles a
+        # light test binary that won't OOM-kill the runner during compile/link. The
+        # full suite runs nightly with `-tags heavy` (see the robustness job). The
+        # -skip is a belt-and-suspenders no-op for any matching name. Coverage here is
+        # reported but not gated (the bombs that would lift it past 80% run nightly).
         run: cd go && go test -race -p 1 -timeout 20m -skip 'Industrial|PerfCliff|Perf_|Cliff|Savings|Benchmark' -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Check coverage threshold
@@ -70,7 +71,7 @@ jobs:
 
       - name: Benchmark (baseline)
         if: matrix.os == 'ubuntu-latest'
-        run: cd go && go test -bench=. -benchmem -count=1 -run='^$' ./... | tee bench.txt
+        run: cd go && go test -tags heavy -bench=. -benchmem -count=1 -run='^$' ./... | tee bench.txt
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
@@ -293,10 +294,12 @@ jobs:
         run: cd py && pip install -e ".[dev]"
 
       - name: Go robustness tests
-        # The memory-heavy industrial/perf bombs live here (nightly / on-demand),
-        # not in the PR gate where -race made them OOM-kill the runner. -p 1 + a
-        # generous timeout keep peak memory and wall-clock in check.
-        run: cd go && go test -run "TruthTable|Equivalence|PerfCliff|Industrial" -p 1 -v -timeout 15m ./glyph/...
+        # The memory-heavy tests (industrial/perf bombs, coverage_boost, benchmarks)
+        # are isolated behind the `heavy` build tag so the PR gate compiles a light
+        # binary. This nightly/on-demand job builds WITH `-tags heavy` to run the
+        # complete suite (this is where full coverage is produced). -p 1 + a generous
+        # timeout keep peak memory and wall-clock in check.
+        run: cd go && go test -tags heavy -p 1 -timeout 20m -coverprofile=coverage-heavy.out -covermode=atomic ./glyph/...
 
       - name: Python robustness tests
         run: cd py && pytest tests/test_truth_table.py tests/test_hypothesis.py -v --tb=short -x

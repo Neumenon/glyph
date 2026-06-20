@@ -1,3 +1,5 @@
+//go:build heavy
+
 package glyph
 
 import (
@@ -517,19 +519,19 @@ func TestIndustrial_ManyKeys_NoOOM(t *testing.T) {
 
 func TestIndustrial_RoundTrip_AllTypes(t *testing.T) {
 	values := map[string]*GValue{
-		"null":       Null(),
-		"true":       Bool(true),
-		"false":      Bool(false),
-		"int":        Int(42),
-		"int_neg":    Int(-999),
-		"float":      Float(3.14159),
-		"string":     Str("hello world"),
-		"empty_str":  Str(""),
+		"null":        Null(),
+		"true":        Bool(true),
+		"false":       Bool(false),
+		"int":         Int(42),
+		"int_neg":     Int(-999),
+		"float":       Float(3.14159),
+		"string":      Str("hello world"),
+		"empty_str":   Str(""),
 		"escaped_str": Str(`line1\nline2\ttab`),
-		"list":       List(Int(1), Int(2), Int(3)),
-		"map":        Map(MapEntry{"a", Int(1)}, MapEntry{"b", Str("two")}),
-		"struct":     Struct("Point", MapEntry{"x", Float(1.0)}, MapEntry{"y", Float(2.0)}),
-		"nested":     Map(MapEntry{"inner", List(Map(MapEntry{"deep", Int(99)}))}),
+		"list":        List(Int(1), Int(2), Int(3)),
+		"map":         Map(MapEntry{"a", Int(1)}, MapEntry{"b", Str("two")}),
+		"struct":      Struct("Point", MapEntry{"x", Float(1.0)}, MapEntry{"y", Float(2.0)}),
+		"nested":      Map(MapEntry{"inner", List(Map(MapEntry{"deep", Int(99)}))}),
 	}
 	for name, original := range values {
 		t.Run(name, func(t *testing.T) {

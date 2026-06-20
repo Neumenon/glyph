@@ -387,3 +387,74 @@ func TestFIDModeApplyRoundTrip(t *testing.T) {
 		t.Errorf("expected home.score=2, got %v", score)
 	}
 }
+
+// ---- panic-free error paths -----------------------------------------------
+
+// TestApplySetOnNonStructParent verifies applyToParentSeg returns a clean error
+// (not panic) when the parent value is not a map or struct.
+func TestApplySetOnNonStructParent(t *testing.T) {
+	// A document where "count" is an int. A patch tries to set count.sub = 1,
+	// which would navigate to count (int) and then try to Set "sub" on it.
+	doc := Struct("X", FieldVal("count", Int(5)))
+	patch := NewPatch(RefID{}, "")
+	patch.Ops = append(patch.Ops, &PatchOp{
+		Op:    OpSet,
+		Path:  []PathSeg{FieldSeg("count", 0), FieldSeg("sub", 0)},
+		Value: Int(1),
+	})
+	_, err := ApplyPatch(doc, patch)
+	if err == nil {
+		t.Error("expected error when setting field on int parent, got nil")
+	}
+}
+
+// TestApplySetRootIntParent verifies that a FieldSeg on a root int returns an
+// error rather than panicking via GValue.Set.
+func TestApplySetRootIntParent(t *testing.T) {
+	doc := Int(42)
+	patch := NewPatch(RefID{}, "")
+	patch.Ops = append(patch.Ops, &PatchOp{
+		Op:    OpSet,
+		Path:  []PathSeg{FieldSeg("foo", 0)},
+		Value: Int(1),
+	})
+	_, err := ApplyPatch(doc, patch)
+	if err == nil {
+		t.Error("expected error when setting field on int root, got nil")
+	}
+}
+
+// TestApplyDeltaIntTruncation verifies that a float delta that would truncate
+// when applied to an int field returns an error.
+func TestApplyDeltaIntTruncation(t *testing.T) {
+	doc := Struct("X", FieldVal("n", Int(10)))
+	patch := NewPatch(RefID{}, "")
+	patch.Ops = append(patch.Ops, &PatchOp{
+		Op:    OpDelta,
+		Path:  []PathSeg{FieldSeg("n", 0)},
+		Value: Float(1.5), // fractional — would silently truncate to 1 without guard
+	})
+	_, err := ApplyPatch(doc, patch)
+	if err == nil {
+		t.Error("expected error for float delta 1.5 on int field, got nil")
+	}
+}
+
+// TestApplyDeltaIntegerFloat verifies that a float delta that is a whole number
+// (e.g. 5.0) is accepted for an int field without error.
+func TestApplyDeltaIntegerFloat(t *testing.T) {
+	doc := Struct("X", FieldVal("n", Int(10)))
+	patch := NewPatch(RefID{}, "")
+	patch.Ops = append(patch.Ops, &PatchOp{
+		Op:    OpDelta,
+		Path:  []PathSeg{FieldSeg("n", 0)},
+		Value: Float(5.0), // integer-valued float — must apply cleanly
+	})
+	result, err := ApplyPatch(doc, patch)
+	if err != nil {
+		t.Fatalf("unexpected error for whole-number float delta: %v", err)
+	}
+	if result.Get("n").intVal != 15 {
+		t.Errorf("expected n=15, got %d", result.Get("n").intVal)
+	}
+}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // ============================================================
@@ -290,6 +289,26 @@ func (p *packedParser) parseValue(fd *FieldDef) (*GValue, error) {
 	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		return p.parseNumberOrTime()
 
+	case 'b':
+		// Bytes literal: b64"<base64>" — intercept before the generic type-name path.
+		if strings.HasPrefix(p.input[p.pos:], `b64"`) {
+			p.pos += 3 // consume 'b', '6', '4'
+			s, err := p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			body, _ := s.AsStr()
+			return decodeBytesLiteral(body)
+		}
+		// Not a bytes literal — fall through to type-name / bare-string handling.
+		saved := p.pos
+		typeName, err := p.parseTypeName()
+		if err == nil && p.peek() == '@' {
+			p.pos = saved
+			return p.parseNestedPacked()
+		}
+		return Str(typeName), nil
+
 	default:
 		// Check if it's a nested packed struct
 		if isTypeNameStart(c) {
@@ -359,9 +378,8 @@ func (p *packedParser) parseNestedPacked() (*GValue, error) {
 }
 
 func (p *packedParser) parseNumberOrTime() (*GValue, error) {
-	// Check if it looks like an ISO-8601 timestamp: 2025-12-19T...
-	// Pattern: YYYY-MM-DDT...Z or similar
-	if p.pos+10 < len(p.input) && p.input[p.pos+4] == '-' && p.input[p.pos+7] == '-' && p.input[p.pos+10] == 'T' {
+	// Use the shared looksLikeTime predicate (handles both datetime and date-only).
+	if looksLikeTime(p.input, p.pos) {
 		return p.parseTime()
 	}
 	return p.parseNumber()
@@ -370,7 +388,7 @@ func (p *packedParser) parseNumberOrTime() (*GValue, error) {
 func (p *packedParser) parseTime() (*GValue, error) {
 	start := p.pos
 
-	// Parse until whitespace or delimiter
+	// Parse until whitespace or delimiter.
 	for p.pos < len(p.input) {
 		c := p.input[p.pos]
 		if c == ' ' || c == ')' || c == ']' || c == '}' || c == '\n' {
@@ -379,16 +397,7 @@ func (p *packedParser) parseTime() (*GValue, error) {
 		p.pos++
 	}
 
-	timeStr := p.input[start:p.pos]
-	t, err := time.Parse("2006-01-02T15:04:05Z", timeStr)
-	if err != nil {
-		// Try other ISO formats
-		t, err = time.Parse(time.RFC3339, timeStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid time format: %s", timeStr)
-		}
-	}
-	return Time(t), nil
+	return parseTimeLiteralStr(p.input[start:p.pos])
 }
 
 func (p *packedParser) parseNumber() (*GValue, error) {
@@ -445,40 +454,12 @@ func (p *packedParser) parseNumber() (*GValue, error) {
 }
 
 func (p *packedParser) parseQuotedString() (*GValue, error) {
-	if !p.expect('"') {
-		return nil, fmt.Errorf("expected '\"'")
+	str, newPos, err := parseQuotedStringShared(p.input, p.pos)
+	if err != nil {
+		return nil, err
 	}
-
-	var sb strings.Builder
-	for p.pos < len(p.input) {
-		c := p.input[p.pos]
-		if c == '"' {
-			p.pos++
-			return Str(sb.String()), nil
-		}
-		if c == '\\' && p.pos+1 < len(p.input) {
-			p.pos++
-			switch p.input[p.pos] {
-			case 'n':
-				sb.WriteByte('\n')
-			case 'r':
-				sb.WriteByte('\r')
-			case 't':
-				sb.WriteByte('\t')
-			case '\\':
-				sb.WriteByte('\\')
-			case '"':
-				sb.WriteByte('"')
-			default:
-				sb.WriteByte(p.input[p.pos])
-			}
-		} else {
-			sb.WriteByte(c)
-		}
-		p.pos++
-	}
-
-	return nil, fmt.Errorf("unterminated string")
+	p.pos = newPos
+	return Str(str), nil
 }
 
 func (p *packedParser) parseBareOrQuotedString() (*GValue, error) {

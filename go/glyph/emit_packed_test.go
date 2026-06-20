@@ -161,9 +161,9 @@ func TestCanonFloat(t *testing.T) {
 		input float64
 		want  string
 	}{
-		{0, "0"},
-		{1.0, "1"},
-		{-1.0, "-1"},
+		{0, "0.0"},
+		{1.0, "1.0"},
+		{-1.0, "-1.0"},
 		{3.14, "3.14"},
 		{0.5, "0.5"},
 		{1e10, "1e+10"},
@@ -185,8 +185,8 @@ func TestCanonString(t *testing.T) {
 		{"hello", "hello"},
 		{"hello_world", "hello_world"},
 		{"Hello", "Hello"},
-		{"my-value", "my-value"},
-		{"path/to/file", "path/to/file"},
+		{"my-value", `"my-value"`},
+		{"path/to/file", `"path/to/file"`},
 		{"has space", `"has space"`},
 		{"has\"quote", `"has\"quote"`},
 		{"t", `"t"`}, // reserved
@@ -208,7 +208,7 @@ func TestCanonRef(t *testing.T) {
 		want   string
 	}{
 		{"t", "ARS", "^t:ARS"},
-		{"m", "2025-12-19:ARS-LIV", "^m:2025-12-19:ARS-LIV"},
+		{"m", "2025-12-19:ARS-LIV", "^\"m:2025-12-19:ARS-LIV\""},
 		{"", "simple", "^simple"},
 	}
 	for _, tt := range tests {

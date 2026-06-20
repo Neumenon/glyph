@@ -3,7 +3,6 @@ package glyph
 import (
 	"encoding/base64"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 )
@@ -105,15 +104,10 @@ func (e *emitter) emit(v *GValue, depth int) {
 		e.sb.WriteString("\"")
 
 	case TypeTime:
-		e.sb.WriteString(v.timeVal.Format("2006-01-02T15:04:05Z07:00"))
+		e.sb.WriteString(canonTime(v.timeVal))
 
 	case TypeID:
-		e.sb.WriteString("^")
-		if v.idVal.Prefix != "" {
-			e.sb.WriteString(v.idVal.Prefix)
-			e.sb.WriteString(":")
-		}
-		e.sb.WriteString(v.idVal.Value)
+		e.sb.WriteString(canonRef(v.idVal))
 
 	case TypeList:
 		e.emitList(v, depth)
@@ -130,27 +124,8 @@ func (e *emitter) emit(v *GValue, depth int) {
 }
 
 func (e *emitter) emitFloat(f float64) {
-	// Use canonical float representation
-	if math.IsNaN(f) {
-		e.sb.WriteString("NaN")
-		return
-	}
-	if math.IsInf(f, 1) {
-		e.sb.WriteString("Inf")
-		return
-	}
-	if math.IsInf(f, -1) {
-		e.sb.WriteString("-Inf")
-		return
-	}
-
-	// Use shortest representation that round-trips
-	s := strconv.FormatFloat(f, 'f', -1, 64)
-	// Ensure it has a decimal point to distinguish from int
-	if !strings.Contains(s, ".") {
-		s += ".0"
-	}
-	e.sb.WriteString(s)
+	// Delegate entirely to canonFloat (D4-compliant, handles NaN/Inf correctly).
+	e.sb.WriteString(canonFloat(f))
 }
 
 func (e *emitter) emitString(s string) {
@@ -374,11 +349,10 @@ func sortMapEntries(entries []MapEntry) []MapEntry {
 
 // CanonicalHash returns a hash of the canonical representation.
 //
-// DEPRECATED / EXPERIMENTAL: zero production callers, and the non-cryptographic
-// FNV-1a digest here is not the canonical fingerprint. Use FingerprintLoose
-// (SHA-256 over the Loose canonical form, cross-language stable) for hashing/
-// deduplication. Kept for experimentation; may change or be removed.
-// See PARITY_ROADMAP.md (P4).
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Zero production callers; the non-cryptographic FNV-1a digest here is not the
+// canonical fingerprint. Use FingerprintLoose (SHA-256 over the Loose canonical
+// form, cross-language stable) for hashing/deduplication. See PARITY_ROADMAP.md (P4).
 func CanonicalHash(v *GValue) string {
 	opts := EmitOptions{
 		UseWireKeys: false,

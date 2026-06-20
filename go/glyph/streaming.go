@@ -495,10 +495,9 @@ const (
 // EncodeDictFrame encodes a frame with dictionary-compressed keys.
 // Returns the encoded frame bytes.
 //
-// EXPERIMENTAL / DE-SCOPED: emit-only. There is no DecodeDictFrame, so these
-// frames cannot be decoded back and the format is not round-trip-tested. Not
-// part of the supported codec surface; may change or be removed. See
-// PARITY_ROADMAP.md (P4).
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Emit-only: there is no DecodeDictFrame, so these frames cannot be decoded back
+// and the format is not round-trip-tested. See PARITY_ROADMAP.md (P4).
 func EncodeDictFrame(v *GValue, session *StreamSession) []byte {
 	// Learn keys during learning phase
 	session.LearnKeys(v)

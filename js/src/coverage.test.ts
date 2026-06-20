@@ -318,7 +318,7 @@ describe('Emit coverage', () => {
     expect(emit(g.int(0))).toBe('0');
     expect(emit(g.int(42))).toBe('42');
     expect(emit(g.float(3.14))).toContain('3.14');
-    expect(emit(g.float(0))).toBe('0');
+    expect(emit(g.float(0))).toBe('0.0');
   });
 
   test('emit string bare vs quoted', () => {
@@ -786,10 +786,12 @@ describe('Loose coverage', () => {
   });
 
   test('canonicalize float special values', () => {
-    expect(canonicalizeLoose(g.float(NaN))).toBe('NaN');
-    expect(canonicalizeLoose(g.float(Infinity))).toBe('Inf');
-    expect(canonicalizeLoose(g.float(-Infinity))).toBe('-Inf');
-    expect(canonicalizeLoose(g.float(-0))).toBe('0');
+    // D3: NaN/Inf hard-error in Loose mode
+    expect(() => canonicalizeLoose(g.float(NaN))).toThrow();
+    expect(() => canonicalizeLoose(g.float(Infinity))).toThrow();
+    expect(() => canonicalizeLoose(g.float(-Infinity))).toThrow();
+    // D4: -0 → '0.0'
+    expect(canonicalizeLoose(g.float(-0))).toBe('0.0');
   });
 
   test('canonicalize float exponential', () => {

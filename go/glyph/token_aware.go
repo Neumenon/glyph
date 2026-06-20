@@ -15,6 +15,9 @@ import (
 )
 
 // TokenAwareOptions configures token-optimized emission.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Used only by EmitTokenAware/EmitTokenAwareWithOptions. See PARITY_ROADMAP.md (P4).
 type TokenAwareOptions struct {
 	// UseAbbreviations enables key abbreviation (default: true)
 	UseAbbreviations bool
@@ -33,6 +36,9 @@ type TokenAwareOptions struct {
 }
 
 // DefaultTokenAwareOptions returns optimized defaults for LLM output.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// See TokenAwareOptions. See PARITY_ROADMAP.md (P4).
 func DefaultTokenAwareOptions() TokenAwareOptions {
 	return TokenAwareOptions{
 		UseAbbreviations: true,
@@ -43,6 +49,9 @@ func DefaultTokenAwareOptions() TokenAwareOptions {
 }
 
 // KeyDict provides bidirectional key abbreviation mapping.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the EmitTokenAware subsystem. See PARITY_ROADMAP.md (P4).
 type KeyDict struct {
 	mu         sync.RWMutex
 	name       string            // Dictionary name for debugging
@@ -51,6 +60,9 @@ type KeyDict struct {
 }
 
 // NewKeyDict creates a new abbreviation dictionary.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the EmitTokenAware subsystem. See PARITY_ROADMAP.md (P4).
 func NewKeyDict(name string) *KeyDict {
 	return &KeyDict{
 		name:       name,
@@ -141,6 +153,9 @@ func (d *KeyDict) Merge(other *KeyDict) int {
 // ============================================================
 
 // LLMDict contains abbreviations for common LLM API fields.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the EmitTokenAware subsystem. See PARITY_ROADMAP.md (P4).
 var LLMDict = func() *KeyDict {
 	d := NewKeyDict("llm")
 	// Chat/Message fields
@@ -192,6 +207,9 @@ var LLMDict = func() *KeyDict {
 }()
 
 // ToolDict contains abbreviations for tool/function calling schemas.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the EmitTokenAware subsystem. See PARITY_ROADMAP.md (P4).
 var ToolDict = func() *KeyDict {
 	d := NewKeyDict("tool")
 	// JSON Schema fields
@@ -230,6 +248,9 @@ var ToolDict = func() *KeyDict {
 }()
 
 // MLDict contains abbreviations for ML tensor/model fields.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the EmitTokenAware subsystem. See PARITY_ROADMAP.md (P4).
 var MLDict = func() *KeyDict {
 	d := NewKeyDict("ml")
 	// Tensor metadata
@@ -272,6 +293,9 @@ var MLDict = func() *KeyDict {
 }()
 
 // CombinedDict merges LLM + Tool + ML dictionaries.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the EmitTokenAware subsystem. See PARITY_ROADMAP.md (P4).
 var CombinedDict = func() *KeyDict {
 	d := NewKeyDict("combined")
 	d.Merge(LLMDict)
@@ -286,15 +310,17 @@ var CombinedDict = func() *KeyDict {
 
 // EmitTokenAware converts a GValue to token-optimized GLYPH-T text.
 //
-// DEPRECATED / EXPERIMENTAL: zero production callers. It is not one of the two
-// supported emitter layers — use Loose (CanonicalizeLoose, LLM-facing) or Typed
-// (Emit, schema-bound) instead. Kept for experimentation; may change or be
-// removed. See PARITY_ROADMAP.md (P4).
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Zero production callers. Use Loose (CanonicalizeLoose, LLM-facing) or Typed
+// (Emit, schema-bound) instead. See PARITY_ROADMAP.md (P4).
 func EmitTokenAware(v *GValue) string {
 	return EmitTokenAwareWithOptions(v, DefaultTokenAwareOptions())
 }
 
 // EmitTokenAwareWithOptions converts with custom options.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// See EmitTokenAware. See PARITY_ROADMAP.md (P4).
 func EmitTokenAwareWithOptions(v *GValue, opts TokenAwareOptions) string {
 	dict := opts.CustomDict
 	if dict == nil {
@@ -579,6 +605,9 @@ func isDefaultValue(v *GValue) bool {
 
 // ExpandAbbreviations expands abbreviated keys in a GValue tree.
 // Modifies the value in-place.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the EmitTokenAware subsystem. See PARITY_ROADMAP.md (P4).
 func ExpandAbbreviations(v *GValue, dict *KeyDict) {
 	if v == nil || dict == nil {
 		return

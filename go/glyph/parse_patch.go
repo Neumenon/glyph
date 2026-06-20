@@ -228,31 +228,48 @@ func parsePatchOp(line string, keyMode KeyMode, schema *Schema) (*PatchOp, error
 }
 
 // findPathEnd finds where the path ends in the string.
-// Path ends at first unquoted, unbracket space.
+// Path ends at the first space or tab that is outside any quoted string and
+// not inside a bracket pair. Backslash escapes inside quoted strings are
+// respected so that a \" does not incorrectly close the quote.
 func findPathEnd(s string) int {
 	inQuote := false
 	bracketDepth := 0
+	i := 0
+	n := len(s)
 
-	for i, r := range s {
-		switch r {
-		case '"':
-			inQuote = !inQuote
-		case '[':
-			if !inQuote {
-				bracketDepth++
+	for i < n {
+		c := s[i]
+		if inQuote {
+			if c == '\\' && i+1 < n {
+				// Skip the escaped character — it cannot end the quote.
+				i += 2
+				continue
 			}
+			if c == '"' {
+				inQuote = false
+			}
+			i++
+			continue
+		}
+		// Not in quote.
+		switch c {
+		case '"':
+			inQuote = true
+		case '[':
+			bracketDepth++
 		case ']':
-			if !inQuote && bracketDepth > 0 {
+			if bracketDepth > 0 {
 				bracketDepth--
 			}
 		case ' ', '\t':
-			if !inQuote && bracketDepth == 0 {
+			if bracketDepth == 0 {
 				return i
 			}
 		}
+		i++
 	}
 
-	return len(s)
+	return n
 }
 
 // parseInlineValue parses a value from the operation line.

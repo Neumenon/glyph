@@ -25,7 +25,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import math
-import re
 from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime, timezone
 from enum import Enum
@@ -84,8 +83,9 @@ MAX_JSON_DEPTH = 128
 MAX_COLLECTION_LEN = 1_000_000  # 1M elements
 MAX_STRING_LEN = 10 * 1024 * 1024  # 10MB
 
-# Reserved words that must be quoted
-RESERVED_WORDS = {"t", "f", "true", "false", "null", "none", "nil", "_", "NaN", "Inf"}
+# Reserved words that must be quoted (D8: matches Go isValidBareString reject list)
+RESERVED_WORDS = {"t", "f", "true", "false", "null", "none", "nil", "_", "NaN", "Inf",
+                   "struct", "sum", "list", "map"}
 
 
 # ============================================================
@@ -112,52 +112,102 @@ def canon_int(n: int) -> str:
 
 
 def canon_float(f: float) -> str:
-    """Canonicalize float with shortest roundtrip representation."""
-    if f == 0:
-        return "0"
-    if math.copysign(1.0, f) < 0 and f == 0:  # Negative zero
-        return "0"
+    """Canonicalize float with shortest roundtrip representation per D4.
 
+    Byte-matches Go strconv.FormatFloat(f, 'g', -1, 64) then lowercases E
+    and appends ".0" iff the result has neither '.' nor 'e'.
+
+    Rules:
+    - Non-finite (NaN/Inf) -> ValueError (Loose mode rejects them)
+    - -0.0 and 0.0 both -> "0.0"  (always a decimal point, D4)
+    - All other values: use shortest round-trip digits from repr(), then apply
+      Go's decimal-vs-exponential rule: use exponential iff the magnitude
+      exponent E = floor(log10(|f|)) satisfies E >= 6 OR E <= -5.
+      Exponent format: e+06, e-05 (always 2-digit zero-padded, always signed).
+    """
     if not math.isfinite(f):
         raise ValueError("non-finite floats are not supported")
+    # -0.0 and 0.0 both canonicalize to "0.0" (D4: always decimal point)
+    if f == 0.0:
+        return "0.0"
 
+    neg = math.copysign(1.0, f) < 0
     abs_f = abs(f)
 
-    # Calculate exponent
-    if abs_f != 0:
-        exp = math.floor(math.log10(abs_f))
+    # repr() gives the shortest round-trip decimal string in Python 3.1+.
+    r = repr(abs_f)
+
+    if 'e' in r:
+        # Python already chose exponential (e.g. "1e-05", "1.5e-10").
+        # Go also uses exponential here — just reformat the exponent sign/padding.
+        mant_str, exp_str = r.split('e')
+        py_exp = int(exp_str)
+        # Re-emit with Go-style exponent: e+06, e-05
+        abs_exp = abs(py_exp)
+        sign_char = '+' if py_exp >= 0 else '-'
+        s = f"{mant_str}e{sign_char}{abs_exp:02d}"
     else:
-        exp = 0
+        # Python gave decimal form. Compute the magnitude exponent E EXACTLY from
+        # the decimal digits — math.log10 rounds the wrong way for values just
+        # below a power of ten (e.g. repr 999999999999999.8 -> true E is 14, but
+        # math.log10 yields 15.0), which would diverge from Go/JS.
+        if '.' in r:
+            _int_p, _frac_p = r.split('.')
+        else:
+            _int_p, _frac_p = r, ''
+        if _int_p != '0':
+            E = len(_int_p) - 1
+        else:
+            _stripped = _frac_p.lstrip('0')
+            E = -(len(_frac_p) - len(_stripped)) - 1
+        if E >= 6 or E <= -5:
+            # Go uses exponential; Python used decimal.
+            # Extract significant digits from Python's repr.
+            if '.' in r:
+                int_p, frac_p = r.split('.')
+                if int_p == '0':
+                    all_digits = frac_p.lstrip('0').rstrip('0') or '0'
+                else:
+                    all_digits = (int_p + frac_p).rstrip('0') or '0'
+            else:
+                all_digits = r.rstrip('0') or '0'
 
-    # Use exponential notation for very small or very large numbers
-    if abs_f != 0 and (exp < -4 or exp >= 15):
-        s = f"{f:e}"
-        # Clean up: remove trailing zeros in mantissa
-        s = re.sub(r"\.?0+e", "e", s)
-        # Pad exponent to 2 digits
-        s = re.sub(r"e([+-])(\d)$", r"e\g<1>0\2", s)
-    else:
-        s = str(f)
+            if len(all_digits) == 1:
+                mant = all_digits
+            else:
+                mant = all_digits[0] + '.' + all_digits[1:]
 
-    # Normalize E -> e
-    s = s.replace("E", "e")
+            abs_exp = abs(E)
+            sign_char = '+' if E >= 0 else '-'
+            s = f"{mant}e{sign_char}{abs_exp:02d}"
+        else:
+            # Go uses decimal; Python's repr is already correct.
+            s = r
+            # D4: ensure decimal point so token is unambiguously float.
+            if '.' not in s and 'e' not in s:
+                s += '.0'
 
-    return s
+    return ('-' if neg else '') + s
 
 
 def is_bare_safe(s: str) -> bool:
-    """Check if string can be emitted as bare (unquoted) identifier."""
+    """Check if string can be emitted as bare (unquoted) identifier (D8).
+
+    Matches Go isValidBareString exactly: ASCII-only, [A-Za-z_][A-Za-z0-9_]*,
+    not a reserved keyword.  Unicode characters, '-', '.', '/' and any other
+    non-ASCII/non-alnum-underscore byte force quoting.
+    """
     if not s:
         return False
     if s in RESERVED_WORDS:
         return False
 
     first = s[0]
-    if not (first == "_" or first.isalpha()):
+    if not (first == "_" or ("A" <= first <= "Z") or ("a" <= first <= "z")):
         return False
 
     for c in s[1:]:
-        if not (c.isalpha() or c.isdigit() or c in "_-./"):
+        if not (("A" <= c <= "Z") or ("a" <= c <= "z") or ("0" <= c <= "9") or c == "_"):
             return False
     return True
 
@@ -212,23 +262,34 @@ def canon_time(t: datetime) -> str:
 
 
 def is_id_safe(s: str) -> bool:
-    """Check if string can be used unquoted in an ID (no reserved word check)."""
+    """Check if a ref part (prefix or value segment) is safe to emit unquoted (D7).
+
+    Mirrors Go isRefChar: ASCII [A-Za-z0-9_] plus '-' and '.' only.
+    '/' and all non-ASCII bytes are rejected — the Go typed lexer's isRefChar
+    does not include '/' (token.go:581-583).
+    """
     if not s:
         return False
-    # IDs allow letters, digits, _, -, ., / (no colon since it's the delimiter)
     for c in s:
-        if not (c.isalpha() or c.isdigit() or c in "_-./"):
+        if not (("A" <= c <= "Z") or ("a" <= c <= "z") or ("0" <= c <= "9")
+                or c == "_" or c == "-" or c == "."):
             return False
     return True
 
 
 def canon_id(ref: RefID) -> str:
-    """Canonicalize ID reference."""
+    """Canonicalize ID reference per D7.
+
+    Emits ^prefix:value bare when both parts pass is_id_safe AND the value
+    contains no ':' (which would cause a mis-split on parse).  Otherwise
+    quotes the full string.
+    """
     if ref.prefix:
-        if is_id_safe(ref.prefix) and is_id_safe(ref.value):
+        # ':' in value would be mis-split by the parser; force quoting.
+        if is_id_safe(ref.prefix) and is_id_safe(ref.value) and ":" not in ref.value:
             return f"^{ref.prefix}:{ref.value}"
-        return f'^"{escape_string(ref.prefix)}:{escape_string(ref.value)}"'
-    if is_id_safe(ref.value):
+        return f'^"{escape_string(ref.prefix + ":" + ref.value)}"'
+    if is_id_safe(ref.value) and ":" not in ref.value:
         return f"^{ref.value}"
     return f'^"{escape_string(ref.value)}"'
 

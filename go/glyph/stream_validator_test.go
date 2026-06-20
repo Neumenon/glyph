@@ -202,7 +202,7 @@ func TestStreamingValidatorMissingRequired(t *testing.T) {
 }
 
 func TestStreamingValidatorTimeline(t *testing.T) {
-	registry := DefaultToolRegistry()
+	registry := DefaultSafeToolRegistry()
 
 	v := NewStreamingValidator(registry)
 	v.Start()
@@ -245,7 +245,7 @@ func TestStreamingValidatorTimeline(t *testing.T) {
 }
 
 func TestStreamingValidatorReset(t *testing.T) {
-	registry := DefaultToolRegistry()
+	registry := DefaultSafeToolRegistry()
 	v := NewStreamingValidator(registry)
 
 	// First validation
@@ -262,28 +262,56 @@ func TestStreamingValidatorReset(t *testing.T) {
 	}
 }
 
-func TestDefaultToolRegistry(t *testing.T) {
-	registry := DefaultToolRegistry()
+func TestDefaultSafeToolRegistry(t *testing.T) {
+	registry := DefaultSafeToolRegistry()
 
-	expectedTools := []string{"search", "calculate", "browse", "execute", "read_file", "write_file"}
-
-	for _, tool := range expectedTools {
+	safeTools := []string{"search", "calculate", "browse"}
+	for _, tool := range safeTools {
 		if !registry.IsAllowed(tool) {
-			t.Errorf("Expected tool '%s' to be allowed", tool)
+			t.Errorf("Expected safe tool '%s' to be allowed", tool)
 		}
 		if registry.Get(tool) == nil {
 			t.Errorf("Expected tool schema for '%s'", tool)
 		}
 	}
 
-	// Check that unknown tools are not allowed
+	// Dangerous tools must NOT be present in the safe registry.
+	dangerousTools := []string{"execute", "read_file", "write_file"}
+	for _, tool := range dangerousTools {
+		if registry.IsAllowed(tool) {
+			t.Errorf("Dangerous tool '%s' must not be in DefaultSafeToolRegistry", tool)
+		}
+	}
+
+	// Unknown tools are not allowed.
+	if registry.IsAllowed("unknown_tool") {
+		t.Errorf("Expected 'unknown_tool' to not be allowed")
+	}
+}
+
+// TestDefaultToolRegistry_DeprecatedShim verifies the deprecated shim still
+// includes all six tools (for backward-compatibility) but that the dangerous
+// three are absent from the safe registry.
+func TestDefaultToolRegistry_DeprecatedShim(t *testing.T) {
+	registry := DefaultToolRegistry()
+
+	allTools := []string{"search", "calculate", "browse", "execute", "read_file", "write_file"}
+	for _, tool := range allTools {
+		if !registry.IsAllowed(tool) {
+			t.Errorf("Expected tool '%s' to be allowed in deprecated DefaultToolRegistry", tool)
+		}
+		if registry.Get(tool) == nil {
+			t.Errorf("Expected tool schema for '%s'", tool)
+		}
+	}
+
 	if registry.IsAllowed("unknown_tool") {
 		t.Errorf("Expected 'unknown_tool' to not be allowed")
 	}
 }
 
 func BenchmarkStreamingValidator(b *testing.B) {
-	registry := DefaultToolRegistry()
+	registry := DefaultSafeToolRegistry()
 
 	payload := `{action="search" query="artificial intelligence news" max_results=20}`
 
@@ -296,7 +324,7 @@ func BenchmarkStreamingValidator(b *testing.B) {
 }
 
 func BenchmarkStreamingValidatorStreamed(b *testing.B) {
-	registry := DefaultToolRegistry()
+	registry := DefaultSafeToolRegistry()
 
 	tokens := []string{
 		`{`, `action=`, `"search"`, ` `, `query=`, `"artificial intelligence news"`, ` `, `max_results=`, `20`, `}`,

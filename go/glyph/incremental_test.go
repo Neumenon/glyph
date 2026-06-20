@@ -443,6 +443,80 @@ func TestIncrementalParser_Struct(t *testing.T) {
 	}
 }
 
+// TestIncrementalParser_TimeLiteralHardError verifies that time literals produce
+// a hard error rather than silently truncating to the year integer (W3 fix).
+func TestIncrementalParser_TimeLiteralHardError(t *testing.T) {
+	inputs := []string{
+		"2026-06-19T12:00:00Z",
+		"2026-06-19T12:00:00+05:00",
+		"2026-01-01",
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			var gotError bool
+			var values []*GValue
+
+			handler := func(e ParseEvent) error {
+				if e.Type == EventError {
+					gotError = true
+				}
+				if e.Type == EventValue {
+					values = append(values, e.Value)
+				}
+				return nil
+			}
+
+			p := NewIncrementalParser(handler, DefaultIncrementalParserOptions())
+			p.Feed([]byte(input))
+			p.End()
+
+			if !gotError {
+				t.Errorf("input %q: expected hard error for time literal, got none", input)
+			}
+			// Must NOT emit an integer (e.g. Int(2026)) — that is the silent corruption bug.
+			for _, v := range values {
+				if _, err := v.AsInt(); err == nil {
+					t.Errorf("input %q: incorrectly emitted an Int value (silent truncation)", input)
+				}
+			}
+		})
+	}
+}
+
+// TestIncrementalParser_B64HardError verifies that b64"..." byte literals produce
+// a hard error rather than silently splitting into a bare string + quoted string (W3 fix).
+func TestIncrementalParser_B64HardError(t *testing.T) {
+	var gotError bool
+	var strValues []string
+
+	handler := func(e ParseEvent) error {
+		if e.Type == EventError {
+			gotError = true
+		}
+		if e.Type == EventValue && e.Value != nil {
+			if s, err := e.Value.AsStr(); err == nil {
+				strValues = append(strValues, s)
+			}
+		}
+		return nil
+	}
+
+	p := NewIncrementalParser(handler, DefaultIncrementalParserOptions())
+	p.Feed([]byte(`b64"aGVsbG8="`))
+	p.End()
+
+	if !gotError {
+		t.Error("expected hard error for b64 byte literal, got none")
+	}
+	// Must NOT silently emit the bare string "b64".
+	for _, s := range strValues {
+		if s == "b64" {
+			t.Error("incorrectly emitted bare string \"b64\" (silent misparsing)")
+		}
+	}
+}
+
 func TestIncrementalParser_ErrorHandling(t *testing.T) {
 	var gotError bool
 
@@ -607,5 +681,107 @@ func BenchmarkIncrementalParser_Streaming(b *testing.B) {
 			p.Feed(chunk)
 		}
 		p.End()
+	}
+}
+
+// TestIncrementalParser_QuotedRef verifies that the incremental parser correctly
+// handles quoted refs (^"...") emitted by W2's conservative quoting for refs
+// with '/' or ':' in the value part.
+func TestIncrementalParser_QuotedRef(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantPrefix  string
+		wantValue   string
+	}{
+		{
+			name:       "slash in value",
+			input:      `^"ns:path/value"`,
+			wantPrefix: "ns",
+			wantValue:  "path/value",
+		},
+		{
+			name:       "colon in value",
+			input:      `^"ns:a:b"`,
+			wantPrefix: "ns",
+			wantValue:  "a:b",
+		},
+		{
+			name:       "no prefix with slash",
+			input:      `^"path/value"`,
+			wantPrefix: "",
+			wantValue:  "path/value",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotValue *GValue
+			handler := func(e ParseEvent) error {
+				if e.Type == EventValue {
+					gotValue = e.Value
+				}
+				return nil
+			}
+			p := NewIncrementalParser(handler, DefaultIncrementalParserOptions())
+			_, err := p.Feed([]byte(tc.input))
+			if err != nil {
+				t.Fatalf("Feed error: %v", err)
+			}
+			p.End()
+
+			if gotValue == nil {
+				t.Fatal("expected a value event, got none")
+			}
+			ref, err2 := gotValue.AsID()
+			if err2 != nil {
+				t.Fatalf("expected ID value, got type %v: %v", gotValue.Type(), err2)
+			}
+			if ref.Prefix != tc.wantPrefix {
+				t.Errorf("prefix: got %q, want %q", ref.Prefix, tc.wantPrefix)
+			}
+			if ref.Value != tc.wantValue {
+				t.Errorf("value: got %q, want %q", ref.Value, tc.wantValue)
+			}
+		})
+	}
+}
+
+// TestIncrementalParser_QuotedRef_Chunked verifies that the incremental parser
+// awaits more data when a quoted ref is split across chunks.
+func TestIncrementalParser_QuotedRef_Chunked(t *testing.T) {
+	chunks := [][]byte{
+		[]byte(`^"ns:`),
+		[]byte(`a/b"`),
+	}
+
+	var gotValue *GValue
+	handler := func(e ParseEvent) error {
+		if e.Type == EventValue {
+			gotValue = e.Value
+		}
+		return nil
+	}
+	p := NewIncrementalParser(handler, DefaultIncrementalParserOptions())
+	for _, chunk := range chunks {
+		_, err := p.Feed(chunk)
+		if err != nil {
+			t.Fatalf("Feed error: %v", err)
+		}
+	}
+	p.End()
+
+	if gotValue == nil {
+		t.Fatal("expected a value event after all chunks, got none")
+	}
+	ref, err2 := gotValue.AsID()
+	if err2 != nil {
+		t.Fatalf("expected ID value, got type %v: %v", gotValue.Type(), err2)
+	}
+	if ref.Prefix != "ns" {
+		t.Errorf("prefix: got %q, want %q", ref.Prefix, "ns")
+	}
+	if ref.Value != "a/b" {
+		t.Errorf("value: got %q, want %q", ref.Value, "a/b")
 	}
 }

@@ -56,11 +56,11 @@ func TestTruthTable(t *testing.T) {
 	})
 
 	t.Run("negative_zero_canonicalizes_to_zero", func(t *testing.T) {
-		// -0.0 → "0"
+		// -0.0 → "0.0" (D4: float always carries a decimal point)
 		gv := Float(math.Copysign(0, -1))
 		got := CanonicalizeLoose(gv)
-		if got != "0" {
-			t.Errorf("expected 0, got %q", got)
+		if got != "0.0" {
+			t.Errorf("expected 0.0, got %q", got)
 		}
 	})
 
@@ -74,20 +74,20 @@ func TestTruthTable(t *testing.T) {
 	})
 
 	t.Run("number_normalization_integer", func(t *testing.T) {
-		// 1.0 → "1"
+		// 1.0 → "1.0" (D4: float always carries a decimal point)
 		gv := Float(1.0)
 		got := CanonicalizeLoose(gv)
-		if got != "1" {
-			t.Errorf("expected 1, got %q", got)
+		if got != "1.0" {
+			t.Errorf("expected 1.0, got %q", got)
 		}
 	})
 
 	t.Run("number_normalization_exponent", func(t *testing.T) {
-		// 1e2 → "100"
+		// 1e2 → "100.0" (D4: float always carries a decimal point)
 		gv := Float(100.0)
 		got := CanonicalizeLoose(gv)
-		if got != "100" {
-			t.Errorf("expected 100, got %q", got)
+		if got != "100.0" {
+			t.Errorf("expected 100.0, got %q", got)
 		}
 	})
 

@@ -95,14 +95,15 @@
     },
     {
       "id": "string_bare_safe",
-      "description": "Safe identifiers are bare (unquoted)",
-      "test_strings": ["hello", "foo_bar", "x123", "a-b", "path/to/file"],
+      "description": "Safe identifiers are bare (unquoted) per isValidBareString (D8 strict ASCII)",
+      "test_strings": ["hello", "foo_bar", "x123"],
       "expect_bare": true
     },
     {
       "id": "string_must_quote",
       "description": "Strings with special chars must be quoted",
-      "test_strings": ["hello world", "has\"quote", "", "123starts_with_digit", "true", "false", "null"],
+      "test_strings": ["hello world", "has\"quote", "", "123starts_with_digit", "true", "false", "null",
+                       "a-b", "path/to/file"],
       "expect_bare": false
     }
   ]

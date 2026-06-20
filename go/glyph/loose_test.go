@@ -74,7 +74,7 @@ func TestCanonicalizeLoose_Scalars(t *testing.T) {
 		{"int_zero", Int(0), "0"},
 		{"int_positive", Int(42), "42"},
 		{"int_negative", Int(-100), "-100"},
-		{"float_zero", Float(0.0), "0"},
+		{"float_zero", Float(0.0), "0.0"},
 		{"float_positive", Float(3.14), "3.14"},
 		{"float_negative", Float(-2.5), "-2.5"},
 		{"float_exp", Float(1e10), "1e+10"},
@@ -376,7 +376,7 @@ func TestFromJSONLoose_NegativeZero(t *testing.T) {
 
 	// The value should be 0 (not -0)
 	canon := CanonicalizeLoose(gv)
-	// -0.0 as float64 equals 0, and canonFloat should return "0"
+	// JSON -0 is parsed as integer 0 by Go's json.Number, so canonical is "0"
 	if canon != "{x=0}" {
 		t.Errorf("Expected {x=0}, got %s", canon)
 	}
@@ -441,7 +441,7 @@ func TestGoldenFiles(t *testing.T) {
 				t.Fatalf("FromJSONLoose failed for %s: %v", entry.Name(), err)
 			}
 
-			canon := CanonicalizeLoose(gv)
+			canon := CanonicalizeLooseNoTabular(gv)
 			wantPath := filepath.Join(goldenDir, name+".want")
 			if err := os.WriteFile(wantPath, []byte(canon+"\n"), 0644); err != nil {
 				t.Fatalf("Failed to write %s: %v", wantPath, err)

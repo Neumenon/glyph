@@ -13,6 +13,9 @@ Known divergences (intentionally deferred, do NOT fix here):
   (e.g. 1e3 -> "1000"), Python's canon_float keeps the float representation
   (1000.0). This affects cases 006, 016, 034, 035.
   See: "deferred — float-.0 rule unification".
+
+- 036_negative_zero: JSON -0 is parsed as integer 0 in Go (emits "0") but
+  as float -0.0 in Python (emits "0.0" for neg_zero_float). Deferred.
 """
 
 from __future__ import annotations
@@ -55,6 +58,11 @@ _FLOAT_RULE_XFAIL = {
         "deferred — float rule: 9007199254740992/9007199254740993 are parsed as "
         "Python int by json.loads, but Go treats them as out-of-safe-int float and "
         "emits 9.007199254740992e+15"
+    ),
+    "036_negative_zero": (
+        "deferred — float rule: JSON -0 is parsed as integer 0 in Go (emits '0') "
+        "but as float -0.0 in Python (neg_zero_float emits '0.0'); "
+        "deferred until JSON bridge float/int parsing is unified"
     ),
 }
 

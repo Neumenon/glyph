@@ -236,3 +236,251 @@ func TestMapStrRef_ValidatesNestedTypes(t *testing.T) {
 		t.Errorf("Expected required_field error, got: %v", result.Errors)
 	}
 }
+
+// ============================================================
+// Required-null Tests
+// ============================================================
+
+func TestRequiredFieldNull_IsError(t *testing.T) {
+	schema := NewSchemaBuilder().
+		AddStruct("Config", "v1",
+			Field("name", PrimitiveType("str")),
+		).
+		Build()
+
+	value := Struct("Config",
+		MapEntry{Key: "name", Value: Null()}, // required field present but null
+	)
+
+	result := ValidateWithSchema(value, schema)
+	if result.Valid {
+		t.Error("Expected validation to fail when required field is null")
+	}
+	found := false
+	for _, err := range result.Errors {
+		if err.Code == "required_field_null" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected required_field_null error, got: %v", result.Errors)
+	}
+}
+
+func TestOptionalFieldNull_IsAllowed(t *testing.T) {
+	schema := NewSchemaBuilder().
+		AddStruct("Config", "v1",
+			Field("name", PrimitiveType("str"), WithOptional()),
+		).
+		Build()
+
+	value := Struct("Config",
+		MapEntry{Key: "name", Value: Null()}, // optional field present as null — allowed
+	)
+
+	result := ValidateWithSchema(value, schema)
+	if !result.Valid {
+		t.Errorf("Expected optional null to be valid, got errors: %v", result.Errors)
+	}
+}
+
+// ============================================================
+// ApplyDefaults / Normalize Tests
+// ============================================================
+
+func TestApplyDefaults_FillsAbsentOptionalFields(t *testing.T) {
+	schema := NewSchemaBuilder().
+		AddStruct("Config", "v1",
+			Field("name", PrimitiveType("str")),
+			Field("port", PrimitiveType("int"), WithOptional(), WithDefault(Int(8080))),
+			Field("debug", PrimitiveType("bool"), WithOptional(), WithDefault(Bool(false))),
+		).
+		Build()
+
+	// Value without optional fields
+	value := Struct("Config",
+		MapEntry{Key: "name", Value: Str("myapp")},
+	)
+
+	result := ApplyDefaults(schema, "Config", value)
+	if result == nil {
+		t.Fatal("ApplyDefaults returned nil")
+	}
+
+	// Find port and debug fields in result
+	var portVal, debugVal *GValue
+	for _, f := range result.structVal.Fields {
+		switch f.Key {
+		case "port":
+			portVal = f.Value
+		case "debug":
+			debugVal = f.Value
+		}
+	}
+
+	if portVal == nil {
+		t.Error("default for port not injected")
+	} else if v, _ := portVal.AsInt(); v != 8080 {
+		t.Errorf("port default wrong: got %d", v)
+	}
+
+	if debugVal == nil {
+		t.Error("default for debug not injected")
+	} else if v, _ := debugVal.AsBool(); v != false {
+		t.Errorf("debug default wrong: got %v", v)
+	}
+}
+
+func TestApplyDefaults_DoesNotOverwritePresentField(t *testing.T) {
+	schema := NewSchemaBuilder().
+		AddStruct("Config", "v1",
+			Field("port", PrimitiveType("int"), WithOptional(), WithDefault(Int(8080))),
+		).
+		Build()
+
+	// Value already has port set to 9090
+	value := Struct("Config",
+		MapEntry{Key: "port", Value: Int(9090)},
+	)
+
+	result := ApplyDefaults(schema, "Config", value)
+
+	var portVal *GValue
+	for _, f := range result.structVal.Fields {
+		if f.Key == "port" {
+			portVal = f.Value
+		}
+	}
+
+	if portVal == nil {
+		t.Fatal("port field missing after ApplyDefaults")
+	}
+	if v, _ := portVal.AsInt(); v != 9090 {
+		t.Errorf("ApplyDefaults overwrote existing field: got %d, want 9090", v)
+	}
+}
+
+func TestApplyDefaults_DoesNotFillRequiredFields(t *testing.T) {
+	schema := NewSchemaBuilder().
+		AddStruct("Config", "v1",
+			Field("name", PrimitiveType("str")), // required, no default
+		).
+		Build()
+
+	value := Struct("Config") // missing required field
+
+	result := ApplyDefaults(schema, "Config", value)
+	// Required field should NOT be injected
+	for _, f := range result.structVal.Fields {
+		if f.Key == "name" {
+			t.Error("ApplyDefaults injected value for required field that has no Default")
+		}
+	}
+}
+
+func TestValidator_Normalize_ThenValidate(t *testing.T) {
+	schema := NewSchemaBuilder().
+		AddStruct("Config", "v1",
+			Field("name", PrimitiveType("str")),
+			Field("port", PrimitiveType("int"), WithOptional(), WithDefault(Int(8080))),
+		).
+		Build()
+
+	v := NewValidator(schema)
+	value := Struct("Config", MapEntry{Key: "name", Value: Str("myapp")})
+
+	normalized := v.Normalize(value, "Config")
+	result := v.ValidateAs(normalized, "Config")
+	if !result.Valid {
+		t.Errorf("Expected valid after Normalize+Validate, got: %v", result.Errors)
+	}
+
+	// Confirm port default was applied
+	var portVal *GValue
+	for _, f := range normalized.structVal.Fields {
+		if f.Key == "port" {
+			portVal = f.Value
+		}
+	}
+	if portVal == nil {
+		t.Error("port default not applied by Normalize")
+	}
+}
+
+// ============================================================
+// @open Capture / @unknown Bucket Tests
+// ============================================================
+
+func TestOpenStruct_CapturesUnknownInBucket(t *testing.T) {
+	schema := NewSchemaBuilder().
+		AddOpenStruct("Config", "v1",
+			Field("name", PrimitiveType("str")),
+		).
+		Build()
+
+	value := Struct("Config",
+		MapEntry{Key: "name", Value: Str("myapp")},
+		MapEntry{Key: "extra", Value: Int(42)}, // unknown
+	)
+
+	result := ValidateWithSchema(value, schema)
+	if !result.Valid {
+		t.Errorf("Expected valid for @open struct, got: %v", result.Errors)
+	}
+
+	// @unknown bucket should be present in the value's fields after validation
+	var bucket *GValue
+	for _, f := range value.structVal.Fields {
+		if f.Key == "@unknown" {
+			bucket = f.Value
+			break
+		}
+	}
+	if bucket == nil {
+		t.Fatal("@unknown bucket not inserted by validateStruct")
+	}
+	if bucket.typ != TypeMap {
+		t.Errorf("@unknown bucket should be TypeMap, got %s", bucket.typ)
+	}
+	// Should contain "extra"
+	found := false
+	for _, e := range bucket.mapVal {
+		if e.Key == "extra" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("@unknown bucket should contain 'extra' field, got: %v", bucket.mapVal)
+	}
+}
+
+func TestStrictValidator_OpenStruct_NoCapture(t *testing.T) {
+	schema := NewSchemaBuilder().
+		AddOpenStruct("Config", "v1",
+			Field("name", PrimitiveType("str")),
+		).
+		Build()
+
+	value := Struct("Config",
+		MapEntry{Key: "name", Value: Str("myapp")},
+		MapEntry{Key: "extra", Value: Int(42)},
+	)
+
+	// Strict mode: @open behaves as closed — unknown fields are errors, no capture
+	result := NewStrictValidator(schema).ValidateAs(value, "Config")
+	if result.Valid {
+		t.Error("Strict validator should reject unknown fields even in @open struct")
+	}
+	found := false
+	for _, e := range result.Errors {
+		if e.Code == "unknown_field" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected unknown_field error from strict validator, got: %v", result.Errors)
+	}
+}

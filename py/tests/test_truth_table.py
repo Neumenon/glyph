@@ -42,9 +42,9 @@ class TestTruthTable:
         assert got == "{key=value}"
 
     def test_negative_zero_canonicalizes_to_zero(self):
-        """-0.0 canonicalizes to '0' in glyph text."""
+        """-0.0 canonicalizes to '0.0' in glyph text (D4: always decimal point)."""
         got = canon_float(-0.0)
-        assert got == "0"
+        assert got == "0.0"
 
     def test_empty_document_valid(self):
         """Empty map is valid and canonicalizes to {}."""
@@ -53,16 +53,14 @@ class TestTruthTable:
         assert got == "{}"
 
     def test_number_normalization_integer(self):
-        """1.0 normalizes in canonical form (Python keeps trailing .0)."""
+        """1.0 canonicalizes to '1.0' (D4: always a decimal point)."""
         got = canon_float(1.0)
-        # Python canon_float preserves ".0" suffix unlike Go.
-        # Both "1" and "1.0" are acceptable canonical forms.
-        assert got in ("1", "1.0")
+        assert got == "1.0"
 
     def test_number_normalization_exponent(self):
-        """1e2 normalizes in canonical form (Python keeps trailing .0)."""
+        """100.0 canonicalizes to '100.0' (D4: always a decimal point)."""
         got = canon_float(100.0)
-        assert got in ("100", "100.0")
+        assert got == "100.0"
 
     def test_reserved_words_quoted(self):
         """Reserved words like 'true' must be quoted as values."""

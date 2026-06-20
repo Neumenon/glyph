@@ -119,7 +119,7 @@ class TestCanonicalizeLoose:
 
     def test_float(self):
         assert emit(GValue.float_(3.14)) == "3.14"
-        assert emit(GValue.float_(0.0)) == "0"
+        assert emit(GValue.float_(0.0)) == "0.0"
 
     def test_str_bare(self):
         assert emit(GValue.str_("hello")) == "hello"
@@ -678,7 +678,7 @@ class TestLooseEdgeCases:
 
     def test_canon_float_negative_zero(self):
         from glyph.loose import canon_float
-        assert canon_float(-0.0) == "0"
+        assert canon_float(-0.0) == "0.0"
 
     def test_canon_float_very_small(self):
         from glyph.loose import canon_float
@@ -752,7 +752,9 @@ class TestLooseEdgeCases:
     def test_is_id_safe(self):
         from glyph.loose import is_id_safe
         assert is_id_safe("abc123") is True
-        assert is_id_safe("a-b.c/d") is True
+        assert is_id_safe("a-b.c") is True      # dash and dot are allowed (isRefChar)
+        assert is_id_safe("a-b.c/d") is False   # '/' is NOT allowed (D7-REF-1)
+        assert is_id_safe("café") is False       # non-ASCII not allowed
         assert is_id_safe("") is False
         assert is_id_safe("a b") is False
         assert is_id_safe("a:b") is False

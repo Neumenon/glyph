@@ -184,42 +184,69 @@ function canonInt(n: number): string {
 }
 
 function canonFloat(f: number): string {
-  if (Number.isNaN(f)) return 'NaN';
-  if (f === Infinity) return 'Inf';
-  if (f === -Infinity) return '-Inf';
-  if (f === 0) return '0';
-  if (Object.is(f, -0)) return '0'; // Negative zero -> 0
+  // D3: NaN/Inf hard-error in Loose mode
+  if (Number.isNaN(f)) throw new Error('NaN not allowed in GLYPH-Loose');
+  if (f === Infinity) throw new Error('Infinity not allowed in GLYPH-Loose');
+  if (f === -Infinity) throw new Error('-Infinity not allowed in GLYPH-Loose');
+  // D4: -0 → 0.0
+  if (Object.is(f, -0)) return '0.0';
+  if (f === 0) return '0.0';
 
-  // Use Go-compatible formatting (%g format)
-  // Go's %g uses exponential for values with exponent < -4 or >= precision (default 6)
+  return goFormatFloat(f);
+}
+
+/**
+ * Formats a non-zero, finite float64 to byte-match Go's strconv.FormatFloat(f,'g',-1,64).
+ * D4: always includes a decimal point or exponent character.
+ *
+ * Go uses exponential form iff floor(log10(|f|)) >= 6 OR floor(log10(|f|)) <= -5.
+ * Exponent is always signed and zero-padded to 2 digits: e+06, e-05.
+ */
+function goFormatFloat(f: number): string {
   const absF = Math.abs(f);
-  
-  // Match Go's strconv.FormatFloat with 'g' and -1 precision
-  // Go switches to exponential when exponent is outside [-4, precision-1]
-  // For -1 precision, it uses the minimum precision needed
-  
+  const neg = f < 0;
+
+  const jsStr = String(absF);
   let s: string;
-  
-  // Calculate the exponent of the number
-  const exp = absF === 0 ? 0 : Math.floor(Math.log10(absF));
-  
-  // Go uses exponential notation when exponent < -4 or when it saves space
-  if (absF !== 0 && (exp < -4 || exp >= 15)) {
-    // Use exponential notation
-    s = f.toExponential();
-    // Remove unnecessary trailing zeros in the mantissa
-    s = s.replace(/\.?0+e/, 'e');
-    // Pad the exponent to 2 digits to match Go
-    s = s.replace(/e([+-])(\d)$/, 'e$10$2');
+
+  if (jsStr.includes('e') || jsStr.includes('E')) {
+    // JS chose exponential form — normalize to Go format.
+    s = normalizeExpStr(jsStr);
   } else {
-    // Use regular notation
-    s = String(f);
+    // JS gave decimal form. Apply Go's threshold: exp E = floor(log10(absF)).
+    const E = Math.floor(Math.log10(absF));
+    if (E >= 6 || E <= -5) {
+      // Go uses exponential; JS used decimal — convert.
+      s = decimalToGoExp(absF);
+    } else {
+      // Go uses decimal — JS form is correct.
+      s = jsStr;
+      // D4: ensure decimal point so token is unambiguously float.
+      if (!s.includes('.') && !s.includes('e')) {
+        s = s + '.0';
+      }
+    }
   }
-  
-  // Normalize: E -> e
-  s = s.replace('E', 'e');
-  
-  return s;
+
+  return neg ? '-' + s : s;
+}
+
+/** Normalize a JS exponential string to Go's format (always e+XX or e-XX with 2-digit exp). */
+function normalizeExpStr(jsExp: string): string {
+  return jsExp.replace(/[eE]([+-]?)(\d+)$/, (_match, sign, digits) => {
+    const signChar = sign === '-' ? '-' : '+';
+    const paddedDigits = digits.length === 1 ? '0' + digits : digits;
+    return 'e' + signChar + paddedDigits;
+  });
+}
+
+/** Convert a non-zero absolute float to Go exponential form using JS toExponential(). */
+function decimalToGoExp(absF: number): string {
+  let expStr = absF.toExponential();
+  // Remove trailing zeros from mantissa
+  expStr = expStr.replace(/\.?0+(e)/, '$1');
+  // Normalize sign and zero-pad exponent
+  return normalizeExpStr(expStr);
 }
 
 function canonString(s: string): string {
@@ -238,8 +265,14 @@ function canonRef(prefix: string, value: string): string {
 }
 
 function canonTime(d: Date): string {
-  // ISO-8601 UTC format, trimmed to seconds
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  // D2: UTC RFC3339, sub-second kept only when non-zero with trailing zeros trimmed
+  const ms = d.getUTCMilliseconds();
+  if (ms === 0) {
+    return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  }
+  // Non-zero milliseconds: trim trailing zeros from 3-digit fraction
+  const msStr = ms.toString().padStart(3, '0').replace(/0+$/, '');
+  return d.toISOString().replace(/\.\d{3}Z$/, '.' + msStr + 'Z');
 }
 
 function canonBytes(bytes: Uint8Array): string {
@@ -255,27 +288,25 @@ function canonBytes(bytes: Uint8Array): string {
 
 function isBareSafe(s: string): boolean {
   if (s.length === 0) return false;
-  
-  // Reserved words
-  if (['t', 'f', '_', 'true', 'false', 'null', 'none', 'nil'].includes(s)) {
+
+  // D8: reserved words (extended list)
+  if (['t', 'f', '_', 'true', 'false', 'null', 'none', 'nil', 'struct', 'sum', 'list', 'map', 'NaN', 'Inf'].includes(s)) {
     return false;
   }
-  
-  // Use codepoint iteration for proper Unicode handling
-  const codepoints = [...s].map(c => c.codePointAt(0)!);
-  
-  // First char: letter or underscore
-  const first = codepoints[0];
-  if (!isLetterCodepoint(first) && first !== 95) return false; // 95 = '_'
-  
-  // Rest: letter, digit, _, -, ., /
-  for (let i = 1; i < codepoints.length; i++) {
-    const c = codepoints[i];
-    if (!isLetterCodepoint(c) && !isDigitCodepoint(c) && c !== 95 && c !== 45 && c !== 46 && c !== 47) {
+
+  // D8: conservative quoting — ASCII identifier [A-Za-z_][A-Za-z0-9_]* only
+  const first = s.charCodeAt(0);
+  // First char: ASCII letter or underscore
+  if (!((first >= 65 && first <= 90) || (first >= 97 && first <= 122) || first === 95)) return false;
+
+  // Rest: ASCII letter, ASCII digit, or underscore only (no Unicode, no -./  )
+  for (let i = 1; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 95)) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -295,13 +326,39 @@ function isDigitCodepoint(c: number): boolean {
   return c > 127 && /\p{Nd}/u.test(String.fromCodePoint(c));
 }
 
+/** isRefPartChar: ASCII [A-Za-z0-9_.-] — excludes ':' and '/' per D7. */
+function isRefPartChar(c: number): boolean {
+  return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) ||
+         c === 95 /* _ */ || c === 45 /* - */ || c === 46 /* . */;
+}
+
+/**
+ * isRefSafe mirrors Go canon.go isRefSafe and Python canon_id:
+ * - All chars in prefix must pass isRefPartChar (excludes ':' and '/')
+ * - All chars in value must pass isRefPartChar (excludes ':' and '/')
+ * - A ':' in value forces quoting (first-':' split would mis-parse)
+ * - '/' anywhere forces quoting (typed lexer isRefChar rejects it)
+ */
 function isRefSafe(s: string): boolean {
   if (s.length === 0) return false;
-  const codepoints = [...s].map(c => c.codePointAt(0)!);
-  for (const c of codepoints) {
-    if (!isLetterCodepoint(c) && !isDigitCodepoint(c) && c !== 95 && c !== 45 && c !== 46 && c !== 47 && c !== 58) {
-      return false; // 58 = ':'
+  const colonIdx = s.indexOf(':');
+  if (colonIdx < 0) {
+    // No prefix — whole string is the value; must not contain ':' or '/'.
+    for (let i = 0; i < s.length; i++) {
+      if (!isRefPartChar(s.charCodeAt(i))) return false;
     }
+    return true;
+  }
+  // Has prefix:value split.
+  const prefix = s.slice(0, colonIdx);
+  const value = s.slice(colonIdx + 1);
+  for (let i = 0; i < prefix.length; i++) {
+    if (!isRefPartChar(prefix.charCodeAt(i))) return false;
+  }
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    // ':' in value forces quoting; '/' already excluded by isRefPartChar.
+    if (c === 58 /* : */ || !isRefPartChar(c)) return false;
   }
   return true;
 }
@@ -1396,7 +1453,8 @@ export function toJsonLoose(gv: GValue, opts: BridgeOpts = {}): unknown {
       return b64;
     }
     case 'time': {
-      const iso = gv.asTime().toISOString();
+      const d = gv.asTime();
+      const iso = canonTime(d);
       if (opts.extended) {
         const result = createJsonObject();
         result.$glyph = 'time';

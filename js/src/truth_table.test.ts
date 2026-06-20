@@ -39,10 +39,10 @@ describe('Truth Table', () => {
   });
 
   test('negative_zero_canonicalizes_to_zero', () => {
-    // -0.0 → "0"
+    // D4: -0.0 → "0.0"
     const gv = g.float(-0);
     const got = canonicalizeLoose(gv);
-    expect(got).toBe('0');
+    expect(got).toBe('0.0');
   });
 
   test('empty_document_valid', () => {
@@ -53,17 +53,17 @@ describe('Truth Table', () => {
   });
 
   test('number_normalization_integer', () => {
-    // 1.0 → "1"
+    // D4: 1.0 → "1.0" (decimal point required)
     const gv = g.float(1.0);
     const got = canonicalizeLoose(gv);
-    expect(got).toBe('1');
+    expect(got).toBe('1.0');
   });
 
   test('number_normalization_exponent', () => {
-    // 1e2 → "100"
+    // D4: 100.0 → "100.0" (decimal point required)
     const gv = g.float(100);
     const got = canonicalizeLoose(gv);
-    expect(got).toBe('100');
+    expect(got).toBe('100.0');
   });
 
   test('reserved_words_quoted', () => {

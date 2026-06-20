@@ -146,3 +146,91 @@ func TestSchemaText_LoneDotErrors(t *testing.T) {
 		t.Error("expected lex error for a lone '.'")
 	}
 }
+
+// TestSchemaText_ConstraintFixpoint confirms the five previously-missing
+// constraint tokens (regex, enum, unique, minlen, maxlen) now survive a
+// ParseSchema(EmitSchema(s)) round-trip, closing the gap noted in the PR.
+func TestSchemaText_ConstraintFixpoint(t *testing.T) {
+	s := NewSchemaBuilder().
+		AddStruct("Item", "v1",
+			Field("code", PrimitiveType("str"),
+				WithConstraint(RegexConstraint(`[A-Z]+`)),
+				WithConstraint(EnumConstraint([]string{"FOO", "BAR", "BAZ"})),
+				WithOptional(),
+			),
+			Field("tags", ListType(PrimitiveType("str")),
+				WithConstraint(Constraint{Kind: ConstraintUnique}),
+				WithConstraint(MinLenConstraint(1)),
+				WithConstraint(MaxLenConstraint(10)),
+				WithOptional(),
+			),
+		).
+		Build()
+
+	text1 := EmitSchema(s)
+
+	s2, err := ParseSchema(text1)
+	if err != nil {
+		t.Fatalf("ParseSchema(EmitSchema(s)) failed: %v\n--- text ---\n%s", err, text1)
+	}
+	text2 := EmitSchema(s2)
+
+	if text1 != text2 {
+		t.Errorf("constraint round-trip not a fixpoint:\n--- first ---\n%s\n--- second ---\n%s", text1, text2)
+	}
+
+	// Spot-check individual constraints parsed correctly.
+	codeField := s2.GetField("Item", "code")
+	if codeField == nil {
+		t.Fatal("code field missing after round-trip")
+	}
+	var foundRegex, foundEnum bool
+	for _, c := range codeField.Constraints {
+		switch c.Kind {
+		case ConstraintRegex:
+			if c.Value.(string) == `[A-Z]+` {
+				foundRegex = true
+			}
+		case ConstraintEnum:
+			vals := c.Value.([]string)
+			if len(vals) == 3 && vals[0] == "FOO" && vals[1] == "BAR" && vals[2] == "BAZ" {
+				foundEnum = true
+			}
+		}
+	}
+	if !foundRegex {
+		t.Errorf("regex constraint not parsed back correctly; constraints: %v", codeField.Constraints)
+	}
+	if !foundEnum {
+		t.Errorf("enum constraint not parsed back correctly; constraints: %v", codeField.Constraints)
+	}
+
+	tagsField := s2.GetField("Item", "tags")
+	if tagsField == nil {
+		t.Fatal("tags field missing after round-trip")
+	}
+	var foundUnique, foundMinLen, foundMaxLen bool
+	for _, c := range tagsField.Constraints {
+		switch c.Kind {
+		case ConstraintUnique:
+			foundUnique = true
+		case ConstraintMinLen:
+			if c.Value.(int) == 1 {
+				foundMinLen = true
+			}
+		case ConstraintMaxLen:
+			if c.Value.(int) == 10 {
+				foundMaxLen = true
+			}
+		}
+	}
+	if !foundUnique {
+		t.Errorf("unique constraint not parsed back; constraints: %v", tagsField.Constraints)
+	}
+	if !foundMinLen {
+		t.Errorf("minlen constraint not parsed back; constraints: %v", tagsField.Constraints)
+	}
+	if !foundMaxLen {
+		t.Errorf("maxlen constraint not parsed back; constraints: %v", tagsField.Constraints)
+	}
+}

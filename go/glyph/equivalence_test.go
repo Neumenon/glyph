@@ -107,7 +107,7 @@ func testSingleCanon(t *testing.T, cls equivClass, opts LooseCanonOpts) {
 func testStringBareSafety(t *testing.T, cls equivClass) {
 	t.Helper()
 	for _, s := range cls.TestStrings {
-		safe := isBareSafeV2(s)
+		safe := isValidBareString(s)
 		if *cls.ExpectBare && !safe {
 			t.Errorf("expected %q to be bare-safe, but it was not", s)
 		} else if !*cls.ExpectBare && safe {
