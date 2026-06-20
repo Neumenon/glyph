@@ -1,5 +1,14 @@
 package glyph
 
+// EXPERIMENTAL — Decimal128 is NOT integrated into the core Parse/Emit path.
+// It is standalone (unreferenced by parse.go/emit.go/types.go/token.go), has no
+// GType, and is not exposed as a supported feature anywhere in the public
+// docs/README. It is kept as experimental scaffolding and MAY CHANGE or be
+// removed; do not depend on it for the canonical codec. See PARITY_ROADMAP.md
+// (P4) for context. Known rough edges (scale int8 overflow, ToInt64 returning
+// the raw coefficient, negative-scale String()) remain because the type is not
+// yet wired into the codec.
+
 import (
 	"errors"
 	"fmt"
@@ -18,8 +27,8 @@ var (
 // Decimal128 represents a 128-bit decimal number: value = coefficient * 10^(-scale)
 // where scale is -127 to 127 (8-bit signed) and coefficient is 16 bytes.
 //
-// This provides high-precision decimal arithmetic for financial, scientific,
-// and blockchain applications where rounding errors are unacceptable.
+// EXPERIMENTAL: not integrated into the core Parse/Emit path; may change. See
+// the package-level note above.
 type Decimal128 struct {
 	Scale int8   // Exponent: -127 to 127
 	Coef  [16]byte // 128-bit coefficient (two's complement, big-endian)

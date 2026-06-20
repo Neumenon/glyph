@@ -137,7 +137,9 @@ func TestV2EmitHeader(t *testing.T) {
 	}
 
 	got := EmitHeader(h)
-	expected := "@lyph v2 @schema#abc123 @mode=packed @keys=name"
+	// The emitter now writes the full "@glyph" spelling (parser still accepts
+	// the legacy "@lyph" — see ParseHeader).
+	expected := "@glyph v2 @schema#abc123 @mode=packed @keys=name"
 
 	if got != expected {
 		t.Errorf("EmitHeader:\n  got:  %q\n  want: %q", got, expected)
@@ -277,8 +279,8 @@ func TestV2FullTrip(t *testing.T) {
 
 	t.Logf("Full trip v2:\n%s", output)
 
-	// Should have header
-	if !strings.HasPrefix(output, "@lyph v2") {
+	// Should have header (emitter now uses the full "@glyph" spelling)
+	if !strings.HasPrefix(output, "@glyph v2") {
 		t.Errorf("Missing v2 header")
 	}
 

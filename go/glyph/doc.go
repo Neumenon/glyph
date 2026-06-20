@@ -54,6 +54,24 @@
 //	  O=[2.10 3.40 3.25]
 //	}
 //
+// # Emitter Layers (supported surface)
+//
+// GLYPH collapses to two supported emitter layers. Prefer these as the entry
+// points; the others below are secondary, experimental, or emit-only and may
+// change:
+//
+//   - Loose (schema-free, LLM-facing): CanonicalizeLoose / CanonicalizeLooseWithOpts.
+//     Deterministic, cross-language byte-identical, JSON-bridgeable via
+//     ToJSONLoose/FromJSONLoose. Use for hashing/dedup via FingerprintLoose.
+//   - Typed (schema-bound): Emit / EmitWithOptions (and the schema-driven
+//     EmitPacked / EmitTabular it composes). Round-trips through Parse.
+//
+// Not part of the two supported layers (see PARITY_ROADMAP.md P4):
+//   - EmitTokenAware  — deprecated/experimental, zero production callers.
+//   - CanonicalHash   — deprecated/experimental; use FingerprintLoose instead.
+//   - EmitV2/EmitV2Patch, EncodeDictFrame, Decimal128 — experimental/emit-only,
+//     not round-trip-integrated; may change or be removed.
+//
 // # Error Tolerance
 //
 // GLYPH-T parsing is tolerant:

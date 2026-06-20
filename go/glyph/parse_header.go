@@ -147,10 +147,14 @@ func parseRefIDFromTarget(s string) RefID {
 }
 
 // EmitHeader generates a GLYPH v2 header string.
+//
+// The emitter writes the full "@glyph" spelling (maintainer decision). The
+// parser (ParseHeader) still accepts both "@glyph" and the legacy "@lyph" for
+// back-compat, so older payloads keep parsing.
 func EmitHeader(h *Header) string {
 	var b strings.Builder
 
-	b.WriteString("@lyph ")
+	b.WriteString("@glyph ")
 	b.WriteString(h.Version)
 
 	if h.SchemaID != "" {
@@ -261,6 +265,12 @@ func DefaultV2Options(schema *Schema) V2Options {
 // ============================================================
 
 // EmitV2 encodes a value in GLYPH v2 format with automatic mode selection.
+//
+// EXPERIMENTAL: emit-only. There is no authoritative v2 document parser
+// (ParseV2Document does not exist), so EmitV2 output cannot be round-tripped
+// back through a single v2 decoder. Not integrated into the supported
+// Parse/Emit path; may change. Use the Loose (CanonicalizeLoose) or Typed
+// (Emit/Parse) entry points for round-trippable output. See PARITY_ROADMAP.md (P4).
 func EmitV2(v *GValue, opts V2Options) (string, error) {
 	if v == nil {
 		return canonNull(), nil
@@ -318,6 +328,9 @@ func EmitV2(v *GValue, opts V2Options) (string, error) {
 }
 
 // EmitV2Patch encodes a patch in GLYPH v2 format.
+//
+// EXPERIMENTAL: shares EmitV2's emit-only status (no v2 document parser); may
+// change. The supported patch path is EmitPatch/ParsePatch. See PARITY_ROADMAP.md (P4).
 func EmitV2Patch(p *Patch, opts V2Options) (string, error) {
 	patchOpts := PatchOptions{
 		Schema:       opts.Schema,
