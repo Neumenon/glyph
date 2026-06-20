@@ -256,20 +256,20 @@ describe('Emit', () => {
     expect(result).toBe('Team@(^t:ARS Arsenal EPL)');
   });
 
-  test('canonTime strips any 3-digit millisecond group (not just .000)', () => {
-    // .000Z case (exact-zero ms) — already worked before
+  test('canonTime D2: zero ms stripped, non-zero trimmed trailing zeros', () => {
+    // D2: zero ms → strip entirely
     const zeroMs = new Date('2025-01-15T10:30:00.000Z');
     const v0 = emit(g.time(zeroMs));
     expect(v0).toBe('2025-01-15T10:30:00Z');
 
-    // non-zero ms — previously would NOT strip (left "2025-01-15T10:30:00.123Z")
+    // D2: non-zero ms → keep with trailing zeros trimmed
     const nonZeroMs = new Date('2025-01-15T10:30:00.123Z');
     const v1 = emit(g.time(nonZeroMs));
-    expect(v1).toBe('2025-01-15T10:30:00Z');
+    expect(v1).toBe('2025-01-15T10:30:00.123Z');
 
-    // another non-zero ms value
-    const v2 = emit(g.time(new Date('2025-06-19T23:59:59.999Z')));
-    expect(v2).toBe('2025-06-19T23:59:59Z');
+    // D2: trailing zero trimmed: 500ms → '.5Z'
+    const v2 = emit(g.time(new Date('2025-06-19T23:59:59.500Z')));
+    expect(v2).toBe('2025-06-19T23:59:59.5Z');
   });
 
   test('emit tabular', () => {
@@ -540,7 +540,7 @@ describe('Loose Mode', () => {
       expect(canonicalizeLoose(g.int(0))).toBe('0');
       expect(canonicalizeLoose(g.int(42))).toBe('42');
       expect(canonicalizeLoose(g.int(-100))).toBe('-100');
-      expect(canonicalizeLoose(g.float(0))).toBe('0');
+      expect(canonicalizeLoose(g.float(0))).toBe('0.0');
       expect(canonicalizeLoose(g.float(3.14))).toBe('3.14');
       expect(canonicalizeLoose(g.str('hello'))).toBe('hello');
       expect(canonicalizeLoose(g.str('hello world'))).toBe('"hello world"');
@@ -655,7 +655,7 @@ describe('Loose Mode', () => {
 
     test('time and id without extended', () => {
       const time = g.time(new Date('2025-12-19T10:30:00Z'));
-      expect(toJsonLoose(time)).toBe('2025-12-19T10:30:00.000Z');
+      expect(toJsonLoose(time)).toBe('2025-12-19T10:30:00Z');
 
       const id = g.id('user', '123');
       expect(toJsonLoose(id)).toBe('^user:123');
@@ -665,7 +665,7 @@ describe('Loose Mode', () => {
       const time = g.time(new Date('2025-12-19T10:30:00Z'));
       const timeJson = toJsonLoose(time, { extended: true }) as { $glyph: string; value: string };
       expect(timeJson.$glyph).toBe('time');
-      expect(timeJson.value).toBe('2025-12-19T10:30:00.000Z');
+      expect(timeJson.value).toBe('2025-12-19T10:30:00Z');
 
       const id = g.id('user', '123');
       const idJson = toJsonLoose(id, { extended: true }) as { $glyph: string; value: string };

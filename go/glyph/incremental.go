@@ -17,6 +17,7 @@ import (
 	"math"
 	"strconv"
 	"sync"
+	"unicode/utf8"
 )
 
 // ParseEventType identifies the type of parse event.
@@ -553,6 +554,17 @@ func (p *IncrementalParser) parseNumber() int {
 		j++
 	}
 
+	// A digit run followed by '-', ':', 'T', 'Z', or '+' is a time literal,
+	// not a number. The incremental parser does not support time literals;
+	// decline with a hard error so the caller is not silently misled.
+	if j < len(buf) {
+		next := buf[j]
+		if next == '-' || next == 'T' || next == ':' || next == 'Z' || next == '+' {
+			p.setError(fmt.Errorf("time literals are not supported by the incremental parser"))
+			return 0
+		}
+	}
+
 	isFloat := false
 
 	// Decimal part
@@ -661,6 +673,23 @@ func (p *IncrementalParser) scanString() (string, int) {
 				sb = append(sb, '\\')
 			case '"':
 				sb = append(sb, '"')
+			case 'u':
+				// \uXXXX unicode escape: need 4 hex digits after the 'u'.
+				p.pos++ // skip 'u'
+				if p.pos+4 > len(p.buffer) {
+					p.pos = start // Reset — need more data
+					return "", 0
+				}
+				r, newPos, ok := decodeUnicodeEscape(string(p.buffer), p.pos)
+				if !ok {
+					p.setError(fmt.Errorf("invalid \\u escape in string"))
+					return "", 0
+				}
+				var rbuf [4]byte
+				n := utf8.EncodeRune(rbuf[:], r)
+				sb = append(sb, rbuf[:n]...)
+				p.pos = newPos
+				continue
 			default:
 				sb = append(sb, escaped)
 			}
@@ -731,6 +760,14 @@ func (p *IncrementalParser) parseIdentifier() int {
 		return 0
 	}
 	ident := string(p.buffer[start:j])
+
+	// b64"..." byte literals are not supported by the incremental parser.
+	// Decline with a hard error rather than silently returning "b64" as a bare
+	// string with the quoted body parsed as a separate string value.
+	if ident == "b64" && j < len(p.buffer) && p.buffer[j] == '"' {
+		p.setError(fmt.Errorf("b64 byte literals are not supported by the incremental parser"))
+		return 0
+	}
 
 	// Struct / sum are determined by the immediately following delimiter.
 	if j < len(p.buffer) {

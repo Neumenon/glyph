@@ -366,11 +366,21 @@ func (l *Lexer) scanBytesLiteral(startPos Position) Token {
 	return Token{Type: TokenBytes, Value: sb.String(), Pos: startPos}
 }
 
-// scanRef scans a reference (^prefix:value).
+// scanRef scans a reference: bare ^prefix:value or quoted ^"prefix:value".
 func (l *Lexer) scanRef() Token {
 	startPos := l.currentPos()
 	l.advance() // consume ^
 
+	// Quoted form: ^"prefix:value" — reuse full string lexer (all escapes handled).
+	if l.pos < len(l.input) && l.peek() == '"' {
+		inner := l.scanString() // reuse string scanner
+		if inner.Type == TokenError {
+			return inner
+		}
+		return Token{Type: TokenRef, Value: inner.Value, Pos: startPos}
+	}
+
+	// Bare form: ^prefix:value
 	var sb strings.Builder
 	for l.pos < len(l.input) {
 		ch := l.peek()
@@ -597,8 +607,10 @@ func isValidBareString(s string) bool {
 	}
 
 	// Check it's not a keyword the lexer would tokenize as a non-string.
+	// "_" is the underscore null token in Loose mode — a bare "_" parses back as
+	// null, not the string "_", so it must always be quoted (D8 conservative quoting).
 	switch s {
-	case "null", "none", "nil", "true", "false", "t", "f", "struct", "sum", "list", "map",
+	case "null", "none", "nil", "true", "false", "t", "f", "_", "struct", "sum", "list", "map",
 		"NaN", "Inf":
 		return false
 	}

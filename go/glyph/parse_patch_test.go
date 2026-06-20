@@ -359,3 +359,66 @@ func TestParsePatchGolden(t *testing.T) {
 		t.Error("Re-emitted missing + events operation")
 	}
 }
+
+// TestParsePatchEscapedMapKey checks that map-key segments with escape sequences
+// round-trip correctly through EmitPatch -> ParsePatch (GAP 1 regression test).
+func TestParsePatchEscapedMapKey(t *testing.T) {
+	cases := []struct {
+		name string
+		key  string
+	}{
+		{"backslash", `a\b`},
+		{"double-quote", `k"ey`},
+		{"newline", "key\nline"},
+		{"tab", "key\ttab"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Hand-build a patch that sets config["<key>"] = 1.
+			patch := NewPatch(RefID{Prefix: "x", Value: "1"}, "")
+			patch.Ops = append(patch.Ops, &PatchOp{
+				Op:    OpSet,
+				Path:  []PathSeg{FieldSeg("config", 0), MapKeySeg(tc.key)},
+				Value: Int(1),
+			})
+
+			emitted, err := EmitPatch(patch, nil)
+			if err != nil {
+				t.Fatalf("EmitPatch error: %v", err)
+			}
+
+			parsed, err := ParsePatch(emitted, nil)
+			if err != nil {
+				t.Fatalf("ParsePatch error: %v (emitted: %q)", err, emitted)
+			}
+
+			if len(parsed.Ops) != 1 {
+				t.Fatalf("expected 1 op, got %d", len(parsed.Ops))
+			}
+			seg := parsed.Ops[0].Path[1]
+			if seg.Kind != PathSegMapKey {
+				t.Fatalf("expected PathSegMapKey, got %v", seg.Kind)
+			}
+			if seg.MapKey != tc.key {
+				t.Errorf("map key round-trip: got %q, want %q (emitted: %q)", seg.MapKey, tc.key, emitted)
+			}
+		})
+	}
+}
+
+// TestParsePatchBadListIndex checks that a non-integer bracket segment is treated
+// as a field name rather than silently becoming index 0 (GAP 2 regression test).
+func TestParsePatchBadListIndex(t *testing.T) {
+	// parsePathToSegs("items[abc]") should produce a FieldSeg("abc"), not ListIdxSeg(0).
+	segs := parsePathToSegs("items[abc]")
+	if len(segs) != 2 {
+		t.Fatalf("expected 2 segs, got %d: %v", len(segs), segs)
+	}
+	if segs[1].Kind == PathSegListIdx {
+		t.Errorf("bad index [abc] produced ListIdxSeg(%d), want FieldSeg fallback", segs[1].ListIdx)
+	}
+	if segs[1].Kind != PathSegField || segs[1].Field != "abc" {
+		t.Errorf("expected FieldSeg(abc), got kind=%v field=%q", segs[1].Kind, segs[1].Field)
+	}
+}

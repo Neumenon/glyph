@@ -196,11 +196,10 @@ func emitTabularCell(out *bytes.Buffer, val *GValue, fd *FieldDef, opts PackedOp
 		out.WriteString(canonRef(val.idVal))
 
 	case TypeTime:
-		out.WriteString(val.timeVal.UTC().Format("2006-01-02T15:04:05Z"))
+		out.WriteString(canonTime(val.timeVal))
 
 	case TypeBytes:
-		out.WriteString("b64")
-		out.WriteString(quoteString(string(val.bytesVal)))
+		out.WriteString(canonBytes(val.bytesVal))
 
 	case TypeList:
 		out.WriteByte('[')

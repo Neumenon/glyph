@@ -161,3 +161,45 @@ type BaseMismatchError struct {
 func (e *BaseMismatchError) Error() string {
 	return fmt.Sprintf("gs1: base hash mismatch")
 }
+
+// ============================================================
+// Error Code Registry
+// ============================================================
+
+// ErrorCode is a machine-readable error identifier for use in kind=err
+// frame payloads and ResyncRequest reason fields.
+// These constants define the canonical set of GS1 error codes.
+type ErrorCode = string
+
+const (
+	// ErrCodeBaseMismatch is emitted when a patch's base hash does not match
+	// the receiver's current state hash.
+	ErrCodeBaseMismatch ErrorCode = "BASE_MISMATCH"
+
+	// ErrCodeSeqGap is emitted when a received seq skips one or more values.
+	ErrCodeSeqGap ErrorCode = "SEQ_GAP"
+
+	// ErrCodeSeqDuplicate is emitted when a duplicate seq is received.
+	// Receivers SHOULD silently discard duplicates; this code is for logging.
+	ErrCodeSeqDuplicate ErrorCode = "SEQ_DUP"
+
+	// ErrCodeNoState is emitted when a patch frame carrying a base hash arrives
+	// but the receiver has no state hash to compare against.
+	ErrCodeNoState ErrorCode = "NO_STATE"
+
+	// ErrCodeCRCMismatch is emitted when CRC verification fails.
+	ErrCodeCRCMismatch ErrorCode = "CRC_MISMATCH"
+
+	// ErrCodeVersionUnsupported is emitted when the v field is not 1.
+	ErrCodeVersionUnsupported ErrorCode = "VERSION_UNSUPPORTED"
+
+	// ErrCodePayloadTooLarge is emitted when len exceeds the configured maximum.
+	ErrCodePayloadTooLarge ErrorCode = "PAYLOAD_TOO_LARGE"
+
+	// ErrCodeHeaderTooLarge is emitted when the header line exceeds MaxHeaderSize.
+	ErrCodeHeaderTooLarge ErrorCode = "HEADER_TOO_LARGE"
+
+	// ErrCodeFrameInvalid is emitted for structural parse failures
+	// (missing @frame{, missing closing brace, invalid field values).
+	ErrCodeFrameInvalid ErrorCode = "FRAME_INVALID"
+)

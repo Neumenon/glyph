@@ -29,7 +29,13 @@ function canonRef(ref: RefID): string {
 }
 
 function canonTime(d: Date): string {
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  // D2: sub-second kept only when non-zero with trailing zeros trimmed
+  const ms = d.getUTCMilliseconds();
+  if (ms === 0) {
+    return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  }
+  const msStr = ms.toString().padStart(3, '0').replace(/0+$/, '');
+  return d.toISOString().replace(/\.\d{3}Z$/, '.' + msStr + 'Z');
 }
 
 // ============================================================

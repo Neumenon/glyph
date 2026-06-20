@@ -211,13 +211,23 @@ func parsePathToSegs(path string) []PathSeg {
 			}
 			inner := path[i+1 : i+end]
 			if len(inner) > 0 && inner[0] == '"' {
-				// Map key: ["key"]
-				key := strings.Trim(inner, "\"")
+				// Map key: ["key"] — inner already includes the surrounding quotes,
+				// so unquoteString (which expects a leading '"') handles all escapes.
+				key, err := unquoteString(inner)
+				if err != nil {
+					// Malformed quoted key: fall back to stripping outer quotes only.
+					key = strings.Trim(inner, "\"")
+				}
 				segs = append(segs, MapKeySeg(key))
 			} else {
-				// List index
-				idx, _ := strconv.Atoi(inner)
-				segs = append(segs, ListIdxSeg(idx))
+				// List index: inner must be a non-negative integer.
+				idx, err := strconv.Atoi(inner)
+				if err != nil || idx < 0 {
+					// Non-integer or negative: treat as a field name (malformed input).
+					segs = append(segs, FieldSeg(inner, 0))
+				} else {
+					segs = append(segs, ListIdxSeg(idx))
+				}
 			}
 			i += end + 1
 			continue
@@ -450,9 +460,10 @@ func emitPathSegs(out *bytes.Buffer, path []PathSeg, keyMode KeyMode, schema *Sc
 			out.WriteByte(']')
 
 		case PathSegMapKey:
-			out.WriteString("[\"")
-			out.WriteString(seg.MapKey)
-			out.WriteString("\"]")
+			// quoteString already adds surrounding double-quotes; wrap in brackets.
+			out.WriteByte('[')
+			out.WriteString(quoteString(seg.MapKey))
+			out.WriteByte(']')
 		}
 	}
 }
@@ -477,9 +488,9 @@ func pathSegsToString(path []PathSeg, keyMode KeyMode) string {
 			buf.WriteString(strconv.Itoa(seg.ListIdx))
 			buf.WriteByte(']')
 		case PathSegMapKey:
-			buf.WriteString("[\"")
-			buf.WriteString(seg.MapKey)
-			buf.WriteString("\"]")
+			buf.WriteByte('[')
+			buf.WriteString(quoteString(seg.MapKey))
+			buf.WriteByte(']')
 		}
 	}
 	return buf.String()
@@ -764,6 +775,15 @@ func applyToParentSeg(v *GValue, seg PathSeg, op *PatchOp) (*GValue, error) {
 		return nil, fmt.Errorf("unresolved FID #%d in path; apply with ApplyPatchWithSchema", seg.FID)
 	}
 
+	// Guard: Set/Get require a map or struct parent. Return a clean error instead
+	// of letting GValue.Set panic on an unexpected type.
+	if seg.Kind != PathSegMapKey && v.typ != TypeMap && v.typ != TypeStruct {
+		return nil, fmt.Errorf("cannot apply %s to %s parent", op.Op, v.typ)
+	}
+	if seg.Kind == PathSegMapKey && v.typ != TypeMap {
+		return nil, fmt.Errorf("cannot apply map-key op to %s", v.typ)
+	}
+
 	switch op.Op {
 	case OpSet:
 		v.Set(key, op.Value)
@@ -827,7 +847,16 @@ func applyToParentSeg(v *GValue, seg PathSeg, op *PatchOp) (*GValue, error) {
 
 		switch existing.typ {
 		case TypeInt:
-			existing.intVal += int64(delta)
+			// Guard against silent float→int truncation for hand-crafted patches.
+			if op.Value.typ == TypeFloat {
+				idelta := int64(delta)
+				if float64(idelta) != delta {
+					return nil, fmt.Errorf("delta %v would truncate when applied to int field %q", delta, key)
+				}
+				existing.intVal += idelta
+			} else {
+				existing.intVal += int64(delta)
+			}
 		case TypeFloat:
 			existing.floatVal += delta
 		default:
@@ -887,7 +916,15 @@ func applyToListSeg(v *GValue, seg PathSeg, op *PatchOp) (*GValue, error) {
 		}
 		switch existing.typ {
 		case TypeInt:
-			existing.intVal += int64(delta)
+			if op.Value.typ == TypeFloat {
+				idelta := int64(delta)
+				if float64(idelta) != delta {
+					return nil, fmt.Errorf("delta %v would truncate when applied to int at index %d", delta, idx)
+				}
+				existing.intVal += idelta
+			} else {
+				existing.intVal += int64(delta)
+			}
 		case TypeFloat:
 			existing.floatVal += delta
 		default:
@@ -1073,6 +1110,54 @@ func (pb *PatchBuilder) Build() *Patch {
 		_ = pb.patch.ResolveFIDs(pb.patch.TargetType, pb.schema)
 	}
 	return pb.patch
+}
+
+// ============================================================
+// Base-fingerprint verification
+// ============================================================
+
+// FingerprintMismatch is returned by VerifyPatchBase when the computed
+// fingerprint of the base document differs from the fingerprint recorded in
+// the patch. It is a typed error so callers can distinguish it from other
+// apply errors.
+type FingerprintMismatch struct {
+	Got  string // fingerprint of the base document presented by the caller
+	Want string // fingerprint recorded in the patch
+}
+
+func (e *FingerprintMismatch) Error() string {
+	return fmt.Sprintf("patch base fingerprint mismatch: got %q, want %q", e.Got, e.Want)
+}
+
+// VerifyPatchBase is a read-only pre-flight check for standalone (non-streaming)
+// callers who hold both the current base document and an incoming patch.
+//
+// It computes SHA-256(CanonicalizeLoose(base)) and compares the first 16 hex
+// characters against patch.BaseFingerprint. If the fingerprints agree it
+// returns nil. If the patch carries no fingerprint (BaseFingerprint == "") it
+// also returns nil (opt-in: absence means "not checked").
+//
+// This closes the fingerprint-enforcement gap for the standalone ApplyPatch
+// path. The GS1 streaming cursor enforces the fingerprint on-stream; this
+// function is the equivalent for callers using ApplyPatch directly.
+//
+// Typical usage:
+//
+//	if err := VerifyPatchBase(base, patch); err != nil {
+//	    return nil, err
+//	}
+//	result, err := ApplyPatch(base, patch)
+func VerifyPatchBase(base *GValue, patch *Patch) error {
+	if patch == nil || patch.BaseFingerprint == "" {
+		return nil
+	}
+	canonical := CanonicalizeLoose(base)
+	hash := sha256.Sum256([]byte(canonical))
+	got := hex.EncodeToString(hash[:])[:16]
+	if got != patch.BaseFingerprint {
+		return &FingerprintMismatch{Got: got, Want: patch.BaseFingerprint}
+	}
+	return nil
 }
 
 // ============================================================

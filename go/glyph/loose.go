@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -136,6 +137,62 @@ func FingerprintLoose(v *GValue) string {
 func EqualLoose(a, b *GValue) bool {
 	return CanonicalizeLooseNoTabular(a) == CanonicalizeLooseNoTabular(b)
 }
+
+// hasNonFiniteFloat returns true if v or any descendant Float is NaN or Inf.
+// Used by CanonicalizeLooseErr to enforce D3: NaN/Inf are a hard error in Loose mode.
+func hasNonFiniteFloat(v *GValue) bool {
+	if v == nil {
+		return false
+	}
+	switch v.typ {
+	case TypeFloat:
+		return math.IsNaN(v.floatVal) || math.IsInf(v.floatVal, 0)
+	case TypeList:
+		for _, item := range v.listVal {
+			if hasNonFiniteFloat(item) {
+				return true
+			}
+		}
+	case TypeMap:
+		for _, e := range v.mapVal {
+			if hasNonFiniteFloat(e.Value) {
+				return true
+			}
+		}
+	case TypeStruct:
+		for _, f := range v.structVal.Fields {
+			if hasNonFiniteFloat(f.Value) {
+				return true
+			}
+		}
+	case TypeSum:
+		if v.sumVal != nil && hasNonFiniteFloat(v.sumVal.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+// CanonicalizeLooseErr is like CanonicalizeLoose but returns an error for
+// values that contain NaN or Inf (D3: non-finite floats are illegal in Loose mode).
+// Use this when you need the D3 hard-error guarantee; CanonicalizeLoose itself
+// does not error (for backward compat) but may produce Typed-only tokens.
+func CanonicalizeLooseErr(v *GValue, opts LooseCanonOpts) (string, error) {
+	if v == nil {
+		return canonNullWithStyle(opts.NullStyle), nil
+	}
+	if hasNonFiniteFloat(v) {
+		return "", &ParseError{Message: "non-finite float (NaN/Inf) is not allowed in Loose mode (D3)"}
+	}
+	if opts.MinRows == 0 {
+		opts.MinRows = 3
+	}
+	if opts.MaxCols == 0 {
+		opts.MaxCols = 20
+	}
+	return canonLooseWithOpts(v, opts), nil
+}
+
 
 // ============================================================
 // GLYPH v2.4.0: Schema Header + Compact Keys
@@ -469,23 +526,16 @@ func writeCanonLoose(b *strings.Builder, v *GValue, opts LooseCanonOpts) {
 			b.WriteString(strconv.FormatInt(v.intVal, 10))
 		}
 	case TypeFloat:
-		if v.floatVal == 0 {
-			b.WriteByte('0')
-		} else {
-			s := strconv.FormatFloat(v.floatVal, 'g', -1, 64)
-			s = strings.ReplaceAll(s, "E", "e")
-			if s == "-0" {
-				b.WriteByte('0')
-			} else {
-				b.WriteString(s)
-			}
-		}
+		// D3 guard: hasNonFiniteFloat is enforced at CanonicalizeLooseErr entry;
+		// non-finite values are not expected here on the guarded Loose path.
+		// canonFloat returns D4-compliant form for all finite values.
+		b.WriteString(canonFloat(v.floatVal))
 	case TypeStr:
 		writeCanonString(b, v.strVal)
 	case TypeBytes:
 		writeCanonBytes(b, v.bytesVal)
 	case TypeTime:
-		b.WriteString(v.timeVal.UTC().Format("2006-01-02T15:04:05Z"))
+		b.WriteString(canonTime(v.timeVal))
 	case TypeID:
 		writeCanonRef(b, v.idVal)
 	case TypeList:
@@ -502,8 +552,9 @@ func writeCanonLoose(b *strings.Builder, v *GValue, opts LooseCanonOpts) {
 }
 
 // writeCanonString writes the canonical string representation to builder.
+// Uses isValidBareString (strict ASCII lexer predicate, D8) for bare-safety check.
 func writeCanonString(b *strings.Builder, s string) {
-	if isBareSafeV2(s) {
+	if isValidBareString(s) {
 		b.WriteString(s)
 	} else {
 		writeQuotedString(b, s)
@@ -1236,9 +1287,45 @@ func parseLooseValue(s string) (*GValue, error) {
 		return parseLooseList(s)
 	}
 
+	// Ref: ^prefix:value or ^"quoted"
+	if strings.HasPrefix(s, "^") {
+		// Try to parse the whole string as a ref.
+		rest := s[1:]
+		if len(rest) > 0 && rest[0] == '"' {
+			// Quoted ref: ^"prefix:value"
+			inner, _, err := parseQuotedStringShared(rest, 0)
+			if err == nil {
+				ref := parseRefIDFromTarget(inner)
+				return IDFromRef(ref), nil
+			}
+		} else {
+			// Bare ref: ^prefix:value
+			ref := parseRefIDFromTarget(rest)
+			return IDFromRef(ref), nil
+		}
+	}
+
+	// Time literal: YYYY-MM-DD... — must be checked before tryParseNumber
+	// to prevent the year being silently consumed as an integer.
+	if looksLikeTime(s, 0) {
+		if v, err := parseTimeLiteralStr(s); err == nil {
+			return v, nil
+		}
+	}
+
 	// Try parsing as number
 	if val, ok := tryParseNumber(s); ok {
 		return val, nil
+	}
+
+	// Bytes literal: b64"<base64>" (D6)
+	if strings.HasPrefix(s, `b64"`) && strings.HasSuffix(s, `"`) && len(s) >= 5 {
+		body := s[4 : len(s)-1]
+		decoded, err := base64.StdEncoding.DecodeString(body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid base64 in bytes literal: %v", err)
+		}
+		return Bytes(decoded), nil
 	}
 
 	// Bare string
@@ -1246,41 +1333,16 @@ func parseLooseValue(s string) (*GValue, error) {
 }
 
 // unquoteString removes quotes and unescapes a string.
+// It supports the standard GLYPH escapes (\n \r \t \\ \") and \uXXXX
+// unicode escapes (used by the canonical emitter for control characters).
 func unquoteString(s string) (string, error) {
-	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
-		return "", fmt.Errorf("invalid quoted string: %s", s)
+	// Delegate to the shared cursor-based parser which handles \uXXXX.
+	// parseQuotedStringShared expects to start at the opening '"'.
+	result, _, err := parseQuotedStringShared(s, 0)
+	if err != nil {
+		return "", fmt.Errorf("invalid quoted string %q: %w", s, err)
 	}
-
-	inner := s[1 : len(s)-1]
-	var b strings.Builder
-	b.Grow(len(inner))
-
-	for i := 0; i < len(inner); i++ {
-		if inner[i] == '\\' && i+1 < len(inner) {
-			next := inner[i+1]
-			switch next {
-			case '\\':
-				b.WriteByte('\\')
-			case '"':
-				b.WriteByte('"')
-			case 'n':
-				b.WriteByte('\n')
-			case 'r':
-				b.WriteByte('\r')
-			case 't':
-				b.WriteByte('\t')
-			default:
-				// Unknown escape - keep as is
-				b.WriteByte('\\')
-				b.WriteByte(next)
-			}
-			i++
-		} else {
-			b.WriteByte(inner[i])
-		}
-	}
-
-	return b.String(), nil
+	return result, nil
 }
 
 // tryParseNumber attempts to parse a string as int or float.

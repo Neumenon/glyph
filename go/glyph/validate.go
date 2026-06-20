@@ -154,6 +154,13 @@ func (v *Validator) validateStruct(value *GValue, path, typeName string) {
 			continue
 		}
 
+		// A required (non-Optional) field present as null is an error.
+		// Optional fields and all other contexts (list elements, map values) allow null via validateValue.
+		if !fieldDef.Optional && fieldVal != nil && fieldVal.IsNull() {
+			v.addError(fieldPath, "required_field_null", "required field %s may not be null", fieldDef.Name)
+			continue
+		}
+
 		// Validate field value against type spec
 		v.validateValue(fieldVal, fieldPath, fieldDef.Type)
 
@@ -170,15 +177,34 @@ func (v *Validator) validateStruct(value *GValue, path, typeName string) {
 		}
 	}
 
+	// Collect unknown fields; for @open structs capture them into the @unknown bucket.
+	var unknownEntries []MapEntry
 	for _, f := range fields {
+		if f.Key == "@unknown" {
+			// Already a bucket from a previous pass — skip to avoid double-capture.
+			continue
+		}
 		if !knownFields[f.Key] {
 			if td.Open && !v.strict {
-				// @open structs accept unknown fields (just a warning for info)
+				// @open structs capture unknown fields into @unknown map and warn for observability.
+				unknownEntries = append(unknownEntries, MapEntry{Key: f.Key, Value: f.Value})
 				v.addWarning(joinPath(path, f.Key), "unknown_field_captured", "unknown field captured: %s", f.Key)
 			} else {
-				// Strict mode or non-open structs reject unknown fields
+				// Strict mode or non-open structs reject unknown fields.
 				v.addError(joinPath(path, f.Key), "unknown_field", "unknown field: %s (type %s is not @open)", f.Key, typeName)
 			}
+		}
+	}
+
+	// Insert captured unknown fields into the @unknown bucket on the GValue.
+	if len(unknownEntries) > 0 {
+		bucket := &GValue{typ: TypeMap, mapVal: unknownEntries}
+		bucketEntry := MapEntry{Key: "@unknown", Value: bucket}
+		switch {
+		case value.typ == TypeStruct && value.structVal != nil:
+			value.structVal.Fields = append(value.structVal.Fields, bucketEntry)
+		case value.typ == TypeMap:
+			value.mapVal = append(value.mapVal, bucketEntry)
 		}
 	}
 }
@@ -461,6 +487,88 @@ func valueLength(v *GValue) int {
 
 func isInteger(f float64) bool {
 	return f == float64(int64(f))
+}
+
+// ============================================================
+// ApplyDefaults / Normalize
+// ============================================================
+
+// ApplyDefaults returns a new GValue that is a copy of value with defaults
+// applied at the top struct level.
+//
+// For each FieldDef that is Optional and has a non-nil Default, if that field
+// is absent from value, the default is inserted into the returned copy.
+// Required fields are never filled (their absence is a validation error, not a
+// missing-default situation).
+//
+// ApplyDefaults does NOT recurse into nested struct fields.
+// Call Normalize (or ApplyDefaults directly) before Validate when you want
+// defaults applied; it is opt-in and never called inside Validate automatically.
+func ApplyDefaults(schema *Schema, typeName string, value *GValue) *GValue {
+	td := schema.GetType(typeName)
+	if td == nil || td.Kind != TypeDefStruct || td.Struct == nil {
+		return value
+	}
+
+	// Collect existing fields from the value.
+	var srcFields []MapEntry
+	switch {
+	case value != nil && value.typ == TypeStruct && value.structVal != nil:
+		srcFields = value.structVal.Fields
+	case value != nil && value.typ == TypeMap:
+		srcFields = value.mapVal
+	default:
+		return value
+	}
+
+	// Build a presence set.
+	present := make(map[string]bool, len(srcFields))
+	for _, f := range srcFields {
+		present[f.Key] = true
+	}
+
+	// Determine which defaults to inject.
+	var inject []MapEntry
+	for _, fd := range td.Struct.Fields {
+		if !fd.Optional || fd.Default == nil {
+			continue
+		}
+		if present[fd.Name] {
+			continue
+		}
+		// Also check wire key absence.
+		if fd.WireKey != "" && present[fd.WireKey] {
+			continue
+		}
+		inject = append(inject, MapEntry{Key: fd.Name, Value: fd.Default})
+	}
+
+	if len(inject) == 0 {
+		return value
+	}
+
+	// Build a new GValue with injected defaults appended.
+	newFields := make([]MapEntry, len(srcFields)+len(inject))
+	copy(newFields, srcFields)
+	copy(newFields[len(srcFields):], inject)
+
+	if value.typ == TypeStruct {
+		return &GValue{
+			typ: TypeStruct,
+			structVal: &StructValue{
+				TypeName: value.structVal.TypeName,
+				Fields:   newFields,
+			},
+		}
+	}
+	return &GValue{typ: TypeMap, mapVal: newFields}
+}
+
+// Normalize applies defaults for typeName to value and returns the result.
+// Callers that need defaults filled before validation call Normalize first,
+// then Validate on the returned value.
+func (v *Validator) Normalize(value *GValue, typeName string) *GValue {
+	return ApplyDefaults(v.schema, typeName, value)
 }
 
 // ============================================================

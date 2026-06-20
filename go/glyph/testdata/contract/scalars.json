@@ -1,0 +1,600 @@
+[
+  {
+    "_comment": "=== NULL ===",
+    "id": "null-basic",
+    "typeName": "Null",
+    "construct": "NewNull()",
+    "looseExpected": "_",
+    "typedExpected": "∅"
+  },
+
+  {
+    "_comment": "=== BOOL ===",
+    "id": "bool-true",
+    "typeName": "Bool",
+    "construct": "NewBool(true)",
+    "looseExpected": "t",
+    "typedExpected": "t"
+  },
+  {
+    "id": "bool-false",
+    "typeName": "Bool",
+    "construct": "NewBool(false)",
+    "looseExpected": "f",
+    "typedExpected": "f"
+  },
+
+  {
+    "_comment": "=== INT ===",
+    "id": "int-zero",
+    "typeName": "Int",
+    "construct": "NewInt(0)",
+    "looseExpected": "0",
+    "typedExpected": "0"
+  },
+  {
+    "id": "int-positive",
+    "typeName": "Int",
+    "construct": "NewInt(42)",
+    "looseExpected": "42",
+    "typedExpected": "42"
+  },
+  {
+    "id": "int-negative",
+    "typeName": "Int",
+    "construct": "NewInt(-100)",
+    "looseExpected": "-100",
+    "typedExpected": "-100"
+  },
+  {
+    "id": "int-max-int64",
+    "typeName": "Int",
+    "construct": "NewInt(9223372036854775807)",
+    "looseExpected": "9223372036854775807",
+    "typedExpected": "9223372036854775807"
+  },
+  {
+    "id": "int-min-int64",
+    "typeName": "Int",
+    "construct": "NewInt(-9223372036854775808)",
+    "looseExpected": "-9223372036854775808",
+    "typedExpected": "-9223372036854775808"
+  },
+  {
+    "_comment": "G4: 2^63 = 9223372036854775808 is one above max int64 — MUST be a hard parse error",
+    "id": "int-overflow-2pow63",
+    "typeName": "Int",
+    "construct": "N/A — parse error case",
+    "parseError": true,
+    "parseInput": "9223372036854775808",
+    "errorDescription": "2^63 is one above max int64 (9223372036854775807); MUST hard-error on parse, MUST NOT silently coerce to float or truncate"
+  },
+  {
+    "id": "int-overflow-very-large",
+    "typeName": "Int",
+    "construct": "N/A — parse error case",
+    "parseError": true,
+    "parseInput": "99999999999999999999",
+    "errorDescription": "Far out of int64 range; MUST hard-error"
+  },
+
+  {
+    "_comment": "=== FLOAT (D4: shortest round-trip + always decimal point) ===",
+    "_note_supersedes": "LOOSE_MODE_SPEC.md 'Zero: always 0' rule is RETIRED. Float(0.0) -> '0.0', not '0'.",
+    "id": "float-one",
+    "typeName": "Float",
+    "construct": "NewFloat(1.0)",
+    "looseExpected": "1.0",
+    "typedExpected": "1.0",
+    "currentlyBuggy": true,
+    "bugDescription": "canonFloat (canon.go:50-55) emits '1' for whole floats below 1e6 — missing decimal point, violates D4"
+  },
+  {
+    "id": "float-zero",
+    "typeName": "Float",
+    "construct": "NewFloat(0.0)",
+    "looseExpected": "0.0",
+    "typedExpected": "0.0",
+    "currentlyBuggy": true,
+    "bugDescription": "LOOSE_MODE_SPEC.md 'Zero: always 0' rule emits '0' for Float(0.0). Contract-correct form is '0.0'. D4 supersedes."
+  },
+  {
+    "id": "float-negative-zero",
+    "typeName": "Float",
+    "construct": "NewFloat(-0.0)",
+    "looseExpected": "0.0",
+    "typedExpected": "0.0",
+    "currentlyBuggy": true,
+    "bugDescription": "Negative zero must normalize to '0.0' (same as +0.0) per D4. Currently emits '0' or '-0' depending on path."
+  },
+  {
+    "id": "float-one-tenth",
+    "typeName": "Float",
+    "construct": "NewFloat(0.1)",
+    "looseExpected": "0.1",
+    "typedExpected": "0.1"
+  },
+  {
+    "id": "float-pi-approx",
+    "typeName": "Float",
+    "construct": "NewFloat(3.14)",
+    "looseExpected": "3.14",
+    "typedExpected": "3.14"
+  },
+  {
+    "id": "float-large-exponent",
+    "typeName": "Float",
+    "construct": "NewFloat(1e21)",
+    "looseExpected": "1e+21",
+    "typedExpected": "1e+21",
+    "currentlyBuggy": true,
+    "bugDescription": "emit.go uses 'f'/-1 format which produces '1000000000000000000000.0' (no exponent). Must use 'g'/-1 (shortest). writeCanonLoose uses 'g' but drops decimal for whole floats."
+  },
+  {
+    "id": "float-small-exponent",
+    "typeName": "Float",
+    "construct": "NewFloat(1.5e-10)",
+    "looseExpected": "1.5e-10",
+    "typedExpected": "1.5e-10"
+  },
+  {
+    "id": "float-three-point-zero",
+    "typeName": "Float",
+    "construct": "NewFloat(3.0)",
+    "looseExpected": "3.0",
+    "typedExpected": "3.0",
+    "currentlyBuggy": true,
+    "bugDescription": "canonFloat emits '3' for whole floats below 1e6; needs '.0' suffix per D4"
+  },
+  {
+    "id": "float-large-whole",
+    "typeName": "Float",
+    "construct": "NewFloat(1.23456789e15)",
+    "looseExpected": "1.23456789e+15",
+    "typedExpected": "1.23456789e+15",
+    "currentlyBuggy": true,
+    "bugDescription": "emit.go 'f'/-1 format produces full decimal expansion instead of shortest exponent form"
+  },
+
+  {
+    "_comment": "=== NaN / Inf (D3: Typed-only; Loose is hard error) ===",
+    "id": "float-nan-typed",
+    "typeName": "Float",
+    "construct": "NewFloat(math.NaN())",
+    "typedExpected": "NaN",
+    "looseExpected": "ERROR",
+    "looseError": true,
+    "looseErrorDescription": "NaN is a hard error in Loose emit (D3). No token emitted."
+  },
+  {
+    "id": "float-pos-inf-typed",
+    "typeName": "Float",
+    "construct": "NewFloat(math.Inf(1))",
+    "typedExpected": "Inf",
+    "looseExpected": "ERROR",
+    "looseError": true,
+    "looseErrorDescription": "+Inf is a hard error in Loose emit (D3). No token emitted."
+  },
+  {
+    "id": "float-neg-inf-typed",
+    "typeName": "Float",
+    "construct": "NewFloat(math.Inf(-1))",
+    "typedExpected": "-Inf",
+    "looseExpected": "ERROR",
+    "looseError": true,
+    "looseErrorDescription": "-Inf is a hard error in Loose emit (D3). No token emitted."
+  },
+  {
+    "id": "float-nan-loose-parse-error",
+    "typeName": "Float",
+    "construct": "N/A — parse error case in Loose",
+    "parseError": true,
+    "parseMode": "loose",
+    "parseInput": "NaN",
+    "errorDescription": "NaN token in Loose parse is a hard error (D3). Currently not guarded in writeCanonLoose.",
+    "currentlyBuggy": true,
+    "bugDescription": "writeCanonLoose has no NaN/Inf guard; would silently emit 'NaN' as a bare string. Fix: add math.IsNaN/IsInf check."
+  },
+
+  {
+    "_comment": "=== STRING ===",
+    "id": "str-simple-bare",
+    "typeName": "Str",
+    "construct": "NewStr(\"hello\")",
+    "looseExpected": "hello",
+    "typedExpected": "hello"
+  },
+  {
+    "id": "str-with-space",
+    "typeName": "Str",
+    "construct": "NewStr(\"hello world\")",
+    "looseExpected": "\"hello world\"",
+    "typedExpected": "\"hello world\""
+  },
+  {
+    "id": "str-keyword-true",
+    "typeName": "Str",
+    "construct": "NewStr(\"true\")",
+    "looseExpected": "\"true\"",
+    "typedExpected": "\"true\""
+  },
+  {
+    "id": "str-keyword-t",
+    "typeName": "Str",
+    "construct": "NewStr(\"t\")",
+    "looseExpected": "\"t\"",
+    "typedExpected": "\"t\""
+  },
+  {
+    "id": "str-keyword-null",
+    "typeName": "Str",
+    "construct": "NewStr(\"null\")",
+    "looseExpected": "\"null\"",
+    "typedExpected": "\"null\""
+  },
+  {
+    "id": "str-empty",
+    "typeName": "Str",
+    "construct": "NewStr(\"\")",
+    "looseExpected": "\"\"",
+    "typedExpected": "\"\""
+  },
+  {
+    "id": "str-unicode",
+    "typeName": "Str",
+    "construct": "NewStr(\"café\")",
+    "looseExpected": "\"café\"",
+    "typedExpected": "\"café\"",
+    "_note": "Unicode content forces quoting because isValidBareString is ASCII-only (D8)"
+  },
+  {
+    "id": "str-newline",
+    "typeName": "Str",
+    "construct": "NewStr(\"line\\nbreak\")",
+    "looseExpected": "\"line\\nbreak\"",
+    "typedExpected": "\"line\\nbreak\""
+  },
+  {
+    "id": "str-tab",
+    "typeName": "Str",
+    "construct": "NewStr(\"a\\tb\")",
+    "looseExpected": "\"a\\tb\"",
+    "typedExpected": "\"a\\tb\""
+  },
+  {
+    "id": "str-quotes",
+    "typeName": "Str",
+    "construct": "NewStr(\"say \\\"hi\\\"\")",
+    "looseExpected": "\"say \\\"hi\\\"\"",
+    "typedExpected": "\"say \\\"hi\\\"\""
+  },
+  {
+    "id": "str-null-byte",
+    "typeName": "Str",
+    "construct": "NewStr(\"\\u0000\")",
+    "looseExpected": "\"\\u0000\"",
+    "typedExpected": "\"\\u0000\""
+  },
+  {
+    "id": "str-control-char",
+    "typeName": "Str",
+    "construct": "NewStr(\"\\u0001\")",
+    "looseExpected": "\"\\u0001\"",
+    "typedExpected": "\"\\u0001\""
+  },
+  {
+    "id": "str-with-dash",
+    "typeName": "Str",
+    "construct": "NewStr(\"my-value\")",
+    "looseExpected": "\"my-value\"",
+    "typedExpected": "\"my-value\"",
+    "_note": "Dash forces quoting: isValidBareString rejects '-'"
+  },
+  {
+    "id": "str-with-slash",
+    "typeName": "Str",
+    "construct": "NewStr(\"path/value\")",
+    "looseExpected": "\"path/value\"",
+    "typedExpected": "\"path/value\"",
+    "_note": "Slash forces quoting"
+  },
+  {
+    "id": "str-leading-caret",
+    "typeName": "Str",
+    "construct": "NewStr(\"^notaref\")",
+    "looseExpected": "\"^notaref\"",
+    "typedExpected": "\"^notaref\"",
+    "_note": "Leading ^ forces quoting — would be lexed as ref token otherwise"
+  },
+  {
+    "id": "str-pipe",
+    "typeName": "Str",
+    "construct": "NewStr(\"a|b\")",
+    "looseExpected": "\"a|b\"",
+    "typedExpected": "\"a|b\""
+  },
+  {
+    "id": "str-underscore-bare",
+    "typeName": "Str",
+    "construct": "NewStr(\"_internal\")",
+    "looseExpected": "\"_internal\"",
+    "typedExpected": "\"_internal\"",
+    "_note": "Starts with _ and has ASCII letters/digits — would pass isValidBareString but '_' alone is reserved (null alias in Loose). '_internal' is NOT reserved; however isBareSafeV2 also reserves '_' as standalone only. '_internal' is bare-safe."
+  },
+
+  {
+    "_comment": "=== BYTES (D6: b64'...' standard base64, hard error on invalid) ===",
+    "id": "bytes-empty",
+    "typeName": "Bytes",
+    "construct": "NewBytes([]byte{})",
+    "looseExpected": "b64\"\"",
+    "typedExpected": "b64\"\""
+  },
+  {
+    "_comment": "G5: single byte 0x01 -> AQ==",
+    "id": "bytes-single-0x01",
+    "typeName": "Bytes",
+    "construct": "NewBytes([]byte{0x01})",
+    "looseExpected": "b64\"AQ==\"",
+    "typedExpected": "b64\"AQ==\""
+  },
+  {
+    "_comment": "G5: non-ASCII bytes 0xff,0xfe -> //4=",
+    "id": "bytes-non-ascii",
+    "typeName": "Bytes",
+    "construct": "NewBytes([]byte{0xff, 0xfe})",
+    "looseExpected": "b64\"//4=\"",
+    "typedExpected": "b64\"//4=\""
+  },
+  {
+    "id": "bytes-null-byte",
+    "typeName": "Bytes",
+    "construct": "NewBytes([]byte{0x00})",
+    "looseExpected": "b64\"AA==\"",
+    "typedExpected": "b64\"AA==\""
+  },
+  {
+    "id": "bytes-hello",
+    "typeName": "Bytes",
+    "construct": "NewBytes([]byte{0x48,0x65,0x6c,0x6c,0x6f})",
+    "looseExpected": "b64\"SGVsbG8=\"",
+    "typedExpected": "b64\"SGVsbG8=\""
+  },
+  {
+    "_comment": "G5: invalid base64 must be a hard parse error",
+    "id": "bytes-invalid-base64",
+    "typeName": "Bytes",
+    "construct": "N/A — parse error case",
+    "parseError": true,
+    "parseInput": "b64\"!!!!\"",
+    "errorDescription": "Invalid base64 character '!' — MUST hard-error on parse (D6). No fallback to bare string."
+  },
+  {
+    "id": "bytes-invalid-base64-no-padding",
+    "typeName": "Bytes",
+    "construct": "N/A — parse error case",
+    "parseError": true,
+    "parseInput": "b64\"AQ\"",
+    "errorDescription": "Missing required '=' padding — invalid base64 in strict RFC 4648 §4 mode. MUST hard-error."
+  },
+
+  {
+    "_comment": "=== TIME (D2: UTC, RFC3339, Z suffix, sub-second trimmed) ===",
+    "id": "time-whole-second-utc",
+    "typeName": "Time",
+    "construct": "NewTime(time.Date(2026,6,19,12,0,0,0,time.UTC))",
+    "looseExpected": "2026-06-19T12:00:00Z",
+    "typedExpected": "2026-06-19T12:00:00Z",
+    "currentlyBuggy": true,
+    "bugDescription": "emit.go:108 uses Z07:00 format preserving offset. Correct for UTC input but wrong for non-UTC. All paths currently drop sub-second."
+  },
+  {
+    "id": "time-sub-second-500ms",
+    "typeName": "Time",
+    "construct": "NewTime(time.Date(2026,6,19,12,0,0,500000000,time.UTC))",
+    "looseExpected": "2026-06-19T12:00:00.5Z",
+    "typedExpected": "2026-06-19T12:00:00.5Z",
+    "currentlyBuggy": true,
+    "bugDescription": "All current emit paths drop sub-second precision. Must emit .5Z not Z (D2)."
+  },
+  {
+    "id": "time-sub-second-nano",
+    "typeName": "Time",
+    "construct": "NewTime(time.Date(2026,6,19,12,0,0,123456789,time.UTC))",
+    "looseExpected": "2026-06-19T12:00:00.123456789Z",
+    "typedExpected": "2026-06-19T12:00:00.123456789Z",
+    "currentlyBuggy": true,
+    "bugDescription": "Sub-second precision dropped by all current emitters."
+  },
+  {
+    "id": "time-trailing-zero-trim",
+    "typeName": "Time",
+    "construct": "NewTime(time.Date(2026,6,19,12,0,0,500000000,time.UTC))",
+    "looseExpected": "2026-06-19T12:00:00.5Z",
+    "typedExpected": "2026-06-19T12:00:00.5Z",
+    "_note": "500000000 ns = 0.5s. Trailing zeros trimmed: .500000000 -> .5",
+    "currentlyBuggy": true
+  },
+  {
+    "id": "time-non-utc-normalized",
+    "typeName": "Time",
+    "construct": "NewTime(time.Date(2026,6,19,14,0,0,0,time.FixedZone(\"UTC+2\",7200)))",
+    "looseExpected": "2026-06-19T12:00:00Z",
+    "typedExpected": "2026-06-19T12:00:00Z",
+    "currentlyBuggy": true,
+    "bugDescription": "emit.go:108 uses Z07:00 which would emit 2026-06-19T14:00:00+02:00 instead of UTC-normalized 2026-06-19T12:00:00Z."
+  },
+  {
+    "id": "time-midnight",
+    "typeName": "Time",
+    "construct": "NewTime(time.Date(2026,6,19,0,0,0,0,time.UTC))",
+    "looseExpected": "2026-06-19T00:00:00Z",
+    "typedExpected": "2026-06-19T00:00:00Z"
+  },
+
+  {
+    "_comment": "=== REF / ID (D7: bare when safe, quoted when not) ===",
+    "id": "ref-simple",
+    "typeName": "ID",
+    "construct": "NewID(\"user\", \"abc123\")",
+    "looseExpected": "^user:abc123",
+    "typedExpected": "^user:abc123"
+  },
+  {
+    "id": "ref-empty-prefix",
+    "typeName": "ID",
+    "construct": "NewID(\"\", \"abc123\")",
+    "looseExpected": "^abc123",
+    "typedExpected": "^abc123"
+  },
+  {
+    "id": "ref-colon-in-value",
+    "typeName": "ID",
+    "construct": "NewID(\"ns\", \"val:with:colon\")",
+    "looseExpected": "^\"ns:val:with:colon\"",
+    "typedExpected": "^\"ns:val:with:colon\"",
+    "_note": "Colon in value would cause first-: split to misparse. Must quote (D7)."
+  },
+  {
+    "_comment": "G3: slash in value — isRefSafe allows '/' but Typed lexer isRefChar does not; must quote (D8/C4)",
+    "id": "ref-slash-in-value",
+    "typeName": "ID",
+    "construct": "NewID(\"ns\", \"path/value\")",
+    "looseExpected": "^\"ns:path/value\"",
+    "typedExpected": "^\"ns:path/value\"",
+    "currentlyBuggy": true,
+    "bugDescription": "isRefSafe (canon.go:143) allows '/' so canonRef currently emits ^ns:path/value bare. But Typed lexer isRefChar rejects '/', so scanRef stops at '/' producing an incomplete token. W2 must tighten isRefSafe to reject '/'."
+  },
+  {
+    "id": "ref-space-in-value",
+    "typeName": "ID",
+    "construct": "NewID(\"ns\", \"val ue\")",
+    "looseExpected": "^\"ns:val ue\"",
+    "typedExpected": "^\"ns:val ue\"",
+    "_note": "Space is outside isRefSafe — forces quoted form"
+  },
+  {
+    "id": "ref-colon-in-prefix",
+    "typeName": "ID",
+    "construct": "NewID(\"a:b\", \"value\")",
+    "looseExpected": "^\"a:b:value\"",
+    "typedExpected": "^\"a:b:value\"",
+    "_note": "Colon in prefix — must quote to avoid misparse"
+  },
+
+  {
+    "_comment": "=== LIST ===",
+    "id": "list-ints",
+    "typeName": "List",
+    "construct": "NewList(NewInt(1), NewInt(2), NewInt(3))",
+    "looseExpected": "[1 2 3]",
+    "typedExpected": "[1 2 3]"
+  },
+  {
+    "id": "list-empty",
+    "typeName": "List",
+    "construct": "NewList()",
+    "looseExpected": "[]",
+    "typedExpected": "[]"
+  },
+  {
+    "id": "list-mixed",
+    "typeName": "List",
+    "construct": "NewList(NewInt(1), NewStr(\"hello\"), NewBool(true))",
+    "looseExpected": "[1 hello t]",
+    "typedExpected": "[1 hello t]"
+  },
+  {
+    "id": "list-nested",
+    "typeName": "List",
+    "construct": "NewList(NewList(NewInt(1), NewInt(2)), NewList(NewInt(3)))",
+    "looseExpected": "[[1 2] [3]]",
+    "typedExpected": "[[1 2] [3]]"
+  },
+
+  {
+    "_comment": "=== MAP ===",
+    "id": "map-simple",
+    "typeName": "Map",
+    "construct": "NewMap([]MapEntry{{\"a\", NewInt(1)}, {\"b\", NewInt(2)}})",
+    "looseExpected": "{a=1 b=2}",
+    "typedExpected": "{a:1 b:2}",
+    "_note": "Loose uses = separator; Typed uses : separator"
+  },
+  {
+    "id": "map-sorted",
+    "typeName": "Map",
+    "construct": "NewMap([]MapEntry{{\"b\", NewInt(2)}, {\"a\", NewInt(1)}})",
+    "looseExpected": "{a=1 b=2}",
+    "typedExpected": "{a:1 b:2}",
+    "_note": "Keys sorted bytewise by canonical key form"
+  },
+  {
+    "id": "map-empty",
+    "typeName": "Map",
+    "construct": "NewMap(nil)",
+    "looseExpected": "{}",
+    "typedExpected": "{}"
+  },
+  {
+    "_comment": "Duplicate-key last-wins policy",
+    "id": "map-duplicate-keys-last-wins",
+    "typeName": "Map",
+    "construct": "parsed from '{k=1 k=2 k=3}'",
+    "looseExpected": "{k=3}",
+    "typedExpected": "{k:3}",
+    "parseInput": "{k=1 k=2 k=3}",
+    "_note": "Last-wins: final occurrence of 'k' has value 3"
+  },
+  {
+    "id": "map-quoted-key-sorts-before-bare",
+    "typeName": "Map",
+    "construct": "NewMap([]MapEntry{{\"A\", NewInt(4)}, {\"a\", NewInt(2)}, {\"aa\", NewInt(3)}, {\"b\", NewInt(1)}, {\"_\", NewInt(5)}})",
+    "looseExpected": "{\"_\"=5 A=4 a=2 aa=3 b=1}",
+    "typedExpected": "{\"_\":5 A:4 a:2 aa:3 b:1}",
+    "_note": "Quoted '\"_\"' sorts before bare 'A' because '\"' (0x22) < 'A' (0x41)"
+  },
+
+  {
+    "_comment": "=== STRUCT (G1: Loose collapses to map; Typed preserves TypeName) ===",
+    "id": "struct-loose-collapses",
+    "typeName": "Struct",
+    "construct": "NewStruct(\"Match\", []MapEntry{{\"home\", NewInt(1)}, {\"away\", NewInt(2)}})",
+    "looseExpected": "{away=2 home=1}",
+    "typedExpected": "Match{home=1 away=2}",
+    "_note": "G1: Loose drops TypeName 'Match' and sorts keys. Typed keeps TypeName and field order (no sort by default in emit.go). Both use '=' separator for struct fields.",
+    "ruling": "Named-struct TypeName is a Typed-mode-only guarantee per D1 ruling. Loose collapses to sorted map."
+  },
+  {
+    "id": "struct-empty",
+    "typeName": "Struct",
+    "construct": "NewStruct(\"Empty\", nil)",
+    "looseExpected": "{}",
+    "typedExpected": "Empty{}"
+  },
+
+  {
+    "_comment": "=== SUM (G2: Loose is {tag=value}; Typed is Tag(val) or Tag{...}) ===",
+    "id": "sum-loose-collapses",
+    "typeName": "Sum",
+    "construct": "NewSum(\"Ok\", NewStr(\"done\"))",
+    "looseExpected": "{Ok=done}",
+    "typedExpected": "Ok(done)",
+    "_note": "G2: Loose emits {tag=value}; Typed emits Tag(value). The sum tag syntax is Typed-mode-only per D1 ruling. 'done' is bare-safe under both isBareSafeV2 and isValidBareString."
+  },
+  {
+    "id": "sum-null-variant",
+    "typeName": "Sum",
+    "construct": "NewSum(\"None\", NewNull())",
+    "looseExpected": "{None=_}",
+    "typedExpected": "None()"
+  },
+  {
+    "id": "sum-struct-payload",
+    "typeName": "Sum",
+    "construct": "NewSum(\"Ok\", NewStruct(\"Result\", []MapEntry{{\"code\", NewInt(200)}}))",
+    "looseExpected": "{Ok={code=200}}",
+    "typedExpected": "Ok{code=200}",
+    "_note": "When sum payload is a struct, Typed uses Tag{...} syntax. Loose: outer sum becomes {tag=...}, inner struct collapses to map."
+  }
+]

@@ -682,9 +682,9 @@ describe('UI Events', () => {
     const emitted = emit(a);
     
     expect(emitted).toContain('Artifact');
-    expect(emitted).toContain('mime=image/png'); // "/" is bare-safe
+    expect(emitted).toContain('mime="image/png"'); // D8: "/" triggers quoting
     expect(emitted).toContain('ref="blob:sha256:abc123"');
-    expect(emitted).toContain('name=plot.png');
+    expect(emitted).toContain('name="plot.png"'); // D8: "." triggers quoting
   });
   
   test('resyncRequest', () => {

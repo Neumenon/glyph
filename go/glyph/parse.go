@@ -995,11 +995,63 @@ func (p *schemaParser) parseConstraint() (Constraint, error) {
 			}
 		case "len":
 			p.stream.Advance()
-			p.stream.Match(TokenEq)
-			numTok := p.stream.Advance()
-			if v, err := strconv.Atoi(numTok.Value); err == nil {
-				constraint = LenConstraint(v)
+			// Distinguish len=N (exact), len>=N (minlen), len<=N (maxlen)
+			if p.stream.Peek().Type == TokenGT {
+				// len>=N  → two-token sequence > =
+				p.stream.Advance() // consume >
+				p.stream.Match(TokenEq)
+				numTok := p.stream.Advance()
+				if v, err := strconv.Atoi(numTok.Value); err == nil {
+					constraint = MinLenConstraint(v)
+				}
+			} else if p.stream.Peek().Type == TokenLT {
+				// len<=N  → two-token sequence < =
+				p.stream.Advance() // consume <
+				p.stream.Match(TokenEq)
+				numTok := p.stream.Advance()
+				if v, err := strconv.Atoi(numTok.Value); err == nil {
+					constraint = MaxLenConstraint(v)
+				}
+			} else {
+				// len=N (exact)
+				p.stream.Match(TokenEq)
+				numTok := p.stream.Advance()
+				if v, err := strconv.Atoi(numTok.Value); err == nil {
+					constraint = LenConstraint(v)
+				}
 			}
+		case "unique":
+			p.stream.Advance()
+			constraint = Constraint{Kind: ConstraintUnique}
+		case "regex":
+			p.stream.Advance()
+			p.stream.Match(TokenEq)
+			strTok := p.stream.Advance()
+			// TokenString value is already unquoted by the lexer
+			constraint = RegexConstraint(strTok.Value)
+		case "enum":
+			p.stream.Advance()
+			p.stream.Match(TokenEq)
+			if !p.stream.Match(TokenLBracket) {
+				break
+			}
+			var vals []string
+			for {
+				t := p.stream.Peek()
+				if t.Type == TokenRBracket || t.Type == TokenEOF {
+					break
+				}
+				// Enum values may be TokenIdent, TokenBareStr, or TokenString
+				if t.Type == TokenIdent || t.Type == TokenBareStr || t.Type == TokenString {
+					vals = append(vals, t.Value)
+					p.stream.Advance()
+				} else {
+					// skip unexpected tokens inside enum list
+					p.stream.Advance()
+				}
+			}
+			p.stream.Match(TokenRBracket) // consume ]
+			constraint = EnumConstraint(vals)
 		default:
 			p.stream.Advance()
 		}

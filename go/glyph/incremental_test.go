@@ -443,6 +443,80 @@ func TestIncrementalParser_Struct(t *testing.T) {
 	}
 }
 
+// TestIncrementalParser_TimeLiteralHardError verifies that time literals produce
+// a hard error rather than silently truncating to the year integer (W3 fix).
+func TestIncrementalParser_TimeLiteralHardError(t *testing.T) {
+	inputs := []string{
+		"2026-06-19T12:00:00Z",
+		"2026-06-19T12:00:00+05:00",
+		"2026-01-01",
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			var gotError bool
+			var values []*GValue
+
+			handler := func(e ParseEvent) error {
+				if e.Type == EventError {
+					gotError = true
+				}
+				if e.Type == EventValue {
+					values = append(values, e.Value)
+				}
+				return nil
+			}
+
+			p := NewIncrementalParser(handler, DefaultIncrementalParserOptions())
+			p.Feed([]byte(input))
+			p.End()
+
+			if !gotError {
+				t.Errorf("input %q: expected hard error for time literal, got none", input)
+			}
+			// Must NOT emit an integer (e.g. Int(2026)) — that is the silent corruption bug.
+			for _, v := range values {
+				if _, err := v.AsInt(); err == nil {
+					t.Errorf("input %q: incorrectly emitted an Int value (silent truncation)", input)
+				}
+			}
+		})
+	}
+}
+
+// TestIncrementalParser_B64HardError verifies that b64"..." byte literals produce
+// a hard error rather than silently splitting into a bare string + quoted string (W3 fix).
+func TestIncrementalParser_B64HardError(t *testing.T) {
+	var gotError bool
+	var strValues []string
+
+	handler := func(e ParseEvent) error {
+		if e.Type == EventError {
+			gotError = true
+		}
+		if e.Type == EventValue && e.Value != nil {
+			if s, err := e.Value.AsStr(); err == nil {
+				strValues = append(strValues, s)
+			}
+		}
+		return nil
+	}
+
+	p := NewIncrementalParser(handler, DefaultIncrementalParserOptions())
+	p.Feed([]byte(`b64"aGVsbG8="`))
+	p.End()
+
+	if !gotError {
+		t.Error("expected hard error for b64 byte literal, got none")
+	}
+	// Must NOT silently emit the bare string "b64".
+	for _, s := range strValues {
+		if s == "b64" {
+			t.Error("incorrectly emitted bare string \"b64\" (silent misparsing)")
+		}
+	}
+}
+
 func TestIncrementalParser_ErrorHandling(t *testing.T) {
 	var gotError bool
 

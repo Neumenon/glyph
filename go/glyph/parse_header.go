@@ -2,6 +2,7 @@ package glyph
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -137,11 +138,19 @@ func tokenizeHeader(input string) []string {
 	return tokens
 }
 
-// parseRefIDFromTarget parses a target reference (without ^ prefix).
+// parseRefIDFromTarget parses a target reference string (no leading ^).
+// Accepts both bare form (prefix:value) and quoted form ("prefix:value").
+// For the quoted form, strconv.Unquote decodes the content, then first-':' split applies.
 func parseRefIDFromTarget(s string) RefID {
-	if strings.Contains(s, ":") {
-		parts := strings.SplitN(s, ":", 2)
-		return RefID{Prefix: parts[0], Value: parts[1]}
+	if len(s) > 1 && s[0] == '"' {
+		// Quoted form: decode using standard Go string unquoting.
+		if unquoted, err := strconv.Unquote(s); err == nil {
+			s = unquoted
+		}
+		// Fall through with decoded s (or raw s on Unquote failure).
+	}
+	if idx := strings.IndexByte(s, ':'); idx >= 0 {
+		return RefID{Prefix: s[:idx], Value: s[idx+1:]}
 	}
 	return RefID{Value: s}
 }
@@ -179,11 +188,17 @@ func EmitHeader(h *Header) string {
 
 	if h.Target.Value != "" {
 		b.WriteString(" @target=")
+		var full string
 		if h.Target.Prefix != "" {
-			b.WriteString(h.Target.Prefix)
-			b.WriteByte(':')
+			full = h.Target.Prefix + ":" + h.Target.Value
+		} else {
+			full = h.Target.Value
 		}
-		b.WriteString(h.Target.Value)
+		if isRefSafe(full) {
+			b.WriteString(full)
+		} else {
+			b.WriteString(quoteString(full))
+		}
 	}
 
 	return b.String()
@@ -237,6 +252,9 @@ func DetectMode(input string) Mode {
 // ============================================================
 
 // V2Options configures GLYPH v2 encoding.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Used only by EmitV2/EmitV2Patch. See PARITY_ROADMAP.md (P4).
 type V2Options struct {
 	Schema        *Schema
 	Mode          Mode    // Preferred mode (ModeAuto for automatic)
@@ -248,6 +266,9 @@ type V2Options struct {
 }
 
 // DefaultV2Options returns sensible defaults for GLYPH v2 encoding.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// See V2Options. See PARITY_ROADMAP.md (P4).
 func DefaultV2Options(schema *Schema) V2Options {
 	return V2Options{
 		Schema:        schema,
@@ -266,11 +287,11 @@ func DefaultV2Options(schema *Schema) V2Options {
 
 // EmitV2 encodes a value in GLYPH v2 format with automatic mode selection.
 //
-// EXPERIMENTAL: emit-only. There is no authoritative v2 document parser
-// (ParseV2Document does not exist), so EmitV2 output cannot be round-tripped
-// back through a single v2 decoder. Not integrated into the supported
-// Parse/Emit path; may change. Use the Loose (CanonicalizeLoose) or Typed
-// (Emit/Parse) entry points for round-trippable output. See PARITY_ROADMAP.md (P4).
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Emit-only: there is no authoritative v2 document parser (ParseV2Document does not
+// exist), so EmitV2 output cannot be round-tripped back through a single v2 decoder.
+// Use the Loose (CanonicalizeLoose) or Typed (Emit/Parse) entry points for
+// round-trippable output. See PARITY_ROADMAP.md (P4).
 func EmitV2(v *GValue, opts V2Options) (string, error) {
 	if v == nil {
 		return canonNull(), nil
@@ -329,8 +350,9 @@ func EmitV2(v *GValue, opts V2Options) (string, error) {
 
 // EmitV2Patch encodes a patch in GLYPH v2 format.
 //
-// EXPERIMENTAL: shares EmitV2's emit-only status (no v2 document parser); may
-// change. The supported patch path is EmitPatch/ParsePatch. See PARITY_ROADMAP.md (P4).
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Shares EmitV2's emit-only status (no v2 document parser). The supported patch
+// path is EmitPatch/ParsePatch. See PARITY_ROADMAP.md (P4).
 func EmitV2Patch(p *Patch, opts V2Options) (string, error) {
 	patchOpts := PatchOptions{
 		Schema:       opts.Schema,

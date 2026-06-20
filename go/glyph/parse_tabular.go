@@ -2,10 +2,10 @@ package glyph
 
 import (
 	"bufio"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"strings"
-	"time"
 )
 
 // ============================================================
@@ -354,6 +354,24 @@ func (p *tabularRowParser) parseValue(fd *FieldDef) (*GValue, error) {
 	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		return p.parseNumberOrTime()
 
+	case 'b':
+		// Bytes literal: b64"<base64>" — intercept before the generic type-name path.
+		if strings.HasPrefix(p.input[p.pos:], `b64"`) {
+			p.pos += 3 // consume 'b', '6', '4'
+			s, err := p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			body, _ := s.AsStr()
+			decoded, err := base64.StdEncoding.DecodeString(body)
+			if err != nil {
+				return nil, fmt.Errorf("invalid base64 in bytes literal: %v", err)
+			}
+			return Bytes(decoded), nil
+		}
+		// Not a bytes literal — fall through to type-name / bare-string handling.
+		return p.parseNestedPackedOrBareString()
+
 	default:
 		// Check if it's a nested packed struct: Type@(...)
 		if isTypeNameStart(c) {
@@ -509,24 +527,7 @@ func (p *tabularRowParser) parseTime() (*GValue, error) {
 		p.pos++
 	}
 
-	timeStr := p.input[start:p.pos]
-
-	// Try common ISO-8601 formats
-	t, err := time.Parse("2006-01-02T15:04:05Z", timeStr)
-	if err != nil {
-		t, err = time.Parse(time.RFC3339, timeStr)
-		if err != nil {
-			t, err = time.Parse("2006-01-02T15:04:05.000Z", timeStr)
-			if err != nil {
-				t, err = time.Parse("2006-01-02", timeStr)
-				if err != nil {
-					return nil, fmt.Errorf("invalid time format: %s", timeStr)
-				}
-			}
-		}
-	}
-
-	return Time(t), nil
+	return parseTimeLiteralStr(p.input[start:p.pos])
 }
 
 func (p *tabularRowParser) parseNumber() (*GValue, error) {
@@ -579,40 +580,12 @@ func (p *tabularRowParser) parseNumber() (*GValue, error) {
 }
 
 func (p *tabularRowParser) parseQuotedString() (*GValue, error) {
-	if !p.expect('"') {
-		return nil, fmt.Errorf("expected '\"'")
+	str, newPos, err := parseQuotedStringShared(p.input, p.pos)
+	if err != nil {
+		return nil, err
 	}
-
-	var sb strings.Builder
-	for p.pos < len(p.input) {
-		c := p.input[p.pos]
-		if c == '"' {
-			p.pos++
-			return Str(sb.String()), nil
-		}
-		if c == '\\' && p.pos+1 < len(p.input) {
-			p.pos++
-			switch p.input[p.pos] {
-			case 'n':
-				sb.WriteByte('\n')
-			case 'r':
-				sb.WriteByte('\r')
-			case 't':
-				sb.WriteByte('\t')
-			case '\\':
-				sb.WriteByte('\\')
-			case '"':
-				sb.WriteByte('"')
-			default:
-				sb.WriteByte(p.input[p.pos])
-			}
-		} else {
-			sb.WriteByte(c)
-		}
-		p.pos++
-	}
-
-	return nil, fmt.Errorf("unterminated string")
+	p.pos = newPos
+	return Str(str), nil
 }
 
 func (p *tabularRowParser) parseBareString() (*GValue, error) {

@@ -19,6 +19,9 @@ import (
 )
 
 // Decimal128 arithmetic errors
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the Decimal128 subsystem. See PARITY_ROADMAP.md (P4).
 var (
 	ErrDivisionByZero = errors.New("decimal128: division by zero")
 	ErrOverflow       = errors.New("decimal128: overflow")
@@ -27,8 +30,9 @@ var (
 // Decimal128 represents a 128-bit decimal number: value = coefficient * 10^(-scale)
 // where scale is -127 to 127 (8-bit signed) and coefficient is 16 bytes.
 //
-// EXPERIMENTAL: not integrated into the core Parse/Emit path; may change. See
-// the package-level note above.
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Not integrated into the core Parse/Emit path. See the package-level note and
+// PARITY_ROADMAP.md (P4).
 type Decimal128 struct {
 	Scale int8   // Exponent: -127 to 127
 	Coef  [16]byte // 128-bit coefficient (two's complement, big-endian)
@@ -354,6 +358,9 @@ func coefToInt(coef []byte) *big.Int {
 }
 
 // DecimalFromAny creates a Decimal128 from various types.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the Decimal128 subsystem. See PARITY_ROADMAP.md (P4).
 func DecimalFromAny(value interface{}) (Decimal128, error) {
 	switch v := value.(type) {
 	case Decimal128:
@@ -372,14 +379,23 @@ func DecimalFromAny(value interface{}) (Decimal128, error) {
 }
 
 // ParseDecimalRegex matches decimal literals with "m" suffix (e.g., "99.99m")
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the Decimal128 subsystem. See PARITY_ROADMAP.md (P4).
 var ParseDecimalRegex = regexp.MustCompile(`^(-?\d+(?:\.\d+)?)m$`)
 
 // IsDecimalLiteral checks if a string is a decimal literal with "m" suffix.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the Decimal128 subsystem. See PARITY_ROADMAP.md (P4).
 func IsDecimalLiteral(s string) bool {
 	return ParseDecimalRegex.MatchString(s)
 }
 
 // ParseDecimalLiteral parses a decimal literal with "m" suffix.
+//
+// Deprecated: experimental, not part of the stable surface; may change or be removed.
+// Part of the Decimal128 subsystem. See PARITY_ROADMAP.md (P4).
 func ParseDecimalLiteral(s string) (Decimal128, error) {
 	matches := ParseDecimalRegex.FindStringSubmatch(s)
 	if len(matches) != 2 {

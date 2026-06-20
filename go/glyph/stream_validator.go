@@ -689,8 +689,12 @@ func MaxInt(v int) *int { return &v }
 // Default Tool Registry
 // ============================================================
 
-// DefaultToolRegistry returns a registry with common tools for agent use.
-func DefaultToolRegistry() *ToolRegistry {
+// DefaultSafeToolRegistry returns a registry containing only side-effect-free
+// tools suitable for production use: search, calculate, and browse.
+// Tools with filesystem or shell access (execute, read_file, write_file) are
+// intentionally excluded. Use NewToolRegistry and Register to add them
+// explicitly if your application requires them.
+func DefaultSafeToolRegistry() *ToolRegistry {
 	r := NewToolRegistry()
 
 	// Search tool
@@ -722,7 +726,19 @@ func DefaultToolRegistry() *ToolRegistry {
 		},
 	})
 
-	// Execute tool
+	return r
+}
+
+// DefaultToolRegistry returns a registry with common tools for agent use.
+//
+// Deprecated: DefaultToolRegistry includes side-effecting tools (execute,
+// read_file, write_file) with no access restrictions. Use
+// DefaultSafeToolRegistry for production code; opt in to dangerous tools
+// explicitly via NewToolRegistry + Register.
+func DefaultToolRegistry() *ToolRegistry {
+	r := DefaultSafeToolRegistry()
+
+	// Execute tool — side-effecting: arbitrary shell command, no path guard.
 	r.Register(&ToolSchema{
 		Name:        "execute",
 		Description: "Execute a shell command",
@@ -731,7 +747,7 @@ func DefaultToolRegistry() *ToolRegistry {
 		},
 	})
 
-	// Read file tool
+	// Read file tool — side-effecting: filesystem read, no path guard.
 	r.Register(&ToolSchema{
 		Name:        "read_file",
 		Description: "Read a file from disk",
@@ -741,7 +757,7 @@ func DefaultToolRegistry() *ToolRegistry {
 		},
 	})
 
-	// Write file tool
+	// Write file tool — side-effecting: filesystem write, no path guard.
 	r.Register(&ToolSchema{
 		Name:        "write_file",
 		Description: "Write content to a file",

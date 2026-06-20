@@ -1,9 +1,11 @@
 package glyph
 
 import (
+	"encoding/base64"
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -11,6 +13,24 @@ import (
 // ============================================================
 // Canonical Scalar Encoding (GLYPH v2)
 // ============================================================
+
+// canonTime returns the canonical time representation per D2:
+// UTC, RFC3339Nano, trailing fractional zeros trimmed, always 'Z'.
+func canonTime(t time.Time) string {
+	s := t.UTC().Format(time.RFC3339Nano)
+	if idx := strings.IndexByte(s, '.'); idx != -1 {
+		end := len(s) - 1 // index of 'Z'
+		i := end
+		for i > idx && s[i-1] == '0' {
+			i--
+		}
+		if i == idx+1 {
+			i = idx // drop lone '.'
+		}
+		s = s[:i] + "Z"
+	}
+	return s
+}
 
 // canonNull returns the canonical null representation.
 func canonNull() string {
@@ -34,40 +54,40 @@ func canonInt(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
 
-// canonFloat returns the canonical float representation.
-// Uses shortest-roundtrip format, E→e, -0→0.
+// canonFloat returns the canonical float representation per D4:
+// - NaN/+Inf/-Inf → bare tokens "NaN"/"Inf"/"-Inf" (Typed-mode only; Loose callers must guard separately)
+// - -0.0 and 0.0 both → "0.0" (always decimal point)
+// - shortest round-trip 'g'/-1 format; if no '.' or 'e' in result, append ".0" so float != int
 func canonFloat(f float64) string {
-	// Handle -0 using bit representation (more reliable)
-	if math.Float64bits(f) == 0x8000000000000000 {
-		return "0"
+	if math.IsNaN(f) {
+		return "NaN"
 	}
-	if f == 0 {
-		return "0"
+	if math.IsInf(f, 1) {
+		return "Inf"
 	}
-
-	// Small integers use integer format for clarity
-	// Limit to 10^6 to avoid very long digit strings like "10000000000"
-	if f == math.Trunc(f) && math.Abs(f) < 1e6 {
-		return strconv.FormatInt(int64(f), 10)
+	if math.IsInf(f, -1) {
+		return "-Inf"
 	}
-
-	// Use 'g' format for shortest representation
+	// -0.0 and 0.0 both canonicalize to "0.0"
+	if math.Float64bits(f) == 0x8000000000000000 || f == 0 {
+		return "0.0"
+	}
+	// Shortest round-trip representation
 	s := strconv.FormatFloat(f, 'g', -1, 64)
 	s = strings.ReplaceAll(s, "E", "e")
-
-	// Verify round-trip to catch precision loss
-	if parsed, _ := strconv.ParseFloat(s, 64); parsed != f {
-		s = strconv.FormatFloat(f, 'e', 17, 64)
-		s = strings.ReplaceAll(s, "E", "e")
+	// 'g' may produce a bare integer (e.g. "999999") for integral floats.
+	// Append ".0" so the token is unambiguously float, not int (D4).
+	if !strings.Contains(s, ".") && !strings.Contains(s, "e") {
+		s += ".0"
 	}
-
 	return s
 }
 
 // canonString returns the canonical string representation.
-// Uses bare form if safe, otherwise quoted with minimal escapes.
+// Uses bare form if safe per isValidBareString (strict ASCII lexer match, D8),
+// otherwise quoted with minimal escapes.
 func canonString(s string) string {
-	if isBareSafeV2(s) {
+	if isValidBareString(s) {
 		return s
 	}
 	return quoteString(s)
@@ -126,25 +146,38 @@ func isBareSafeV2(s string) bool {
 	return true
 }
 
-// isRefSafe checks if a ref string can be used without quoting.
-// Refs allow: letters, digits, _, -, ., /, :
+// isRefSafe reports whether the full ref string (prefix:value, no leading ^)
+// can be emitted as a bare ^prefix:value token. Rules per D7+D8:
+//   - All chars must pass isRefChar (ASCII: [A-Za-z0-9_:-.]).
+//   - '/' and all non-ASCII bytes force quoting (isRefChar rejects them).
+//   - A ':' in the value part forces quoting to keep first-':' split unambiguous.
 func isRefSafe(s string) bool {
 	if len(s) == 0 {
 		return false
 	}
-
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError {
-			return false
+	colon := strings.IndexByte(s, ':')
+	if colon < 0 {
+		// No prefix: whole string is the value.
+		for i := 0; i < len(s); i++ {
+			if !isRefChar(s[i]) {
+				return false
+			}
 		}
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) &&
-			r != '_' && r != '-' && r != '.' && r != '/' && r != ':' {
-			return false
-		}
-		i += size
+		return true
 	}
-
+	// Has a prefix:value separator.
+	prefix, value := s[:colon], s[colon+1:]
+	for i := 0; i < len(prefix); i++ {
+		if !isRefChar(prefix[i]) {
+			return false
+		}
+	}
+	for i := 0; i < len(value); i++ {
+		// ':' in the value forces quoting to avoid mis-split.
+		if value[i] == ':' || !isRefChar(value[i]) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -214,11 +247,10 @@ func canonValue(v *GValue) string {
 	case TypeID:
 		return canonRef(v.idVal)
 	case TypeTime:
-		// ISO-8601 format
-		return v.timeVal.UTC().Format("2006-01-02T15:04:05Z")
+		return canonTime(v.timeVal)
 	case TypeBytes:
-		// Base64 encoded
-		return "b64" + quoteString(string(v.bytesVal))
+		// Base64 encoded per D6
+		return "b64" + quoteString(base64.StdEncoding.EncodeToString(v.bytesVal))
 	default:
 		// Container types handled by specialized encoders
 		return ""

@@ -276,3 +276,27 @@ func TestFrameHandler_DuplicateSkipped(t *testing.T) {
 		t.Errorf("count = %d, want 2 (duplicate should be skipped)", count)
 	}
 }
+
+// TestErrorCodeRegistry verifies the canonical error code constants are present
+// and have the expected values. Changing these would be a protocol-breaking change.
+func TestErrorCodeRegistry(t *testing.T) {
+	cases := []struct {
+		constant ErrorCode
+		expected string
+	}{
+		{ErrCodeBaseMismatch, "BASE_MISMATCH"},
+		{ErrCodeSeqGap, "SEQ_GAP"},
+		{ErrCodeSeqDuplicate, "SEQ_DUP"},
+		{ErrCodeNoState, "NO_STATE"},
+		{ErrCodeCRCMismatch, "CRC_MISMATCH"},
+		{ErrCodeVersionUnsupported, "VERSION_UNSUPPORTED"},
+		{ErrCodePayloadTooLarge, "PAYLOAD_TOO_LARGE"},
+		{ErrCodeHeaderTooLarge, "HEADER_TOO_LARGE"},
+		{ErrCodeFrameInvalid, "FRAME_INVALID"},
+	}
+	for _, c := range cases {
+		if c.constant != c.expected {
+			t.Errorf("ErrorCode constant value = %q, want %q", c.constant, c.expected)
+		}
+	}
+}

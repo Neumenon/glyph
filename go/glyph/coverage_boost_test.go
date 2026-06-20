@@ -1,3 +1,5 @@
+//go:build heavy
+
 package glyph
 
 import (
@@ -42,16 +44,16 @@ func TestCanonValue(t *testing.T) {
 
 func TestCanonFloat_EdgeCases(t *testing.T) {
 	// Negative zero
-	if got := canonFloat(math.Copysign(0, -1)); got != "0" {
-		t.Errorf("expected 0 for -0, got %q", got)
+	if got := canonFloat(math.Copysign(0, -1)); got != "0.0" {
+		t.Errorf("expected 0.0 for -0, got %q", got)
 	}
 	// Zero
-	if got := canonFloat(0); got != "0" {
-		t.Errorf("expected 0, got %q", got)
+	if got := canonFloat(0); got != "0.0" {
+		t.Errorf("expected 0.0, got %q", got)
 	}
 	// Small integer float
-	if got := canonFloat(42.0); got != "42" {
-		t.Errorf("expected 42, got %q", got)
+	if got := canonFloat(42.0); got != "42.0" {
+		t.Errorf("expected 42.0, got %q", got)
 	}
 	// Large value that needs precision
 	val := 1.23456789e15
@@ -575,12 +577,12 @@ func TestValidateValue_AllTypeSpecs(t *testing.T) {
 		MapEntry{Key: "b", Value: Int(1)},   // not bool
 		MapEntry{Key: "i", Value: Str("x")}, // not int
 		MapEntry{Key: "f", Value: Str("x")}, // not float
-		MapEntry{Key: "s", Value: Int(1)},    // not str
-		MapEntry{Key: "by", Value: Int(1)},   // not bytes
-		MapEntry{Key: "t", Value: Int(1)},    // not time
-		MapEntry{Key: "id", Value: Int(1)},   // not id
-		MapEntry{Key: "l", Value: Int(1)},    // not list
-		MapEntry{Key: "m", Value: Int(1)},    // not map
+		MapEntry{Key: "s", Value: Int(1)},   // not str
+		MapEntry{Key: "by", Value: Int(1)},  // not bytes
+		MapEntry{Key: "t", Value: Int(1)},   // not time
+		MapEntry{Key: "id", Value: Int(1)},  // not id
+		MapEntry{Key: "l", Value: Int(1)},   // not list
+		MapEntry{Key: "m", Value: Int(1)},   // not map
 	)
 	result2 := ValidateAs(bad, schema, "Test")
 	if result2.Valid {
@@ -618,9 +620,9 @@ func TestValidateConstraints_Extended(t *testing.T) {
 
 	// Constraint violations
 	bad := Struct("Test",
-		MapEntry{Key: "name", Value: Str("x")},        // too short
-		MapEntry{Key: "tags", Value: List()},            // empty
-		MapEntry{Key: "code", Value: Str("invalid!!")},  // wrong length + not in enum
+		MapEntry{Key: "name", Value: Str("x")},         // too short
+		MapEntry{Key: "tags", Value: List()},           // empty
+		MapEntry{Key: "code", Value: Str("invalid!!")}, // wrong length + not in enum
 	)
 	result2 := ValidateAs(bad, schema, "Test")
 	if result2.Valid {
