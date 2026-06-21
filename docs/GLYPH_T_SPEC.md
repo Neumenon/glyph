@@ -185,10 +185,9 @@ summary for reference:
 then appends `.0` if no decimal point is present. This correctly ensures
 `Float(1.0) → "1.0"` and `Float(0.1) → "0.1"`.
 
-**Known bug in `canonFloat` (canon.go:39-65):** integral floats below 1e6
-are emitted without a decimal point (e.g. `Float(1.0) → "1"`). This breaks
-the D4 rule and causes cross-language fingerprint divergence. Fix in W2:
-`canonFloat` must append `.0` for integral values, matching `emitFloat`.
+**Resolved (W2):** `canonFloat` now appends `.0` for integral floats, so
+`Float(1.0) → "1.0"` — byte-identical across Go, Python, and JS (verified by the
+cross-implementation corpus).
 
 #### Bytes canonical form (D6)
 
@@ -599,9 +598,9 @@ Both share the same canonical scalar forms (after bugs are fixed). The
 `FingerprintLoose` (SHA-256 over `CanonicalizeLoose`) is the stable
 cross-language hash; it MUST be byte-identical across Go, Python, and JS.
 
-Float unification (D4) is required for cross-language fingerprint parity.
-See `LOOSE_MODE_SPEC.md §Float Formatting` and `SPECIFICATIONS.md:205` for
-the currently documented divergence.
+Float unification (D4) is required for cross-language fingerprint parity, and is
+**resolved** — the float rule is byte-identical across Go, Python, and JS. See
+`LOOSE_MODE_SPEC.md §Number Formatting` and `CANONICAL_FORMS.md §3` (authoritative).
 
 ### 6.3 Cross-mode value identity
 
@@ -628,7 +627,6 @@ may change or be removed without notice (see `doc.go:69-73`):
 | Issue | Severity | Work item |
 |-------|----------|-----------|
 | `emit.go:108` wrong time format (offset-preserving) | High | W2 |
-| `canonFloat` drops decimal point for integral floats | High | W2 |
 | `emit.go:111-116` unquoted unsafe refs | High | W2/W3 |
 | `emit_packed.go:269`, `emit_tabular.go:202` raw-bytes bug | High | W3 |
 | `parseLooseValue` no `b64"..."` branch | High | W3 |
@@ -637,6 +635,5 @@ may change or be removed without notice (see `doc.go:69-73`):
 | `parsePathToSegs` silently ignores `Atoi` error | Medium | W6 |
 | `parsePathToSegs` unescaped map-key body | Medium | W6 |
 | `parseRefIDFromTarget` first-`:` split (no escaping) | Medium | W6 |
-| `canonFloat` in Python/JS still uses threshold rule (D4) | High | W8 |
 | Time sub-second trimming in all emit paths | High | W2/W3 |
 | NaN/Inf guard missing in `canonFloat`/`writeCanonLoose` | Medium | W2/W3 |

@@ -25,6 +25,30 @@ from glyph import (
     LooseCanonOpts, NullStyle,
 )
 
+# GLYPH-Loose uses JSON-domain (IEEE-754 double) number semantics, unified across
+# Go/Python/JS: integer-valued numbers within the safe window are integers, and
+# numbers outside it collapse to float64 (lossy by design). The int/float TYPE is
+# therefore not part of round-trip fidelity — VALUE fidelity is. Normalize both
+# sides with the same rule so the comparison checks value/structure preservation
+# (real corruption) without flagging the deliberate, cross-impl int/float collapse.
+_SAFE_INT = (1 << 53) - 1
+
+
+def _normalize_numbers(obj):
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, int):
+        return obj if -_SAFE_INT <= obj <= _SAFE_INT else float(obj)
+    if isinstance(obj, float):
+        if obj.is_integer() and -_SAFE_INT <= obj <= _SAFE_INT:
+            return int(obj)
+        return obj
+    if isinstance(obj, list):
+        return [_normalize_numbers(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _normalize_numbers(v) for k, v in obj.items()}
+    return obj
+
 
 def test_roundtrip(name: str, data: Any, use_tabular: bool = True) -> Tuple[bool, str]:
     """Test JSON -> GValue -> GLYPH -> GValue -> JSON round-trip."""
@@ -41,9 +65,9 @@ def test_roundtrip(name: str, data: Any, use_tabular: bool = True) -> Tuple[bool
         # GValue -> JSON (direct, no parse)
         restored = to_json_loose(gvalue)
 
-        # Compare
-        orig_json = json.dumps(data, sort_keys=True, ensure_ascii=False)
-        rest_json = json.dumps(restored, sort_keys=True, ensure_ascii=False)
+        # Compare on JSON-domain value (see _normalize_numbers).
+        orig_json = json.dumps(_normalize_numbers(data), sort_keys=True, ensure_ascii=False)
+        rest_json = json.dumps(_normalize_numbers(restored), sort_keys=True, ensure_ascii=False)
 
         if orig_json == rest_json:
             return True, f"OK | GLYPH: {glyph_str[:80]}{'...' if len(glyph_str) > 80 else ''}"
@@ -66,9 +90,9 @@ def test_parse_roundtrip(name: str, data: Any) -> Tuple[bool, str]:
         reparsed = parse_json_loose(json_str)
         restored = to_json_loose(reparsed)
 
-        # Compare
-        orig_json = json.dumps(data, sort_keys=True, ensure_ascii=False)
-        rest_json = json.dumps(restored, sort_keys=True, ensure_ascii=False)
+        # Compare on JSON-domain value (see _normalize_numbers).
+        orig_json = json.dumps(_normalize_numbers(data), sort_keys=True, ensure_ascii=False)
+        rest_json = json.dumps(_normalize_numbers(restored), sort_keys=True, ensure_ascii=False)
 
         if orig_json == rest_json:
             return True, "OK"
@@ -292,7 +316,10 @@ def run_equality_tests():
         ("same object different key order", {"a": 1, "b": 2}, {"b": 2, "a": 1}, True),
         ("same array", [1, 2, 3], [1, 2, 3], True),
         ("different array order", [1, 2, 3], [3, 2, 1], False),
-        ("int vs float", 42, 42.0, False),  # Different types
+        # Unified contract: in the JSON number domain there is no int/float
+        # distinction, so int 42 and integer-valued float 42.0 collapse to the
+        # same loose value and fingerprint (matches Go/JS).
+        ("int vs integer-valued float", 42, 42.0, True),
         ("null equality", None, None, True),
         ("empty structures", {}, [], False),
         ("nested same", {"a": {"b": 1}}, {"a": {"b": 1}}, True),

@@ -87,6 +87,9 @@ from .patch import (
     PathSegKind,
     parse_patch,
     apply_patch,
+    verify_patch_base,
+    compute_base_fingerprint,
+    PatchBaseMismatch,
 )
 
 # Convenient aliases
@@ -148,4 +151,7 @@ __all__ = [
     "PathSegKind",
     "parse_patch",
     "apply_patch",
+    "verify_patch_base",
+    "compute_base_fingerprint",
+    "PatchBaseMismatch",
 ]

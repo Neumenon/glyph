@@ -83,19 +83,29 @@ Int(-100) → -100
 
 ### 3.1 Canonical Rule (D4)
 
-The canonical float form MUST satisfy BOTH of the following conditions simultaneously:
+The canonical float form MUST satisfy ALL of the following conditions simultaneously:
 
 1. **Shortest round-trip digits.** Use the minimum number of significant digits such that
    `parse(emit(f)) == f` holds exactly (IEEE 754 double round-trip).
 2. **Always include a decimal point.** A float MUST be distinguishable from an int at the
    lexical level. If shortest-round-trip produces no decimal point or exponent character
    (i.e. the value is a whole number), append `.0`.
+3. **Exponential notation boundary.** Render in exponential form (`e±NN`, lowercase `e`,
+   exponent zero-padded to ≥ 2 digits) when the decimal exponent is `<= -5` or `>= 6`;
+   otherwise use plain decimal. Examples: `999999.9` (exp 5) → `999999.9`; `1234567.5`
+   (exp 6) → `1.2345675e+06`; `0.0001` (exp -4) → `0.0001`; `0.00001` (exp -5) → `1e-05`.
 
-This rule is **identical across Go, Python, and JS** and across all emit modes. It supersedes
-the threshold-based rule (exponent when `exp < -4` or `exp >= 15`) documented in
-`LOOSE_MODE_SPEC.md:29,34-38` and `SPECIFICATIONS.md:54,59-63`, which was disclosed as an
-open divergence. The threshold rule is hereby retired. Implementations MUST migrate to the
-shortest-round-trip-with-decimal-point rule stated here.
+This rule is **unified and byte-identical across Go, Python, and JS** (verified by the
+cross-implementation corpus — see `tests/all_impl_parity_test.py`). It replaced an earlier
+threshold-based digit rule (exponent when `exp < -4` or `exp >= 15`) that was once an open
+divergence; that rule is **retired** and all three implementations now emit identically.
+
+> **Loose vs typed layer.** Conditions 1–3 describe the canonical form of a value whose type
+> is *float* (typed mode, or an explicitly-constructed float). In **GLYPH-Loose**, JSON
+> numbers first go through safe-integer typing: an integer-valued number within
+> `|n| <= 2^53-1` becomes an **integer** literal (so `0`, `42`, `1000` — never `0.0`/`42.0`),
+> and only non-integer or out-of-window numbers are floats and formatted by this rule. So a
+> loose canonical never shows `3.0`; it shows `3`.
 
 **Special values:**
 
@@ -123,17 +133,10 @@ lower-case `e` MUST be used) already contains a non-integer indicator and satisf
 without an additional `.0`. The `.0` suffix is only required when neither a `.` nor `e` is
 present in the shortest-round-trip string.
 
-**Current divergence to fix (ground truth):**
-
-- `emitFloat` in `emit.go:148-153` uses `'f'/-1` format which never uses exponent notation,
-  then appends `.0` for whole numbers. This satisfies condition 2 but can produce unnecessarily
-  long strings for large values (e.g. `1e21` would become `1000000000000000000000.0`). This
-  MUST be corrected to use the shortest-round-trip format.
-- `canonFloat` in `canon.go:50-55` uses integer format for whole numbers below `1e6`, breaking
-  condition 2 for those values (e.g. `Float(1.0)` → `"1"` instead of `"1.0"`). This MUST be
-  corrected.
-- `writeCanonLoose` in `loose.go:475` uses bare `'g'` format with no decimal-point guard,
-  also breaking condition 2 for whole-number floats. This MUST be corrected.
+**Resolved (W2 — verified byte-identical across Go, Python, and JS):** `emitFloat`,
+`canonFloat`, and `writeCanonLoose` now all emit the shortest-round-trip form with a
+guaranteed decimal point or exponent (`Float(1.0) → "1.0"`, `Float(1e21) → "1e+21"`,
+`Float(-0.0) → "0.0"`). The historical per-path divergences once tracked here are closed.
 
 ---
 
@@ -543,8 +546,8 @@ Notes on the table:
 
 | Topic | This document | LOOSE_MODE_SPEC.md | SPECIFICATIONS.md |
 |-------|--------------|--------------------|--------------------|
-| Float format | Section 3 (D4 — supersedes) | §Float Formatting (threshold rule — retired) | §Float Formatting (threshold rule — retired) |
-| Float zero / negative zero (G6) | Section 3.1: `Float(0.0)→"0.0"`, `Float(-0.0)→"0.0"` (D4 — **supersedes**) | "Zero: always 0" — **RETIRED** | Not specified |
+| Float format | Section 3 (D4 — **authoritative**) | §Number Formatting (defers to §3; unified) | §Number Formatting (defers to §3; unified) |
+| Float zero / negative zero (G6) | Section 3.1: float type `Float(0.0)→"0.0"`, `Float(-0.0)→"0.0"`; loose collapses to int `0` (see §3.1 layer note) | §Number Formatting: loose zero → `0` (safe-int collapse) | §Number Formatting: loose zero → `0` |
 | NaN/Inf | Section 4 (D3) | "NaN/Infinity: Rejected with error" | "NaN/Infinity: Rejected with error" |
 | Bare-string rule | Section 5 (D8 — conservative) | §String Bare-Safe Rule (allows Unicode) | §String Bare-Safe Rule (allows Unicode) |
 | Bytes form | Section 6 (D6) | Not addressed | `b64"..."` mentioned in type table |

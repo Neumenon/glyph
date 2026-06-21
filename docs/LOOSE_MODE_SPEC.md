@@ -26,18 +26,23 @@ GLYPH-Loose is the schema-optional subset of GLYPH. It provides a deterministic 
 | null | `_` | `_` (accepts `∅`, `null` on input) |
 | bool | `t` / `f` | `t`, `f` |
 | int | Decimal, no leading zeros | `0`, `42`, `-100` |
-| float | Shortest roundtrip, `e` (not `E`) | `3.14`, `1e-06`, `1e+15` |
+| float | Shortest roundtrip, `e` (not `E`) | `3.14`, `1e-06`, `9.007199254740992e+15` |
 | string | Bare if safe, else quoted | `hello`, `"hello world"` |
 
-### Float Formatting
+### Number Formatting
 
-- **Zero:** Always `0` (not `-0`, not `0.0`)
-- **Negative zero:** Canonicalizes to `0`
-- **Exponent threshold:** Use exponential when `exp < -4` or `exp >= 15`
-- **Exponent format:** 2-digit minimum (`1e-06`, not `1e-6`)
-- **NaN/Infinity:** Rejected with error (not JSON-compatible)
+In Loose mode a JSON number is first **typed** by the safe-integer window: an integer-valued
+number with `|n| <= 2^53-1` becomes an integer literal; anything else is a float. So in Loose
+mode:
 
-> **Known open divergence:** Float canonicalization is not yet fully unified. Go uses shortest-roundtrip formatting; Python and JS use a threshold-based rule. The outputs agree for common values but can differ for edge-case floats near the boundary. This divergence is unresolved and will be addressed in a future spec update. Do not rely on byte-identical float output across Go and Python/JS for edge cases.
+- **Zero (incl. `-0`, `0.0`):** integer-valued and in-window → integer literal `0`
+- **Integer-valued numbers** (e.g. `1e3`, `3.0`, `1000000000000000`) → integer literals (`1000`, `3`, `1000000000000000`)
+- **Floats** (non-integer, or out-of-window): the [`CANONICAL_FORMS.md` §3 (D4)](./CANONICAL_FORMS.md) rule — shortest round-trip digits, lowercase `e`, exponential when the decimal exponent is `<= -5` or `>= 6`, exponent zero-padded to ≥ 2 digits
+- **NaN/Infinity:** rejected with error (not JSON-compatible)
+
+> **Number canonicalization is unified and byte-identical across Go, Python, and JS** — both the
+> safe-integer typing and the float-formatting rule (`CANONICAL_FORMS.md` §3 is authoritative).
+> The earlier threshold-based float rule and the Python int/float divergence are both resolved.
 
 ### String Bare-Safe Rule
 

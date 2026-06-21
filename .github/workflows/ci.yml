@@ -105,10 +105,14 @@ jobs:
       - name: Install
         run: cd py && pip install -e ".[dev]"
 
-      - name: Typecheck
+      - name: Typecheck (advisory)
+        # Surfaced but non-blocking: glyph/patch.py has pre-existing nullability
+        # errors in the apply logic (tracked for a follow-up cleanup). This shows
+        # them as a visible CI annotation instead of swallowing them with `|| true`.
+        continue-on-error: true
         run: |
           pip install mypy
-          cd py && mypy glyph/__init__.py glyph/types.py glyph/patch.py --ignore-missing-imports --no-error-summary || true
+          cd py && mypy glyph/__init__.py glyph/types.py glyph/patch.py --ignore-missing-imports --no-error-summary
 
       - name: Test with coverage
         run: cd py && pytest tests/ -v --tb=short --co -q 2>/dev/null; pytest tests/ -v --cov=glyph --cov-report=term-missing --cov-fail-under=80
@@ -138,7 +142,8 @@ jobs:
         run: cd js && npm ci
 
       - name: Typecheck
-        run: cd js && npx tsc --noEmit 2>/dev/null || true
+        # Gating: tsc --noEmit is clean and must stay clean.
+        run: cd js && npx tsc --noEmit
 
       - name: Test with coverage
         run: cd js && npx jest --coverage
@@ -347,12 +352,45 @@ jobs:
           fi
           echo "All checks passed. Safe to publish."
 
+  # ─── Release Meta: per-ecosystem tag↔version gate ──────────────────
+  # A single v* tag must NOT blindly fan out to both registries. This job
+  # compares the tag against each package's own version and emits a publish
+  # flag per ecosystem. PyPI/npm publish only when the tag matches THAT
+  # package's version, so a tag can ship one ecosystem without the other.
+  release-meta:
+    name: Release Meta
+    needs: [publish-gate]
+    runs-on: ubuntu-latest
+    # Custom `if:` overrides the implicit success() that `needs:` would apply, so
+    # it MUST re-assert the gate explicitly — otherwise a tag push whose suite
+    # FAILED would still run this job and trigger the publish jobs (fail-open).
+    if: startsWith(github.ref, 'refs/tags/v') && needs.publish-gate.result == 'success'
+    outputs:
+      pypi: ${{ steps.check.outputs.pypi }}
+      npm: ${{ steps.check.outputs.npm }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          # Anchor the key and accept either quote style (PEP 621 allows both).
+          PY=$(grep -m1 -E '^version[[:space:]]*=' py/pyproject.toml | sed -E "s/.*=[[:space:]]*[\"']([^\"']+)[\"'].*/\1/")
+          JS=$(grep -m1 '"version"' js/package.json | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+          echo "Tag=$TAG  py=$PY  js=$JS"
+          if [ "$TAG" = "$PY" ]; then echo "pypi=true" >> "$GITHUB_OUTPUT"; else echo "pypi=false" >> "$GITHUB_OUTPUT"; fi
+          if [ "$TAG" = "$JS" ]; then echo "npm=true"  >> "$GITHUB_OUTPUT"; else echo "npm=false" >> "$GITHUB_OUTPUT"; fi
+          if [ "$TAG" != "$PY" ] && [ "$TAG" != "$JS" ]; then
+            echo "::error::Tag v$TAG matches neither py ($PY) nor js ($JS) version — refusing to publish"
+            exit 1
+          fi
+          echo "Will publish: PyPI=$([ "$TAG" = "$PY" ] && echo yes || echo no), npm=$([ "$TAG" = "$JS" ] && echo yes || echo no)"
+
   # ─── Publish: PyPI ─────────────────────────────────────────────────
   publish-pypi:
     name: Publish to PyPI
-    needs: [publish-gate]
+    needs: [release-meta]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: needs.release-meta.outputs.pypi == 'true'
     permissions:
       id-token: write
     steps:
@@ -372,19 +410,20 @@ jobs:
   # ─── Publish: npm ──────────────────────────────────────────────────
   publish-npm:
     name: Publish to npm
-    needs: [publish-gate]
+    needs: [release-meta]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: needs.release-meta.outputs.npm == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: 'https://registry.npmjs.org'
-      - name: Build and publish
-        run: |
-          cd js && npm ci && npm run build 2>/dev/null || true
-          npm publish --access public
+      # Fail closed: a failed build must abort the publish (no `|| true`).
+      - name: Build
+        run: cd js && npm ci && npm run build
+      - name: Publish
+        run: cd js && npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

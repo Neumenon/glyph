@@ -51,16 +51,20 @@ GLYPH has two main specifications:
 | null | `_` | `_` (accepts `∅`, `null` on input) |
 | bool | `t` / `f` | `t`, `f` |
 | int | Decimal, no leading zeros | `0`, `42`, `-100` |
-| float | Shortest roundtrip, `e` not `E` | `3.14`, `1e-06`, `1e+15` |
+| float | Shortest roundtrip, `e` not `E` | `3.14`, `1e-06`, `9.007199254740992e+15` |
 | string | Bare if safe, else quoted | `hello`, `"hello world"` |
 
-#### Float Formatting
+#### Number Formatting (Loose mode)
 
-- **Zero:** Always `0` (not `-0`, not `0.0`)
-- **Negative zero:** Canonicalizes to `0`
-- **Exponent threshold:** Use exponential when `exp < -4` or `exp >= 15`
-- **Exponent format:** 2-digit minimum (`1e-06`, not `1e-6`)
-- **NaN/Infinity:** Rejected with error (not JSON-compatible)
+A JSON number is first **typed** by the safe-integer window, then formatted:
+
+- **Integer-valued in `|n| <= 2^53-1`** (incl. `-0`, `0.0`, `1e3`): integer literal (`0`, `1000`)
+- **Floats** (non-integer or out-of-window): shortest round-trip, lowercase `e`, exponential
+  when the decimal exponent is `<= -5` or `>= 6`, exponent ≥ 2 digits — see
+  [`CANONICAL_FORMS.md` §3 (D4)](./CANONICAL_FORMS.md), the authoritative rule
+- **NaN/Infinity:** rejected with error (not JSON-compatible)
+
+This rule is unified and byte-identical across Go, Python, and JS.
 
 **Examples:**
 ```
@@ -202,7 +206,7 @@ hash = glyph.fingerprint_loose(glyph.from_json(data))
 - Different data → different hash (collision-resistant)
 - Used for state verification and patch safety
 
-> **Known open divergence:** Float canonicalization is not yet fully unified across implementations. Go uses shortest-roundtrip; Python and JS use a threshold-based rule. Outputs agree for common values but may differ at edge-case float boundaries. This is unresolved.
+> **Float canonicalization is unified and byte-identical across Go, Python, and JS.** All three use the shortest-round-trip rule in [`CANONICAL_FORMS.md` §3 (D4)](./CANONICAL_FORMS.md); the earlier threshold-based rule has been retired. The JSON-domain number typing (safe-integer window) is also unified across implementations.
 
 ---
 
@@ -426,7 +430,7 @@ status enum[pending,active,complete]
 **Loose Mode:**
 1. Produce identical canonical output for same input (deterministic)
 2. Sort map keys by UTF-8 byte order
-3. Format floats according to exponent thresholds
+3. Type numbers by the safe-integer window and format floats per the canonical float rule (`CANONICAL_FORMS.md` §3: shortest round-trip, exponential outside the decimal-exponent range `[-4, 6)`)
 4. Apply bare-safe rules consistently
 5. Use last-wins for duplicate keys
 6. Accept any valid JSON as input
