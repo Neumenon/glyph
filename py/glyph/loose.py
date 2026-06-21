@@ -471,9 +471,12 @@ def _try_tabular(items: List[GValue], opts: LooseCanonOpts) -> Optional[str]:
     # Build tabular output
     lines = []
 
-    # Header: @tab _ [col1 col2 col3]
+    # Header: @tab _ rows=N cols=M [col1 col2 col3]
+    # The rows/cols metadata (v2.4.0, for streaming resync) is part of the
+    # canonical form across Go and JS; Go is the source of truth, so Python
+    # emits it too. parse() / parse_loose() tolerate its absence.
     col_header = " ".join(canon_string(c) for c in cols)
-    lines.append(f"@tab _ [{col_header}]")
+    lines.append(f"@tab _ rows={len(items)} cols={len(cols)} [{col_header}]")
 
     # Rows
     for item in items:

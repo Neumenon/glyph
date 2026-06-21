@@ -26,7 +26,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from .types import GType, GValue, MapEntry, StructValue
-from .loose import canonicalize_loose_no_tabular
+from .loose import canonicalize_loose
 
 
 class PatchOpKind(Enum):
@@ -63,10 +63,10 @@ class Patch:
     ops: List[PatchOp] = field(default_factory=list)
     schema_id: str = ""
     target: str = ""
-    # First 16 hex chars of sha256(canonicalize_loose_no_tabular(base_state));
-    # empty when
+    # First 16 hex chars of sha256(canonicalize_loose(base_state)); empty when
     # the patch does not record a base. Matches Go BaseFingerprint / JS
-    # baseFingerprint so a Python receiver can verify a Go/JS-emitted patch.
+    # baseFingerprint (Go is the cross-language source of truth for @base) so a
+    # Python receiver can verify a Go/JS-emitted patch.
     base_fingerprint: str = ""
 
 
@@ -89,23 +89,18 @@ class PatchBaseMismatch(ValueError):
 def compute_base_fingerprint(base: GValue) -> str:
     """Compute the 16-hex patch base fingerprint of a base state.
 
-    base = sha256(canonicalize_loose_no_tabular(base))[:16] — i.e. the first 16
-    hex of the state fingerprint defined in the spec (README invariant:
-    fingerprint(x) = SHA256(canonical_no_tabular_bytes(x))). Using the no-tabular
-    form makes a patch's @base equal to fingerprint_loose(state)[:16], so a
-    receiver can verify it against the current state's fingerprint directly.
+    base = sha256(canonicalize_loose(base))[:16] — the first 16 hex of the
+    SHA-256 of the *canonical loose form* (LOOSE_MODE_SPEC, "Patch Base
+    Fingerprint"). This is byte-identical to Go WithBaseValue / JS withBaseValue;
+    Go is the cross-language source of truth for @base.
 
-    This is byte-identical to Go WithBaseValue / JS withBaseValue for every
-    non-tabular base (struct/map roots — the realistic patch target), since their
-    tabular and no-tabular canonical forms coincide there. The one edge is a bare
-    auto-tabular list root: Go/JS WithBaseValue hash the *tabular* form, whereas
-    this uses the *no-tabular* form (= the state fingerprint), so the three diverge
-    there. Note Go is itself inconsistent at that edge — its FingerprintLoose also
-    uses no-tabular, so Go's WithBaseValue != Go's own state fingerprint for a list
-    root. Standardizing all three on the no-tabular state fingerprint is the
-    recommended follow-up.
+    Note: @base uses the tabular canonical form (null → '_'), which is distinct
+    from fingerprint_loose(state) — the value-identity digest, which uses the
+    no-tabular form (null → '∅'). The two coincide for null-free non-tabular
+    states but diverge when the base contains nulls or is a bare auto-tabular
+    list root.
     """
-    canonical = canonicalize_loose_no_tabular(base)
+    canonical = canonicalize_loose(base)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:BASE_FINGERPRINT_LEN]
 
 

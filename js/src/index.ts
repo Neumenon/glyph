@@ -147,6 +147,12 @@ export {
   TabularMetadata,
 } from './loose';
 
+// Loose-text parser — inverse of canonicalizeLoose (closes the loose round-trip
+// gap; parity with Go ParseDocument / Python parse).
+export {
+  parseLoose,
+} from './parse_loose';
+
 // GS1 Stream (streaming transport)
 export * as stream from './stream/index';
 

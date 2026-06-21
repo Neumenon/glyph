@@ -2,19 +2,31 @@
 
 Go implementation of the GLYPH codec and GS1 stream tooling. Together with Python and JavaScript, Go is one of the three conformance-surface implementations; Rust and C ports are parked in `attic/`.
 
-## Install
+## Status: in-repo / source preview
+
+The Go codec is a full conformance implementation, but it is **not yet a polished
+external module**, so `go get github.com/Neumenon/glyph` is not a stable install
+path today. Two things block a clean `go get` / `go mod tidy`:
+
+- the module lives in the `go/` subdirectory of this repo (its module path is
+  `github.com/Neumenon/glyph`, which does not match the repo-root layout `go get`
+  expects), and
+- the optional dev-only `cogs` bridge pulls an unpublished `cowrie/go/v2`
+  dependency, so external `go get` / `go mod tidy` fail resolving it. A plain
+  `go build` of the codec still works via module-graph pruning — see
+  [Internal: `cogs` cowrie bridge](#internal-cogs-cowrie-bridge-not-part-of-the-release-surface)
+  and the caveat in `go.mod`.
+
+Until external module packaging is stabilized, use the codec from a checkout of
+this repo:
 
 ```bash
-go get github.com/Neumenon/glyph
+git clone https://github.com/Neumenon/glyph
+cd glyph/go
+go build ./...
 ```
 
-> **Note:** until the optional `cowrie` bridge dependency is published, `go get` /
-> `go mod tidy` may fail resolving `cowrie/go/v2` (a plain `go build` of the codec
-> works via module-graph pruning). The bridge is dev-only — see
-> [Internal: `cogs` cowrie bridge](#internal-cogs-cowrie-bridge-not-part-of-the-release-surface)
-> and the caveat in `go.mod`.
-
-Import the codec package as:
+Within the module, import the codec package as:
 
 ```go
 import glyph "github.com/Neumenon/glyph/glyph"

@@ -1,0 +1,955 @@
+{
+  "meta": {
+    "generatedNote": "All numbers from real codec execution. No values fabricated.",
+    "glyphPackage": "cowrie-glyph",
+    "node": "v22.20.0",
+    "tokenizer": "heuristic estimateTokens (whitespace split — NOT a real BPE tokenizer; token savings figures are illustrative only)"
+  },
+  "edgeCases": [
+    {
+      "name": "empty_str",
+      "jsonText": "\"\"",
+      "glyphText": "\"\"",
+      "note": "Empty string — needs quotes in glyph",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "unicode",
+      "jsonText": "\"café ☕ λ\"",
+      "glyphText": "\"café ☕ λ\"",
+      "note": "Unicode: café ☕ λ",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "embedded_quote",
+      "jsonText": "\"say \\\"hello\\\"\"",
+      "glyphText": "\"say \\\"hello\\\"\"",
+      "note": "Embedded double-quotes",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "pipe",
+      "jsonText": "\"a|b|c\"",
+      "glyphText": "\"a|b|c\"",
+      "note": "Pipe chars — must be escaped in tabular cells",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "newlines",
+      "jsonText": "\"line1\\nline2\\r\\nline3\"",
+      "glyphText": "\"line1\\nline2\\r\\nline3\"",
+      "note": "Embedded newlines",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "null_value",
+      "jsonText": "null",
+      "glyphText": "_",
+      "note": "JSON null -> glyph _",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "bool_true",
+      "jsonText": "true",
+      "glyphText": "t",
+      "note": "bool true -> t",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "bool_false",
+      "jsonText": "false",
+      "glyphText": "f",
+      "note": "bool false -> f",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "big_int",
+      "jsonText": "9007199254740992",
+      "glyphText": "9.007199254740992e+15",
+      "note": "Exceeds Number.MAX_SAFE_INTEGER — JS loses precision here; Go/Py handle correctly with int64",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "float_sci",
+      "jsonText": "1.23e-9",
+      "glyphText": "1.23e-09",
+      "note": "Small float scientific notation",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "neg_zero",
+      "jsonText": "0",
+      "glyphText": "0",
+      "note": "Negative zero -> 0.0 in glyph",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "date_string",
+      "jsonText": "\"2024-03-15T12:00:00Z\"",
+      "glyphText": "\"2024-03-15T12:00:00Z\"",
+      "note": "ISO date string — stays as string in loose mode (no type inference)",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "nested_list",
+      "jsonText": "[1,2,\"three\",null]",
+      "glyphText": "[1 2 three _]",
+      "note": "Mixed-type list",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    },
+    {
+      "name": "nested_map",
+      "jsonText": "{\"a\":1,\"b\":{\"c\":2}}",
+      "glyphText": "{a=1 b={c=2}}",
+      "note": "Nested map",
+      "roundTrip": "ok",
+      "roundTripNote": "JS round-trips: canonicalizeLoose <-> parseLoose is a fixed point."
+    }
+  ],
+  "toolFirewall": {
+    "registryNote": "defaultToolRegistry includes: search, calculate, browse, execute, read_file, write_file. wire_transfer is absent — rejection is native to the default registry; no custom allowlist was needed.",
+    "allowed": {
+      "text": "{action=search query=\"latest weather in Chicago\" max_results=5}",
+      "totalChars": 63,
+      "toolName": "search",
+      "toolDetectedAtChar": 15,
+      "allowed": true,
+      "errors": [],
+      "timeline": [
+        {
+          "event": "TOOL_DETECTED",
+          "token": 15,
+          "charPos": 15,
+          "elapsed": 1,
+          "detail": "tool=search allowed=true"
+        },
+        {
+          "event": "COMPLETE",
+          "token": 63,
+          "charPos": 63,
+          "elapsed": 1,
+          "detail": "valid=true"
+        }
+      ]
+    },
+    "blocked": {
+      "text": "{action=wire_transfer amount=1000000 target=unknown}",
+      "totalChars": 52,
+      "toolName": "wire_transfer",
+      "toolDetectedAtChar": 22,
+      "allowed": false,
+      "rejectAtChar": 22,
+      "bytesAvoided": 30,
+      "errors": [
+        {
+          "code": "UNKNOWN_TOOL",
+          "message": "Unknown tool: wire_transfer",
+          "field": "action"
+        }
+      ],
+      "timeline": [
+        {
+          "event": "TOOL_DETECTED",
+          "token": 22,
+          "charPos": 22,
+          "elapsed": 0,
+          "detail": "tool=wire_transfer allowed=false"
+        },
+        {
+          "event": "ERROR",
+          "token": 22,
+          "charPos": 22,
+          "elapsed": 0,
+          "detail": "Unknown tool: wire_transfer"
+        },
+        {
+          "event": "COMPLETE",
+          "token": 52,
+          "charPos": 52,
+          "elapsed": 0,
+          "detail": "valid=false"
+        }
+      ]
+    }
+  },
+  "matchStream": {
+    "measurementNote": "Patch bytes measured using real emitPatch(PatchBuilder.build()). Each update patches 3 fields: minute, score_home, score_away. snapshotBytes = JSON.stringify(full snapshot). patchBytes = real @patch text bytes.",
+    "samplePatchText": "@patch @keys=wire @target=match:001\n= minute 45\n= score_away 0\n= score_home 1\n@end",
+    "totalUpdates": 100,
+    "cumSnapshotBytes": 12192,
+    "cumPatchBytes": 8192,
+    "savingsPct": 32.81,
+    "perUpdate": [
+      {
+        "update": 1,
+        "minute": 1,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 2,
+        "minute": 2,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 3,
+        "minute": 3,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 4,
+        "minute": 4,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 5,
+        "minute": 5,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 6,
+        "minute": 6,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 7,
+        "minute": 7,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 8,
+        "minute": 8,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 9,
+        "minute": 9,
+        "snapshotBytes": 121,
+        "patchBytes": 81
+      },
+      {
+        "update": 10,
+        "minute": 10,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 11,
+        "minute": 11,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 12,
+        "minute": 12,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 13,
+        "minute": 13,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 14,
+        "minute": 14,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 15,
+        "minute": 15,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 16,
+        "minute": 16,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 17,
+        "minute": 17,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 18,
+        "minute": 18,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 19,
+        "minute": 19,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 20,
+        "minute": 20,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 21,
+        "minute": 21,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 22,
+        "minute": 22,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 23,
+        "minute": 23,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 24,
+        "minute": 24,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 25,
+        "minute": 25,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 26,
+        "minute": 26,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 27,
+        "minute": 27,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 28,
+        "minute": 28,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 29,
+        "minute": 29,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 30,
+        "minute": 30,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 31,
+        "minute": 31,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 32,
+        "minute": 32,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 33,
+        "minute": 33,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 34,
+        "minute": 34,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 35,
+        "minute": 35,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 36,
+        "minute": 36,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 37,
+        "minute": 37,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 38,
+        "minute": 38,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 39,
+        "minute": 39,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 40,
+        "minute": 40,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 41,
+        "minute": 41,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 42,
+        "minute": 42,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 43,
+        "minute": 43,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 44,
+        "minute": 44,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 45,
+        "minute": 45,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 46,
+        "minute": 46,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 47,
+        "minute": 47,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 48,
+        "minute": 48,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 49,
+        "minute": 49,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 50,
+        "minute": 50,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 51,
+        "minute": 51,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 52,
+        "minute": 52,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 53,
+        "minute": 53,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 54,
+        "minute": 54,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 55,
+        "minute": 55,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 56,
+        "minute": 56,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 57,
+        "minute": 57,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 58,
+        "minute": 58,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 59,
+        "minute": 59,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 60,
+        "minute": 60,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 61,
+        "minute": 61,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 62,
+        "minute": 62,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 63,
+        "minute": 63,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 64,
+        "minute": 64,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 65,
+        "minute": 65,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 66,
+        "minute": 66,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 67,
+        "minute": 67,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 68,
+        "minute": 68,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 69,
+        "minute": 69,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 70,
+        "minute": 70,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 71,
+        "minute": 71,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 72,
+        "minute": 72,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 73,
+        "minute": 73,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 74,
+        "minute": 74,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 75,
+        "minute": 75,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 76,
+        "minute": 76,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 77,
+        "minute": 77,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 78,
+        "minute": 78,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 79,
+        "minute": 79,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 80,
+        "minute": 80,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 81,
+        "minute": 81,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 82,
+        "minute": 82,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 83,
+        "minute": 83,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 84,
+        "minute": 84,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 85,
+        "minute": 85,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 86,
+        "minute": 86,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 87,
+        "minute": 87,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 88,
+        "minute": 88,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 89,
+        "minute": 89,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 90,
+        "minute": 90,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 91,
+        "minute": 91,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 92,
+        "minute": 92,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 93,
+        "minute": 93,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 94,
+        "minute": 94,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 95,
+        "minute": 95,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 96,
+        "minute": 96,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 97,
+        "minute": 97,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 98,
+        "minute": 98,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 99,
+        "minute": 99,
+        "snapshotBytes": 122,
+        "patchBytes": 82
+      },
+      {
+        "update": 100,
+        "minute": 100,
+        "snapshotBytes": 123,
+        "patchBytes": 83
+      }
+    ]
+  },
+  "tabular": [
+    {
+      "rows": 10,
+      "jsonMinBytes": 1252,
+      "jsonPrettyBytes": 1793,
+      "glyphLooseBytes": 524,
+      "glyphTabularNote": "canonicalizeLoose auto-tabularizes; no separate loose emitTabular path exists.",
+      "tokens": {
+        "jsonMin": 1,
+        "glyphLoose": 23,
+        "tokenizerWarning": "heuristic whitespace split — not a real BPE tokenizer"
+      },
+      "savingsBytesPct": 58.15,
+      "savingsTokensPct": -2200,
+      "glyphLoosePreview": "@tab _ rows=10 cols=8 [away home id minute score_away score_home status venue]\n|Team_11|Team_1|m0|0|1|0|live|Stadium_1|\n|Team_12|Team_2|m1|3|2|1|finished|Stadium_2|\n|Team_13|Team_3|m2|6|3|2|upcoming|S..."
+    },
+    {
+      "rows": 100,
+      "jsonMinBytes": 12649,
+      "jsonPrettyBytes": 18050,
+      "glyphLooseBytes": 4632,
+      "glyphTabularNote": "canonicalizeLoose auto-tabularizes; no separate loose emitTabular path exists.",
+      "tokens": {
+        "jsonMin": 1,
+        "glyphLoose": 113,
+        "tokenizerWarning": "heuristic whitespace split — not a real BPE tokenizer"
+      },
+      "savingsBytesPct": 63.38,
+      "savingsTokensPct": -11200,
+      "glyphLoosePreview": "@tab _ rows=100 cols=8 [away home id minute score_away score_home status venue]\n|Team_11|Team_1|m0|0|1|0|live|Stadium_1|\n|Team_12|Team_2|m1|3|2|1|finished|Stadium_2|\n|Team_13|Team_3|m2|6|3|2|upcoming|..."
+    },
+    {
+      "rows": 1000,
+      "jsonMinBytes": 127519,
+      "jsonPrettyBytes": 181520,
+      "glyphLooseBytes": 46603,
+      "glyphTabularNote": "canonicalizeLoose auto-tabularizes; no separate loose emitTabular path exists.",
+      "tokens": {
+        "jsonMin": 1,
+        "glyphLoose": 1013,
+        "tokenizerWarning": "heuristic whitespace split — not a real BPE tokenizer"
+      },
+      "savingsBytesPct": 63.45,
+      "savingsTokensPct": -101200,
+      "glyphLoosePreview": "@tab _ rows=1000 cols=8 [away home id minute score_away score_home status venue]\n|Team_11|Team_1|m0|0|1|0|live|Stadium_1|\n|Team_12|Team_2|m1|3|2|1|finished|Stadium_2|\n|Team_13|Team_3|m2|6|3|2|upcoming..."
+    },
+    {
+      "rows": 10000,
+      "jsonMinBytes": 1285219,
+      "jsonPrettyBytes": 1825220,
+      "glyphLooseBytes": 475304,
+      "glyphTabularNote": "canonicalizeLoose auto-tabularizes; no separate loose emitTabular path exists.",
+      "tokens": {
+        "jsonMin": 1,
+        "glyphLoose": 10013,
+        "tokenizerWarning": "heuristic whitespace split — not a real BPE tokenizer"
+      },
+      "savingsBytesPct": 63.02,
+      "savingsTokensPct": -1001200,
+      "glyphLoosePreview": "@tab _ rows=10000 cols=8 [away home id minute score_away score_home status venue]\n|Team_11|Team_1|m0|0|1|0|live|Stadium_1|\n|Team_12|Team_2|m1|3|2|1|finished|Stadium_2|\n|Team_13|Team_3|m2|6|3|2|upcomin..."
+    }
+  ],
+  "benchMatrix": [
+    {
+      "dataset": "tinyToolCalls",
+      "formats": {
+        "jsonMin": {
+          "bytes": 8790,
+          "tokens": 201
+        },
+        "jsonPretty": {
+          "bytes": 13291,
+          "tokens": 1502
+        },
+        "glyphLoose": {
+          "bytes": 5636,
+          "tokens": 408
+        }
+      },
+      "savingsVsJsonMin": {
+        "bytesPct": 35.88,
+        "tokensPct": -102.99
+      },
+      "availableFormatsNote": "Only jsonMin, jsonPretty, glyphLoose measured. schemaful formats (packed, tabular-schemaful) omitted — they require a Schema definition not relevant to loose mode.",
+      "tokenizerWarning": "heuristic whitespace split — not a real BPE tokenizer"
+    },
+    {
+      "dataset": "nestedAgentTrace",
+      "formats": {
+        "jsonMin": {
+          "bytes": 531,
+          "tokens": 5
+        },
+        "jsonPretty": {
+          "bytes": 1193,
+          "tokens": 89
+        },
+        "glyphLoose": {
+          "bytes": 434,
+          "tokens": 29
+        }
+      },
+      "savingsVsJsonMin": {
+        "bytesPct": 18.27,
+        "tokensPct": -480
+      },
+      "availableFormatsNote": "Only jsonMin, jsonPretty, glyphLoose measured. schemaful formats (packed, tabular-schemaful) omitted — they require a Schema definition not relevant to loose mode.",
+      "tokenizerWarning": "heuristic whitespace split — not a real BPE tokenizer"
+    },
+    {
+      "dataset": "repeatedRows",
+      "formats": {
+        "jsonMin": {
+          "bytes": 127519,
+          "tokens": 1
+        },
+        "jsonPretty": {
+          "bytes": 181520,
+          "tokens": 18002
+        },
+        "glyphLoose": {
+          "bytes": 46603,
+          "tokens": 1013
+        }
+      },
+      "savingsVsJsonMin": {
+        "bytesPct": 63.45,
+        "tokensPct": -101200
+      },
+      "availableFormatsNote": "Only jsonMin, jsonPretty, glyphLoose measured. schemaful formats (packed, tabular-schemaful) omitted — they require a Schema definition not relevant to loose mode.",
+      "tokenizerWarning": "heuristic whitespace split — not a real BPE tokenizer"
+    },
+    {
+      "dataset": "adversarialStrings",
+      "formats": {
+        "jsonMin": {
+          "bytes": 152,
+          "tokens": 2
+        },
+        "jsonPretty": {
+          "bytes": 198,
+          "tokens": 18
+        },
+        "glyphLoose": {
+          "bytes": 147,
+          "tokens": 16
+        }
+      },
+      "savingsVsJsonMin": {
+        "bytesPct": 3.29,
+        "tokensPct": -700
+      },
+      "availableFormatsNote": "Only jsonMin, jsonPretty, glyphLoose measured. schemaful formats (packed, tabular-schemaful) omitted — they require a Schema definition not relevant to loose mode.",
+      "tokenizerWarning": "heuristic whitespace split — not a real BPE tokenizer"
+    }
+  ],
+  "schemaHashNote": "Loose canonical mode is entirely schema-free. Field IDs (FIDs) and schema hashes are Go/schema concerns: in Go, structured types can carry FIDs (compact numeric field aliases) that appear in packed/tabular schemaful formats. In loose mode (canonicalizeLoose), all keys are emitted as plain strings — there are no FID substitutions, no @schema header, and no schema hash in the output. The FID/schema-hash trap (verifying that a decoded value actually matches its declared schema version) is exercised by the Go test suite against schemaful formats only."
+}

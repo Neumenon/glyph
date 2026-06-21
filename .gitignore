@@ -32,6 +32,7 @@ coverage/
 
 # Generated
 explainer.html
+gauntlet/scenarios/report.json
 
 # AI tool context dumps (not source)
 glyph_*_context.txt

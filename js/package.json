@@ -6,12 +6,16 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     },
     "./stream": {
+      "types": "./dist/stream/index.d.ts",
+      "import": "./dist/stream/index.js",
       "require": "./dist/stream/index.js",
-      "types": "./dist/stream/index.d.ts"
+      "default": "./dist/stream/index.js"
     }
   },
   "files": [
