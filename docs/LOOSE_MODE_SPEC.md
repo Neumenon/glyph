@@ -431,7 +431,7 @@ This enables:
 | `MinRows` | int | 3 | Minimum rows to trigger tabular |
 | `MaxCols` | int | 20 | Maximum columns allowed |
 | `AllowMissing` | bool | true | Allow rows with missing keys |
-| `NullStyle` | NullStyle | underscore | `symbol` for ∅, `underscore` for _. The fingerprint/no-tabular path always uses `_` (underscore) across Go, Python, and JS. |
+| `NullStyle` | NullStyle | underscore | `symbol` for ∅, `underscore` for _. The default (with-tabular) canonicalization (`DefaultLooseCanonOpts` / `CanonicalizeLoose` / `StateHashLoose`) emits `_`. The fingerprint/no-tabular path (`NoTabularLooseCanonOpts` / `FingerprintLoose`) — which the published conformance corpus uses — emits `∅` (symbol) across Go, Python, and JS. |
 | `SchemaRef` | string | "" | Schema hash/id for @schema header |
 | `KeyDict` | []string | nil | Key dictionary for compact keys |
 | `UseCompactKeys` | bool | false | Emit #N instead of field names |

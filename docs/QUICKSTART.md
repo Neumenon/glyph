@@ -43,7 +43,7 @@ package main
 
 import (
     "fmt"
-    glyph "github.com/Neumenon/glyph/glyph"
+    glyph "github.com/Neumenon/glyph/go/glyph"
 )
 
 func main() {

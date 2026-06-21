@@ -6,7 +6,7 @@
 // is the single evaluator, applied identically to every language.
 //
 // It lives inside the Go module (rather than under gauntlet/) so the local
-// github.com/Neumenon/glyph/{glyph,stream} packages resolve without a separate
+// github.com/Neumenon/glyph/go/{glyph,stream} packages resolve without a separate
 // module + replace directive.
 //
 // Applicable scenarios: S1, S2, S3, S4, S5, S6, S7.
@@ -25,8 +25,8 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/Neumenon/glyph/glyph"
-	"github.com/Neumenon/glyph/stream"
+	"github.com/Neumenon/glyph/go/glyph"
+	"github.com/Neumenon/glyph/go/stream"
 )
 
 type result struct {

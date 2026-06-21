@@ -1,0 +1,1 @@
+{annotations={"custom.example.com/owner"="alice@example.com" "kubernetes.io/created-by"=helm "prometheus.io/scrape"="true"} attributes={cpu_limit=2000 memory_limit=4096 replicas=3} extra={nested_dynamic={key1=value1 key2=42 key3=t}} id=resource_123 labels={app=frontend env=production team=platform version="v2.3.1"} tags=[critical monitored "auto-scaled"] type=container}

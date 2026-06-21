@@ -59,7 +59,7 @@ jobs:
         run: |
           cd go
           # Exclude cmd/ packages (CLI entry points, not core codec)
-          grep -v "^github.com/Neumenon/glyph/cmd/" coverage.out > coverage-core.out || cp coverage.out coverage-core.out
+          grep -v "^github.com/Neumenon/glyph/go/cmd/" coverage.out > coverage-core.out || cp coverage.out coverage-core.out
           COVERAGE=$(go tool cover -func=coverage-core.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Total coverage (excluding cmd/): ${COVERAGE}%"
           # Informational, not a hard gate: the industrial bombs that lift coverage

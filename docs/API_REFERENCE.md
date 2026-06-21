@@ -75,7 +75,7 @@ Use the `glyph` module after installing `glyph-py`. The Python README is the cur
 Within the module, the import path is:
 
 ```go
-import "github.com/Neumenon/glyph/glyph"
+import "github.com/Neumenon/glyph/go/glyph"
 ```
 
 ### JavaScript / TypeScript

@@ -92,6 +92,9 @@ from .patch import (
     PatchBaseMismatch,
 )
 
+# GS1 stream framing subpackage (accessible as glyph.stream)
+from . import stream
+
 # Convenient aliases
 emit = canonicalize_loose
 from_json = from_json_loose
@@ -143,6 +146,8 @@ __all__ = [
     "StreamValidationResult",
     "ValidatorState",
     "TimelineEvent",
+    # GS1 stream framing subpackage
+    "stream",
     # Patch
     "Patch",
     "PatchOp",

@@ -41,12 +41,20 @@ wrappers (TypeName, tag syntax) are not preserved by design.
 
 | Input aliases accepted on parse | Canonical emit (Loose) | Canonical emit (Typed) |
 |----------------------------------|------------------------|------------------------|
-| `_`, `∅`, `null`, `none`, `nil` | `_` (underscore)       | `∅` (Unicode symbol)   |
+| `_`, `∅`, `null`, `none`, `nil` | `_` (default) / `∅` (no-tabular) | `∅` (Unicode symbol)   |
 
-The Loose canonical null is `_` (underscore) when using the default `NullStyleUnderscore`
-option (`loose.go:344,357`). The `∅` symbol is also valid Loose input but is NOT the default
-canonical output. The FingerprintLoose path always uses `_` across Go, Python, and JS
-(see `LOOSE_MODE_SPEC.md`, NullStyle table).
+Loose null has **two canonical emissions** depending on the options used — be precise about
+which one you are reproducing:
+
+- **Default (with-tabular)** — `DefaultLooseCanonOpts` / `CanonicalizeLoose` / `StateHashLoose`
+  use `NullStyleUnderscore` and emit `_` (underscore) (`loose.go:344,357`).
+- **Fingerprint / no-tabular** — `NoTabularLooseCanonOpts` / `FingerprintLoose` use
+  `NullStyleSymbol` and emit `∅`. **This is the form the published conformance corpus
+  (`go/glyph/testdata/loose_json/`) is generated in**, so a conforming implementation MUST
+  emit `∅` for null on the no-tabular/fingerprint path. All three reference impls (Go, Python,
+  JS) agree on `∅` here.
+
+`∅` is also always accepted as Loose *input* on parse (see `LOOSE_MODE_SPEC.md`, NullStyle table).
 
 ### 2.2 Bool
 
@@ -463,9 +471,14 @@ This table is the **golden reference** for W2 conformance tests. For every GType
 a concrete Go value, its exact canonical Loose string, and (where it differs) its canonical
 Typed string. Test fixtures MUST reproduce these strings exactly.
 
+> **Null note:** the "Canonical Loose string" column below shows the **default (with-tabular)**
+> form. The published conformance corpus (`go/glyph/testdata/loose_json/`) is generated in the
+> **no-tabular / fingerprint** form, which emits `∅` for null (see §2.1). Null is the only GType
+> whose Loose emission differs between the two forms.
+
 | GType    | Go constructor example                             | Canonical Loose string              | Canonical Typed string (if different) |
 |----------|----------------------------------------------------|-------------------------------------|---------------------------------------|
-| Null     | `Null()`                                           | `_`                                 | `∅`                                   |
+| Null     | `Null()`                                           | `_` (default) / `∅` (no-tabular)    | `∅`                                   |
 | Bool     | `Bool(true)`                                       | `t`                                 | (same)                                |
 | Bool     | `Bool(false)`                                      | `f`                                 | (same)                                |
 | Int      | `Int(0)`                                           | `0`                                 | (same)                                |
