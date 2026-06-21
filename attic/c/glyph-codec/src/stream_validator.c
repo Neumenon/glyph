@@ -2,7 +2,14 @@
  * GLYPH Streaming Validator - C Implementation
  */
 
-#define _POSIX_C_SOURCE 199309L
+/*
+ * POSIX.1-2008. Provides clock_gettime/CLOCK_MONOTONIC (used below) and, on
+ * Darwin/macOS, keeps __DARWIN_C_LEVEL >= 199506L so <stdio.h> still declares
+ * snprintf. The older 199309L lowered that level and hid snprintf, breaking the
+ * macOS build (Apple clang treats the implicit declaration as a hard error;
+ * Linux glibc did not hide it, so only the macOS C job failed).
+ */
+#define _POSIX_C_SOURCE 200809L
 
 #include "stream_validator.h"
 #include <stdlib.h>
