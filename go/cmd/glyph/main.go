@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Neumenon/glyph/glyph"
-	"github.com/Neumenon/glyph/stream"
+	"github.com/Neumenon/glyph/go/glyph"
+	"github.com/Neumenon/glyph/go/stream"
 )
 
 const (

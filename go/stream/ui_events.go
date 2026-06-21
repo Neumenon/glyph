@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Neumenon/glyph/glyph"
+	"github.com/Neumenon/glyph/go/glyph"
 )
 
 const maxGlyphEventInt = 1<<63 - 1

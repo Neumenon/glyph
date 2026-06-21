@@ -97,7 +97,7 @@ package main
 import (
     "encoding/json"
     "fmt"
-    "github.com/Neumenon/glyph/glyph"
+    "github.com/Neumenon/glyph/go/glyph"
 )
 
 func main() {{

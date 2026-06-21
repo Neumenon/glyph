@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Neumenon/glyph/glyph"
+	"github.com/Neumenon/glyph/go/glyph"
 )
 
 var fails, total int

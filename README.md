@@ -84,14 +84,14 @@ Poor fits:
 | Language | Package | Docs |
 |----------|---------|------|
 | Python | `pip install glyph-py` | [Python README](./py/README.md) |
-| Go | in-repo / source preview — build under `go/` (`go get` not yet a stable path) | [Go README](./go/README.md) |
+| Go | `go get github.com/Neumenon/glyph/go` (repo must be public; or set `GOPRIVATE`) | [Go README](./go/README.md) |
 | JavaScript / TypeScript | `npm install cowrie-glyph` | [JS README](./js/README.md) |
 | Rust | parked in `attic/rust/glyph-codec/` — emit-only, not published | [Rust README](./attic/rust/glyph-codec/README.md) |
 | C | parked in `attic/c/glyph-codec/` — emit-only, build from source | [C README](./attic/c/glyph-codec/README.md) |
 
 > **Note:** Rust and C ports are parked in `attic/`. They emit canonical GLYPH-Loose but are not conformance ports (no text parser, no patch/GS1/pack). They are not published; `cargo add glyph-rs` is not a valid install path.
 >
-> **Go status:** the Go codec is a full conformance implementation, but it is currently an **in-repo / source preview**. The module lives under `go/`, and external `go get github.com/Neumenon/glyph` / `go mod tidy` do not yet resolve cleanly (module is in a subdirectory and an optional dev-only bridge pulls an unpublished dependency). Use it from a checkout of this repo — `cd go && go build ./...` — until the external module packaging is stabilized. See the [Go README](./go/README.md) for details.
+> **Go status:** the Go codec is a full conformance implementation. Install with `go get github.com/Neumenon/glyph/go` (the `/go` suffix is the monorepo subdir convention). The repo must be public — or `GOPRIVATE` / `GONOSUMCHECK` configured — for the Go module proxy to resolve it. See the [Go README](./go/README.md) for details.
 
 ## Examples
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Neumenon/glyph/glyph"
+	"github.com/Neumenon/glyph/go/glyph"
 )
 
 // ============================================================
