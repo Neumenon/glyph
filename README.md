@@ -84,12 +84,14 @@ Poor fits:
 | Language | Package | Docs |
 |----------|---------|------|
 | Python | `pip install glyph-py` | [Python README](./py/README.md) |
-| Go | `go get github.com/Neumenon/glyph` | [Go README](./go/README.md) |
+| Go | in-repo / source preview — build under `go/` (`go get` not yet a stable path) | [Go README](./go/README.md) |
 | JavaScript / TypeScript | `npm install cowrie-glyph` | [JS README](./js/README.md) |
 | Rust | parked in `attic/rust/glyph-codec/` — emit-only, not published | [Rust README](./attic/rust/glyph-codec/README.md) |
 | C | parked in `attic/c/glyph-codec/` — emit-only, build from source | [C README](./attic/c/glyph-codec/README.md) |
 
 > **Note:** Rust and C ports are parked in `attic/`. They emit canonical GLYPH-Loose but are not conformance ports (no text parser, no patch/GS1/pack). They are not published; `cargo add glyph-rs` is not a valid install path.
+>
+> **Go status:** the Go codec is a full conformance implementation, but it is currently an **in-repo / source preview**. The module lives under `go/`, and external `go get github.com/Neumenon/glyph` / `go mod tidy` do not yet resolve cleanly (module is in a subdirectory and an optional dev-only bridge pulls an unpublished dependency). Use it from a checkout of this repo — `cd go && go build ./...` — until the external module packaging is stabilized. See the [Go README](./go/README.md) for details.
 
 ## Examples
 
@@ -144,12 +146,15 @@ Repeated keys are emitted once. The savings show up exactly where agent traces h
 ### 4. Patch with base fingerprint
 
 ```glyph
-@patch base=sha256:f35719430d98a2fe @ops=[
-  {op=replace path=[memory 3 status] value=done}
-]
+@patch @target=m:session @base=9202d6f0ad620860
+= steps[2].status done
+~ turn +1
+@end
 ```
 
-The patch records a `base` fingerprint. In the GS1 stream layer, the cursor enforces it — rejecting any patch whose `base` does not match the current state's fingerprint, so a stale patch fails explicitly instead of silently corrupting state. (Standalone `apply_patch` records the base but does not itself verify it today; outside the stream layer the receiver must check the fingerprint before applying.)
+A patch is a header line (`@patch` with optional `@target=` and `@base=`), one operation per line, and an `@end` footer. The operation verbs are `=` set, `+` append, `-` delete, and `~` numeric delta.
+
+`@base=` records a 16-hex digest of the base state's canonical form (the first 16 hex of `sha256(canonical_bytes)`), identical across Go, Python, and JS. In the GS1 stream layer (Go and JS) the cursor enforces it — rejecting any patch whose `base` does not match the current state, so a stale patch fails explicitly instead of silently corrupting state. Standalone `apply_patch` does not auto-verify; outside the stream layer, call `verify_patch_base(base, patch)` (Go `VerifyPatchBase`) before applying.
 
 ### 5. Stream frame (GS1) — Go and JS only
 
@@ -189,8 +194,9 @@ These hold across the conformance-tested implementation surface:
 parse(emit(x))           = x
 emit(parse(s))           = canonical(s)
 fingerprint(x)           = SHA256(canonical_no_tabular_bytes(x))  # Go/Python/JS value identity
-patch.base               records the fingerprint of the base state; GS1 cursor layer enforces
-                         base matching on the stream; standalone ApplyPatch does NOT verify
+patch.base               = first 16 hex of SHA256(canonical_loose_bytes(base)); GS1 cursor
+                         enforces base matching on the stream; standalone ApplyPatch does NOT
+                         verify (call verify_patch_base / VerifyPatchBase first)
 JSON ↔ GLYPH             preserves JSON-domain meaning
 conformance impls        (Go/Python/JS) agree byte-for-byte on canonical form for the shared corpus
 ```

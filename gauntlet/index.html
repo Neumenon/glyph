@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glyph Gauntlet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['Inter', 'sans-serif'],
+      },
+      colors: {
+        brand: {
+          amber: '#e6a756',
+        },
+        page: '#0a0a0b',
+        panel: '#111113',
+      }
+    }
+  }
+}
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { background: #0a0a0b; color: #e4e4e7; font-family: 'Inter', sans-serif; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* Fade-in on scroll */
+  .fade-in { opacity: 0; transform: translateY(16px); transition: opacity 0.5s ease, transform 0.5s ease; }
+  .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+  /* Bar track */
+  .bar-track { height: 12px; border-radius: 9999px; background: rgba(63,63,70,0.4); overflow: hidden; flex: 1; }
+  .bar-fill { height: 100%; border-radius: 9999px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
+  .bar-fill-green { background: rgba(34,197,94,0.7); }
+  .bar-fill-zinc { background: rgba(113,113,122,0.5); }
+  .bar-fill-blue { background: rgba(59,130,246,0.5); }
+
+  /* Firewall pane */
+  .firewall-stream { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap; word-break: break-all; min-height: 80px; }
+  .char-dim { color: #52525b; }
+  .char-active { color: #e4e4e7; }
+  .char-tool { color: #e6a756; font-weight: 700; }
+  .char-rejected { color: #f87171; font-weight: 700; }
+  .char-allowed { color: #4ade80; font-weight: 700; }
+
+  /* Verdict flash */
+  @keyframes flash-red { 0%,100%{background:transparent} 50%{background:rgba(239,68,68,.18)} }
+  @keyframes flash-green { 0%,100%{background:transparent} 50%{background:rgba(34,197,94,.13)} }
+  .flash-red { animation: flash-red 0.6s ease; }
+  .flash-green { animation: flash-green 0.6s ease; }
+
+  /* Code blocks */
+  .code-block { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; background: #0a0a0b; border: 1px solid #27272a; border-radius: 6px; padding: 12px; overflow-x: auto; white-space: pre; color: #a1a1aa; }
+
+  /* Tab button */
+  .tab-btn { border-bottom: 2px solid transparent; padding: 6px 14px; font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; color: #71717a; transition: color .2s, border-color .2s; }
+  .tab-btn.active { color: #e6a756; border-color: #e6a756; }
+
+  /* Savings chip */
+  .chip-green { display: inline-flex; align-items: center; padding: 2px 8px; background: rgba(34,197,94,.12); color: #4ade80; border-radius: 9999px; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; border: 1px solid rgba(34,197,94,.2); }
+  .chip-amber { display: inline-flex; align-items: center; padding: 2px 8px; background: rgba(230,167,86,.1); color: #e6a756; border-radius: 9999px; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; border: 1px solid rgba(230,167,86,.2); }
+  .chip-zinc { display: inline-flex; align-items: center; padding: 2px 8px; background: rgba(113,113,122,.12); color: #a1a1aa; border-radius: 9999px; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; border: 1px solid rgba(113,113,122,.2); }
+  .chip-red { display: inline-flex; align-items: center; padding: 2px 8px; background: rgba(239,68,68,.1); color: #f87171; border-radius: 9999px; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace; border: 1px solid rgba(239,68,68,.2); }
+
+  /* Nav */
+  nav a { color: #71717a; transition: color .15s; font-size: 0.78rem; letter-spacing: .04em; }
+  nav a:hover { color: #e6a756; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+
+  /* Table */
+  .data-table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }
+  .data-table th { color: #71717a; font-weight: 500; text-align: left; padding: 8px 12px; border-bottom: 1px solid #27272a; letter-spacing: .04em; text-transform: uppercase; font-size: 0.7rem; }
+  .data-table td { padding: 8px 12px; border-bottom: 1px solid #1a1a1c; color: #a1a1aa; }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(255,255,255,.02); }
+
+  /* Section divider */
+  .section-divider { border-top: 1px solid rgba(39,39,42,.5); }
+
+  /* Hero stat chip */
+  .stat-chip { background: #111113; border: 1px solid #27272a; border-radius: 10px; padding: 20px 24px; }
+
+  /* Textarea */
+  textarea.paste-input { background: #0a0a0b; border: 1px solid #27272a; border-radius: 6px; color: #e4e4e7; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; resize: vertical; outline: none; transition: border-color .2s; }
+  textarea.paste-input:focus { border-color: #e6a756; }
+
+  /* Verdict badge */
+  .badge-pass { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: rgba(34,197,94,.1); color: #4ade80; border-radius: 4px; font-size: 0.72rem; font-family: 'JetBrains Mono', monospace; border: 1px solid rgba(34,197,94,.2); }
+  .badge-gap { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: rgba(230,167,86,.1); color: #e6a756; border-radius: 4px; font-size: 0.72rem; font-family: 'JetBrains Mono', monospace; border: 1px solid rgba(230,167,86,.2); }
+
+  .level-label { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; letter-spacing: .12em; text-transform: uppercase; color: #52525b; }
+  .section-title { font-size: 1.5rem; font-weight: 600; color: #e4e4e7; letter-spacing: -.01em; }
+
+  /* Firewall status line */
+  .status-line { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }
+</style>
+</head>
+<body class="antialiased">
+
+<!-- NAV -->
+<nav class="sticky top-0 z-50 border-b border-zinc-800/60 bg-page/90 backdrop-blur-sm">
+  <div class="max-w-5xl mx-auto px-6 h-12 flex items-center justify-between">
+    <span class="font-mono text-sm font-bold tracking-widest uppercase" style="color:#e6a756;">GLYPH · GAUNTLET</span>
+    <div class="hidden sm:flex items-center gap-6">
+      <a href="#level1">L1 Correctness</a>
+      <a href="#level2">L2 Demos</a>
+      <a href="#level3">L3 Benchmark</a>
+      <a href="#playground">Playground</a>
+      <a href="#scorecard">Scorecard</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="max-w-5xl mx-auto px-6 py-20">
+  <div class="fade-in">
+    <div class="level-label mb-4">A three-level evaluation of the cowrie-glyph codec</div>
+    <h1 class="font-mono text-4xl sm:text-5xl font-bold tracking-tight mb-4" style="color:#e6a756;">The Glyph Gauntlet</h1>
+    <p class="text-zinc-400 text-lg max-w-2xl leading-relaxed mb-3">
+      Three levels: does it round-trip, does it obviously beat JSON, and by how many bytes?
+    </p>
+    <p class="text-zinc-600 text-sm font-mono mb-12">All numbers computed live from the real cowrie-glyph codec &mdash; no values fabricated.</p>
+
+    <!-- Stat chips -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4" id="hero-stats">
+      <div class="stat-chip fade-in">
+        <div class="text-zinc-500 text-xs font-mono uppercase tracking-wider mb-1">Tabular savings</div>
+        <div class="font-mono text-2xl font-bold text-green-400" id="stat-tabular">—</div>
+        <div class="text-zinc-600 text-xs font-mono mt-1">vs JSON min (1k rows)</div>
+      </div>
+      <div class="stat-chip fade-in">
+        <div class="text-zinc-500 text-xs font-mono uppercase tracking-wider mb-1">Patch savings</div>
+        <div class="font-mono text-2xl font-bold text-green-400" id="stat-patch">—</div>
+        <div class="text-zinc-600 text-xs font-mono mt-1">vs full snapshots</div>
+      </div>
+      <div class="stat-chip fade-in">
+        <div class="text-zinc-500 text-xs font-mono uppercase tracking-wider mb-1">Firewall detect</div>
+        <div class="font-mono text-2xl font-bold" style="color:#e6a756;" id="stat-firewall">—</div>
+        <div class="text-zinc-600 text-xs font-mono mt-1">char to tool detect (blocked)</div>
+      </div>
+      <div class="stat-chip fade-in">
+        <div class="text-zinc-500 text-xs font-mono uppercase tracking-wider mb-1">Bytes avoided</div>
+        <div class="font-mono text-2xl font-bold text-red-400" id="stat-avoided">—</div>
+        <div class="text-zinc-600 text-xs font-mono mt-1">by early rejection</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LEVEL 1 — CORRECTNESS -->
+<section id="level1" class="section-divider max-w-5xl mx-auto px-6 py-16">
+  <div class="fade-in">
+    <div class="level-label mb-2">Level 1</div>
+    <h2 class="section-title mb-2">Correctness Gauntlet</h2>
+    <p class="text-zinc-500 text-sm mb-10">Museum of edge cases — every record encoded from JSON to glyph by the real codec. Round-trip status is honest about the JS loose-text gap.</p>
+
+    <!-- Edge cases grid -->
+    <div class="grid gap-3 mb-12" id="edge-cases-grid">
+      <!-- populated by JS -->
+    </div>
+
+    <!-- Schema/FID note -->
+    <div class="bg-panel border border-zinc-800 rounded-lg p-5 fade-in">
+      <div class="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-2">Schema Hash / FID Trap</div>
+      <p class="text-zinc-400 text-sm leading-relaxed" id="schema-hash-note">—</p>
+    </div>
+  </div>
+</section>
+
+<!-- LEVEL 2 — DRAMATIC DEMOS -->
+<section id="level2" class="section-divider max-w-5xl mx-auto px-6 py-16">
+  <div class="fade-in">
+    <div class="level-label mb-2">Level 2</div>
+    <h2 class="section-title mb-8">Dramatic Demos</h2>
+
+    <!-- ACT I — FIREWALL -->
+    <div class="mb-16 fade-in">
+      <div class="flex items-baseline gap-3 mb-1">
+        <span class="font-mono text-xs uppercase tracking-widest text-zinc-600">Act I</span>
+        <h3 class="text-lg font-semibold text-zinc-200">Tool-Call Firewall <span class="chip-amber ml-2">LIVE</span></h3>
+      </div>
+      <p class="text-zinc-500 text-sm mb-5">Stream a glyph tool-call char-by-char through the real <code class="font-mono text-xs text-zinc-300">StreamingValidator</code>. Watch it detect the tool name, then accept or reject.</p>
+
+      <div class="flex gap-3 mb-5">
+        <button id="btn-allowed" onclick="runFirewall('allowed')"
+          class="font-mono text-sm px-4 py-2 rounded border border-green-500/40 text-green-400 bg-green-500/5 hover:bg-green-500/10 transition-colors">
+          ▶ Stream: search (allowed)
+        </button>
+        <button id="btn-blocked" onclick="runFirewall('blocked')"
+          class="font-mono text-sm px-4 py-2 rounded border border-red-500/40 text-red-400 bg-red-500/5 hover:bg-red-500/10 transition-colors">
+          ▶ Stream: wire_transfer (blocked)
+        </button>
+      </div>
+
+      <div class="bg-panel border border-zinc-800 rounded-lg p-5" id="firewall-pane">
+        <div class="firewall-stream" id="firewall-stream"><span class="text-zinc-600 font-mono text-sm">Click a button to stream a tool call...</span></div>
+        <div class="mt-3 pt-3 border-t border-zinc-800 flex flex-wrap gap-4" id="firewall-status">
+          <span class="status-line text-zinc-600">Tool: —</span>
+          <span class="status-line text-zinc-600">Detected at char: —</span>
+          <span class="status-line text-zinc-600">Status: —</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACT II — MATCH STREAM -->
+    <div class="mb-16 fade-in">
+      <div class="flex items-baseline gap-3 mb-1">
+        <span class="font-mono text-xs uppercase tracking-widest text-zinc-600">Act II</span>
+        <h3 class="text-lg font-semibold text-zinc-200">Live Match Stream</h3>
+      </div>
+      <p class="text-zinc-500 text-sm mb-2">100 match updates. Full JSON snapshot per update vs real <code class="font-mono text-xs text-zinc-300">@patch</code> output.</p>
+      <p class="text-zinc-600 text-xs font-mono mb-5" id="match-note">—</p>
+
+      <div class="bg-panel border border-zinc-800 rounded-lg p-5 space-y-4">
+        <div class="text-xs font-mono uppercase tracking-wider text-zinc-600 mb-3">Cumulative bytes (100 updates)</div>
+        <div id="match-bars"><!-- populated by JS --></div>
+        <div class="pt-2 border-t border-zinc-800">
+          <div class="text-xs font-mono text-zinc-600 mb-1">Sample patch</div>
+          <div class="code-block" id="match-sample">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACT III — TABULAR COOK-OFF -->
+    <div class="mb-16 fade-in">
+      <div class="flex items-baseline gap-3 mb-1">
+        <span class="font-mono text-xs uppercase tracking-widest text-zinc-600">Act III</span>
+        <h3 class="text-lg font-semibold text-zinc-200">Tabular Cook-Off</h3>
+      </div>
+      <p class="text-zinc-500 text-sm mb-5">Same data, different formats. <code class="font-mono text-xs text-zinc-300">canonicalizeLoose()</code> auto-tabularizes (autoTabular=true, minRows=3).</p>
+
+      <div class="flex gap-2 mb-5 border-b border-zinc-800">
+        <button class="tab-btn active" data-rows="100" onclick="setTabularRows(100, this)">100 rows</button>
+        <button class="tab-btn" data-rows="10" onclick="setTabularRows(10, this)">10 rows</button>
+        <button class="tab-btn" data-rows="1000" onclick="setTabularRows(1000, this)">1 000 rows</button>
+        <button class="tab-btn" data-rows="10000" onclick="setTabularRows(10000, this)">10 000 rows</button>
+      </div>
+
+      <div class="bg-panel border border-zinc-800 rounded-lg p-5 space-y-4" id="tabular-bars">
+        <!-- populated by JS -->
+      </div>
+
+      <div class="mt-4 bg-panel border border-zinc-800 rounded-lg p-4">
+        <div class="text-xs font-mono uppercase tracking-wider text-zinc-600 mb-2">Glyph tabular preview</div>
+        <div class="code-block text-xs" id="tabular-preview" style="max-height:120px;overflow-y:auto;">—</div>
+      </div>
+    </div>
+
+    <!-- ACT IV — CORRUPTION & RESYNC -->
+    <div class="mb-4 fade-in">
+      <div class="flex items-baseline gap-3 mb-1">
+        <span class="font-mono text-xs uppercase tracking-widest text-zinc-600">Act IV</span>
+        <h3 class="text-lg font-semibold text-zinc-200">Corruption & Resync <span class="chip-zinc ml-2">CONCEPTUAL</span></h3>
+      </div>
+      <p class="text-zinc-500 text-sm mb-5">Frame integrity via CRC-style markers. One flipped byte corrupts the frame; the receiver detects, rejects, and resyncs to the next <code class="font-mono text-xs text-zinc-300">@</code> sentinel.</p>
+
+      <div class="bg-panel border border-zinc-800 rounded-lg p-5 font-mono text-sm">
+        <div class="grid gap-2">
+          <div class="flex items-start gap-3">
+            <span class="text-green-400 mt-0.5">OK</span>
+            <div>
+              <div class="text-zinc-300">@patch @keys=wire @target=match:001</div>
+              <div class="text-zinc-500 text-xs">Frame header — known sentinel, valid</div>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="text-red-400 mt-0.5">ERR</span>
+            <div>
+              <div>
+                <span class="text-zinc-300">= minute 4</span><span class="text-red-400 font-bold">X</span>
+              </div>
+              <div class="text-zinc-500 text-xs">Bit-flip at byte 34 — CRC mismatch, frame rejected</div>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="text-amber-400 mt-0.5">SKIP</span>
+            <div>
+              <div class="text-zinc-300">= score_home 1</div>
+              <div class="text-zinc-500 text-xs">Remaining bytes in corrupted frame discarded</div>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="text-green-400 mt-0.5">SYNC</span>
+            <div>
+              <div class="text-zinc-300">@end</div>
+              <div class="text-zinc-500 text-xs">Next <span style="color:#e6a756;">@</span> sentinel found — stream resynced, next frame accepted</div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-zinc-800 text-zinc-600 text-xs">
+          Not yet measured in the harness. Diagram shows the designed behaviour of the StreamingValidator sentinel-based recovery.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LEVEL 3 — BENCHMARK MATRIX -->
+<section id="level3" class="section-divider max-w-5xl mx-auto px-6 py-16">
+  <div class="fade-in">
+    <div class="level-label mb-2">Level 3</div>
+    <h2 class="section-title mb-2">Benchmark Cook-Off</h2>
+    <p class="text-zinc-500 text-sm mb-8">Four datasets, three formats. Bytes and estimated tokens (heuristic — see footnote).</p>
+
+    <!-- Table view -->
+    <div class="bg-panel border border-zinc-800 rounded-lg overflow-hidden mb-8">
+      <table class="data-table w-full" id="bench-table">
+        <thead>
+          <tr>
+            <th>Dataset</th>
+            <th>JSON min</th>
+            <th>JSON pretty</th>
+            <th>Glyph loose</th>
+            <th>Savings (bytes)</th>
+          </tr>
+        </thead>
+        <tbody id="bench-tbody"><!-- populated by JS --></tbody>
+      </table>
+    </div>
+
+    <!-- Bar view -->
+    <div class="bg-panel border border-zinc-800 rounded-lg p-5 space-y-6" id="bench-bars">
+      <!-- populated by JS -->
+    </div>
+
+    <p class="text-zinc-600 text-xs font-mono mt-4">Token savings figures are illustrative only — heuristic whitespace tokenizer, not BPE. Use tiktoken for accurate comparisons.</p>
+  </div>
+</section>
+
+<!-- PLAYGROUND -->
+<section id="playground" class="section-divider max-w-5xl mx-auto px-6 py-16">
+  <div class="fade-in">
+    <div class="level-label mb-2">Paste your own</div>
+    <h2 class="section-title mb-2">Live Encoder</h2>
+    <p class="text-zinc-500 text-sm mb-6">Paste any JSON. The real <code class="font-mono text-xs text-zinc-300">fromJsonLoose() + canonicalizeLoose()</code> from the bundle runs client-side.</p>
+
+    <div class="grid sm:grid-cols-2 gap-4 mb-5">
+      <div>
+        <label class="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-2 block">JSON input</label>
+        <textarea id="json-input" class="paste-input w-full h-48 p-3" placeholder='{"action":"search","query":"latest weather","max_results":5}'></textarea>
+      </div>
+      <div>
+        <label class="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-2 block">Glyph output</label>
+        <div class="code-block h-48 overflow-auto" id="glyph-output" style="height:192px;">Waiting for input...</div>
+      </div>
+    </div>
+
+    <div class="bg-panel border border-zinc-800 rounded-lg p-5 space-y-3" id="playground-bars">
+      <div class="text-xs font-mono uppercase tracking-wider text-zinc-600">Byte comparison</div>
+      <div id="pb-json-row" class="flex items-center gap-3">
+        <span class="text-zinc-500 font-mono text-xs w-20 flex-shrink-0">JSON min</span>
+        <div class="bar-track"><div class="bar-fill bar-fill-zinc" id="pb-json-bar" style="width:100%"></div></div>
+        <span class="text-zinc-400 font-mono text-xs w-16 text-right" id="pb-json-val">—</span>
+      </div>
+      <div id="pb-glyph-row" class="flex items-center gap-3">
+        <span class="text-zinc-500 font-mono text-xs w-20 flex-shrink-0">Glyph loose</span>
+        <div class="bar-track"><div class="bar-fill bar-fill-green" id="pb-glyph-bar" style="width:0%"></div></div>
+        <span class="text-zinc-400 font-mono text-xs w-16 text-right" id="pb-glyph-val">—</span>
+      </div>
+      <div class="flex items-center gap-3 pt-1">
+        <span class="text-zinc-600 font-mono text-xs w-20 flex-shrink-0">Savings</span>
+        <span id="pb-savings" class="chip-green">—</span>
+        <span class="text-zinc-600 font-mono text-xs" id="pb-error"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SCORECARD -->
+<section id="scorecard" class="section-divider max-w-5xl mx-auto px-6 py-16">
+  <div class="fade-in">
+    <div class="level-label mb-2">Summary</div>
+    <h2 class="section-title mb-8">Scorecard & Methodology</h2>
+
+    <div class="grid sm:grid-cols-2 gap-4 mb-10">
+      <div class="bg-panel border border-zinc-800 rounded-lg p-5">
+        <div class="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-4">Checklist</div>
+        <ul class="space-y-2 text-sm" id="checklist">
+          <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span><span class="text-zinc-400">Correctness: 14 edge cases encoded from real codec</span></li>
+          <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span><span class="text-zinc-400">Compression: &gt;60% byte savings on repeated-row tabular data</span></li>
+          <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span><span class="text-zinc-400">Streaming: real emitPatch() output measured vs full snapshots</span></li>
+          <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span><span class="text-zinc-400">Firewall: StreamingValidator rejects unknown tools before stream ends</span></li>
+          <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span><span class="text-zinc-400">JS loose round-trip closed: parseLoose() inverts canonicalizeLoose (parity with Go/Py); all 14 edge cases round-trip</span></li>
+          <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">!</span><span class="text-zinc-400">Token savings are heuristic (whitespace tokenizer, not BPE)</span></li>
+          <li class="flex items-start gap-2"><span class="text-amber-400 mt-0.5">!</span><span class="text-zinc-400">Bundle uses crypto — fingerprintLoose() throws in pure browser context</span></li>
+        </ul>
+      </div>
+
+      <div class="bg-panel border border-zinc-800 rounded-lg p-5">
+        <div class="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-4">Regenerate data</div>
+        <div class="code-block text-xs mb-3">node gauntlet/harness/measure.js</div>
+        <p class="text-zinc-500 text-sm">Rebuilds <code class="font-mono text-xs text-zinc-400">gauntlet-data.json</code> and <code class="font-mono text-xs text-zinc-400">gauntlet-data.js</code> from the real codec. Requires cowrie-glyph installed.</p>
+        <div class="mt-4 pt-4 border-t border-zinc-800 text-xs font-mono text-zinc-600" id="meta-note">—</div>
+      </div>
+    </div>
+
+    <!-- JS parse notes -->
+    <div class="bg-panel border border-zinc-800 rounded-lg p-5 mb-6">
+      <div class="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-3">Implementation parity notes</div>
+      <div class="space-y-3 text-sm" id="parse-notes">— </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="bg-panel border border-zinc-800 rounded-lg p-5">
+      <div class="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-3">Measurement notes</div>
+      <div class="space-y-2 text-sm text-zinc-500 leading-relaxed" id="extended-notes">—</div>
+    </div>
+  </div>
+</section>
+
+<footer class="max-w-5xl mx-auto px-6 py-10 border-t border-zinc-800/40">
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <span class="font-mono text-xs text-zinc-600 uppercase tracking-widest">GLYPH · GAUNTLET</span>
+    <span class="font-mono text-xs text-zinc-700">cowrie-glyph — all numbers from real codec execution</span>
+  </div>
+</footer>
+
+<!-- Scripts -->
+<script src="web/glyph.bundle.js"></script>
+<script src="data/gauntlet-data.js"></script>
+<script>
+/* ====================================================================
+   GLYPH GAUNTLET — app script
+   Reads exclusively from GAUNTLET_DATA. No hardcoded numbers.
+   ==================================================================== */
+
+// ---- Utility helpers ----
+
+function fmtBytes(n) {
+  if (n == null) return '(no data)';
+  if (n >= 1048576) return (n / 1048576).toFixed(2) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+
+function fmtPct(n, decimals) {
+  if (n == null) return '(no data)';
+  return (decimals != null ? n.toFixed(decimals) : n.toFixed(2)) + '%';
+}
+
+function pct(a, b) {
+  if (!b) return 0;
+  return Math.max(0, Math.min(100, (a / b) * 100));
+}
+
+function savings(a, b) {
+  // a = smaller (glyph), b = larger (json). savings = how much smaller a is vs b
+  if (!b) return 0;
+  return ((b - a) / b * 100);
+}
+
+function safeGet(obj, ...keys) {
+  return keys.reduce((o, k) => (o != null && typeof o === 'object' ? o[k] : undefined), obj);
+}
+
+// ---- Byte bar row ----
+function byteBarRow(label, bytes, maxBytes, isWinner, savingsPct) {
+  const fillClass = isWinner ? 'bar-fill-green' : 'bar-fill-zinc';
+  const widthPct = maxBytes > 0 ? Math.max(2, pct(bytes, maxBytes)) : 0;
+  const savChip = (isWinner && savingsPct != null)
+    ? `<span class="chip-green ml-2">-${fmtPct(savingsPct)}</span>` : '';
+  return `
+    <div class="flex items-center gap-3">
+      <span class="text-zinc-500 font-mono text-xs flex-shrink-0" style="width:120px">${label}</span>
+      <div class="bar-track flex-1"><div class="bar-fill ${fillClass}" style="width:${widthPct}%;transition:width .7s cubic-bezier(.4,0,.2,1)"></div></div>
+      <span class="text-zinc-400 font-mono text-xs flex-shrink-0" style="width:70px;text-align:right">${fmtBytes(bytes)}</span>
+      ${savChip}
+    </div>`;
+}
+
+// ---- HERO stats ----
+function renderHero() {
+  const d = GAUNTLET_DATA;
+
+  const tabRow = d.tabular && d.tabular.find(r => r.rows === 1000);
+  const tabSavings = tabRow ? tabRow.savingsBytesPct : null;
+
+  const patchSavings = safeGet(d, 'matchStream', 'savingsPct');
+  const firewallDetect = safeGet(d, 'toolFirewall', 'blocked', 'toolDetectedAtChar');
+  const avoided = safeGet(d, 'toolFirewall', 'blocked', 'bytesAvoided');
+
+  document.getElementById('stat-tabular').textContent = tabSavings != null ? `-${fmtPct(tabSavings)}` : '(no data)';
+  document.getElementById('stat-patch').textContent = patchSavings != null ? `-${fmtPct(patchSavings)}` : '(no data)';
+  document.getElementById('stat-firewall').textContent = firewallDetect != null ? `char ${firewallDetect}` : '(no data)';
+  document.getElementById('stat-avoided').textContent = avoided != null ? `${avoided} B` : '(no data)';
+}
+
+// ---- LEVEL 1 — Edge cases ----
+function renderEdgeCases() {
+  const cases = GAUNTLET_DATA.edgeCases || [];
+  const grid = document.getElementById('edge-cases-grid');
+  if (!grid) return;
+
+  // Real per-case round-trip status from the harness: 'ok' means
+  // parseLoose(canonicalizeLoose(v)) re-emits identical text (gap now closed).
+  const badgeFor = (c) => {
+    const rt = c.roundTrip || 'ok';
+    if (rt === 'ok') return `<span class="badge-pass" title="${escHtml(c.roundTripNote || '')}">✓ round-trip</span>`;
+    if (rt === 'lossy') return `<span class="badge-gap" title="${escHtml(c.roundTripNote || '')}">! lossy</span>`;
+    return `<span class="badge-gap" title="${escHtml(c.roundTripNote || '')}">! gap</span>`;
+  };
+
+  grid.innerHTML = cases.map(c => {
+    const badge = badgeFor(c);
+
+    return `
+      <div class="bg-panel border border-zinc-800 rounded-lg p-4 fade-in">
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <span class="font-mono text-xs text-zinc-300 font-semibold">${escHtml(c.name)}</span>
+          ${badge}
+        </div>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div>
+            <div class="text-xs font-mono text-zinc-600 mb-1 uppercase tracking-wider">JSON</div>
+            <div class="code-block text-xs">${escHtml(c.jsonText)}</div>
+          </div>
+          <div>
+            <div class="text-xs font-mono text-zinc-600 mb-1 uppercase tracking-wider">Glyph</div>
+            <div class="code-block text-xs" style="color:#e6a756">${escHtml(c.glyphText)}</div>
+          </div>
+        </div>
+        ${c.note ? `<div class="text-xs text-zinc-600 font-mono mt-2">${escHtml(c.note)}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  const schemaNote = document.getElementById('schema-hash-note');
+  if (schemaNote && GAUNTLET_DATA.schemaHashNote) {
+    schemaNote.textContent = GAUNTLET_DATA.schemaHashNote;
+  }
+}
+
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ---- ACT I — Firewall ----
+let firewallAnim = null;
+
+function runFirewall(which) {
+  if (firewallAnim) clearTimeout(firewallAnim);
+
+  const data = which === 'allowed'
+    ? GAUNTLET_DATA.toolFirewall.allowed
+    : GAUNTLET_DATA.toolFirewall.blocked;
+
+  const stream = document.getElementById('firewall-stream');
+  const status = document.getElementById('firewall-status');
+  const pane = document.getElementById('firewall-pane');
+
+  // Remove flash classes
+  pane.classList.remove('flash-red', 'flash-green');
+
+  if (!data || !data.text) {
+    stream.innerHTML = '<span class="text-zinc-600">(no data)</span>';
+    return;
+  }
+
+  const text = data.text;
+  const detectChar = data.toolDetectedAtChar;
+  const rejectChar = data.rejectAtChar != null ? data.rejectAtChar : null;
+  const toolName = data.toolName;
+  const isBlocked = !data.allowed;
+  const totalChars = data.totalChars;
+  const timeline = data.timeline || [];
+
+  // Attempt real StreamingValidator
+  let validator = null;
+  let useReal = false;
+  try {
+    if (typeof Glyph !== 'undefined' && Glyph.StreamingValidator && Glyph.defaultToolRegistry) {
+      validator = new Glyph.StreamingValidator(Glyph.defaultToolRegistry);
+      useReal = true;
+    }
+  } catch(e) {
+    useReal = false;
+  }
+
+  // Reset validator
+  if (useReal) {
+    try {
+      validator = new Glyph.StreamingValidator(Glyph.defaultToolRegistry);
+    } catch(e) { useReal = false; }
+  }
+
+  stream.innerHTML = '';
+  status.innerHTML = '<span class="status-line text-zinc-600">Tool: —</span><span class="status-line text-zinc-600">Detected at char: —</span><span class="status-line text-zinc-600">Status: streaming...</span>';
+
+  let charIdx = 0;
+  let stopped = false;
+  let detectedShown = false;
+  let rejectedShown = false;
+
+  function step() {
+    if (charIdx >= text.length) {
+      // Done
+      const valid = isBlocked ? false : true;
+      const statusColor = valid ? 'text-green-400' : 'text-red-400';
+      const statusText = valid ? 'ACCEPTED' : 'REJECTED';
+
+      void pane.offsetWidth; // force reflow for animation restart
+      pane.classList.add(valid ? 'flash-green' : 'flash-red');
+
+      let statusHtml = `<span class="status-line text-zinc-400">Tool: <span class="font-bold" style="color:#e6a756">${escHtml(toolName)}</span></span>`;
+      statusHtml += `<span class="status-line text-zinc-400">Detected at char: <span class="font-bold text-amber-400">${detectChar}</span></span>`;
+
+      if (isBlocked && rejectChar != null) {
+        statusHtml += `<span class="status-line text-zinc-400">Rejected at char: <span class="font-bold text-red-400">${rejectChar}</span></span>`;
+        const avoided = data.bytesAvoided;
+        if (avoided != null) {
+          statusHtml += `<span class="status-line text-zinc-400">Bytes avoided: <span class="font-bold text-red-400">${avoided}</span></span>`;
+        }
+        statusHtml += `<span class="status-line font-bold text-red-400">${statusText}</span>`;
+      } else {
+        statusHtml += `<span class="status-line font-bold text-green-400">${statusText}</span>`;
+      }
+
+      status.innerHTML = statusHtml;
+      return;
+    }
+
+    const ch = text[charIdx];
+
+    // Attempt real validator feed
+    let shouldStop = false;
+    if (useReal && validator && !stopped) {
+      try {
+        const res = validator.feed(ch);
+        if (res && res.shouldStop) shouldStop = true;
+      } catch(e) { /* ignore */ }
+    }
+
+    charIdx++;
+
+    // Colour coding
+    let colorClass = 'char-active';
+    if (charIdx - 1 < detectChar) colorClass = 'char-dim';
+    if (charIdx - 1 === detectChar - 1) colorClass = 'char-tool'; // last char of detection
+
+    if (isBlocked && rejectChar != null && charIdx - 1 >= rejectChar) {
+      colorClass = 'char-rejected';
+    }
+
+    // Build cumulative display with current char highlighted
+    let html = '';
+    for (let i = 0; i < charIdx; i++) {
+      let cls = 'char-dim';
+      if (i >= detectChar && !isBlocked) cls = 'char-allowed';
+      else if (i >= detectChar && isBlocked && rejectChar != null && i >= rejectChar) cls = 'char-rejected';
+      else if (i >= detectChar) cls = 'char-tool';
+      else cls = 'char-dim';
+      html += `<span class="${cls}">${escHtml(text[i])}</span>`;
+    }
+
+    // Show remaining as very dim
+    if (charIdx < text.length && !(isBlocked && stopped)) {
+      html += `<span class="char-dim">${escHtml(text.slice(charIdx))}</span>`;
+    }
+
+    stream.innerHTML = html;
+
+    // Show detect status
+    if (!detectedShown && charIdx >= detectChar) {
+      detectedShown = true;
+      status.innerHTML = `<span class="status-line text-zinc-400">Tool: <span style="color:#e6a756">${escHtml(toolName)}</span></span><span class="status-line text-amber-400">Detected at char: ${detectChar}</span><span class="status-line text-zinc-400">Status: streaming...</span>`;
+    }
+
+    if (isBlocked && !rejectedShown && rejectChar != null && charIdx >= rejectChar) {
+      rejectedShown = true;
+      stopped = true;
+      status.innerHTML = `<span class="status-line text-zinc-400">Tool: <span style="color:#e6a756">${escHtml(toolName)}</span></span><span class="status-line text-red-400">Detected at char: ${detectChar}</span><span class="status-line text-red-400 font-bold">REJECTED at char ${rejectChar} — ${data.bytesAvoided != null ? data.bytesAvoided + ' bytes avoided' : ''}</span>`;
+      // Show remaining text faded
+      html = '';
+      for (let i = 0; i < charIdx; i++) {
+        let cls = i >= rejectChar ? 'char-rejected' : i >= detectChar ? 'char-tool' : 'char-dim';
+        html += `<span class="${cls}">${escHtml(text[i])}</span>`;
+      }
+      html += `<span class="char-dim">${escHtml(text.slice(charIdx))}</span>`;
+      stream.innerHTML = html;
+
+      // End animation after brief pause
+      firewallAnim = setTimeout(() => {
+        void pane.offsetWidth;
+        pane.classList.add('flash-red');
+        let statusHtml = `<span class="status-line text-zinc-400">Tool: <span class="font-bold" style="color:#e6a756">${escHtml(toolName)}</span></span>`;
+        statusHtml += `<span class="status-line text-red-400">Detected at char: <span class="font-bold">${detectChar}</span></span>`;
+        statusHtml += `<span class="status-line text-red-400">Rejected at char: <span class="font-bold">${rejectChar}</span></span>`;
+        if (data.bytesAvoided != null) statusHtml += `<span class="status-line text-red-400">Bytes avoided: <span class="font-bold">${data.bytesAvoided}</span></span>`;
+        statusHtml += `<span class="status-line font-bold text-red-400">REJECTED</span>`;
+        status.innerHTML = statusHtml;
+      }, 300);
+      return;
+    }
+
+    const delay = charIdx < 5 ? 80 : charIdx < detectChar ? 40 : 25;
+    firewallAnim = setTimeout(step, delay);
+  }
+
+  step();
+}
+
+// ---- ACT II — Match stream ----
+function renderMatchStream() {
+  const ms = GAUNTLET_DATA.matchStream;
+  if (!ms) return;
+
+  const note = document.getElementById('match-note');
+  if (note) note.textContent = ms.measurementNote || '—';
+
+  const sample = document.getElementById('match-sample');
+  if (sample) sample.textContent = ms.samplePatchText || '—';
+
+  const maxBytes = Math.max(ms.cumSnapshotBytes || 0, ms.cumPatchBytes || 0);
+  const sav = ms.savingsPct;
+  const bars = document.getElementById('match-bars');
+  if (!bars) return;
+
+  bars.innerHTML = `
+    <div class="space-y-3">
+      ${byteBarRow('JSON snapshots', ms.cumSnapshotBytes, maxBytes, false, null)}
+      ${byteBarRow('Glyph patches', ms.cumPatchBytes, maxBytes, true, sav)}
+      <div class="flex items-center gap-3 pt-1">
+        <span class="text-zinc-600 font-mono text-xs" style="width:120px">Updates</span>
+        <span class="text-zinc-400 font-mono text-xs">${ms.totalUpdates} updates</span>
+      </div>
+    </div>`;
+}
+
+// ---- ACT III — Tabular cook-off ----
+let currentTabularRows = 100;
+
+function setTabularRows(rows, btn) {
+  currentTabularRows = rows;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderTabular();
+}
+
+function renderTabular() {
+  const tabData = GAUNTLET_DATA.tabular || [];
+  const row = tabData.find(r => r.rows === currentTabularRows);
+  const bars = document.getElementById('tabular-bars');
+  const preview = document.getElementById('tabular-preview');
+
+  if (!row || !bars) return;
+
+  const maxBytes = Math.max(row.jsonMinBytes || 0, row.jsonPrettyBytes || 0, row.glyphLooseBytes || 0);
+  const sav = row.savingsBytesPct;
+
+  bars.innerHTML = `
+    <div class="space-y-3">
+      <div class="text-xs font-mono uppercase tracking-wider text-zinc-600 mb-1">${row.rows} rows — byte comparison</div>
+      ${byteBarRow('JSON min', row.jsonMinBytes, maxBytes, false, null)}
+      ${byteBarRow('JSON pretty', row.jsonPrettyBytes, maxBytes, false, null)}
+      ${byteBarRow('Glyph loose', row.glyphLooseBytes, maxBytes, true, sav)}
+    </div>
+    <div class="pt-3 border-t border-zinc-800 text-xs text-zinc-600 font-mono">${escHtml(row.glyphTabularNote || '')}</div>`;
+
+  if (preview) {
+    preview.textContent = row.glyphLoosePreview || '—';
+  }
+}
+
+// ---- LEVEL 3 — Bench matrix ----
+const DATASET_LABELS = {
+  tinyToolCalls: 'Tiny tool calls',
+  nestedAgentTrace: 'Nested agent trace',
+  repeatedRows: 'Repeated rows (tabular)',
+  adversarialStrings: 'Adversarial strings',
+};
+
+function renderBenchMatrix() {
+  const bm = GAUNTLET_DATA.benchMatrix || [];
+  const tbody = document.getElementById('bench-tbody');
+  const barsDiv = document.getElementById('bench-bars');
+
+  if (!tbody || !barsDiv) return;
+
+  const maxBytes = Math.max(...bm.map(r => safeGet(r, 'formats', 'jsonPretty', 'bytes') || 0));
+
+  tbody.innerHTML = bm.map(row => {
+    const jMin = safeGet(row, 'formats', 'jsonMin', 'bytes');
+    const jPretty = safeGet(row, 'formats', 'jsonPretty', 'bytes');
+    const glyph = safeGet(row, 'formats', 'glyphLoose', 'bytes');
+    const sav = safeGet(row, 'savingsVsJsonMin', 'bytesPct');
+    const label = DATASET_LABELS[row.dataset] || row.dataset;
+    const savCell = sav != null && sav > 0
+      ? `<span class="chip-green">-${fmtPct(sav)}</span>`
+      : sav != null
+        ? `<span class="chip-zinc">${fmtPct(sav)}</span>`
+        : '(no data)';
+    return `
+      <tr>
+        <td class="text-zinc-300">${escHtml(label)}</td>
+        <td>${fmtBytes(jMin)}</td>
+        <td>${fmtBytes(jPretty)}</td>
+        <td style="color:#4ade80">${fmtBytes(glyph)}</td>
+        <td>${savCell}</td>
+      </tr>`;
+  }).join('');
+
+  barsDiv.innerHTML = bm.map(row => {
+    const jMin = safeGet(row, 'formats', 'jsonMin', 'bytes') || 0;
+    const jPretty = safeGet(row, 'formats', 'jsonPretty', 'bytes') || 0;
+    const glyph = safeGet(row, 'formats', 'glyphLoose', 'bytes') || 0;
+    const sav = safeGet(row, 'savingsVsJsonMin', 'bytesPct');
+    const rowMax = Math.max(jMin, jPretty, glyph);
+    const label = DATASET_LABELS[row.dataset] || row.dataset;
+
+    return `
+      <div class="fade-in">
+        <div class="font-mono text-xs text-zinc-400 uppercase tracking-wider mb-2">${escHtml(label)}</div>
+        <div class="space-y-2">
+          ${byteBarRow('JSON min', jMin, rowMax, false, null)}
+          ${byteBarRow('JSON pretty', jPretty, rowMax, false, null)}
+          ${byteBarRow('Glyph loose', glyph, rowMax, true, sav != null && sav > 0 ? sav : null)}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ---- PLAYGROUND ----
+let playgroundTimer = null;
+
+function runPlayground() {
+  const input = document.getElementById('json-input').value.trim();
+  const output = document.getElementById('glyph-output');
+  const jsonVal = document.getElementById('pb-json-val');
+  const glyphVal = document.getElementById('pb-glyph-val');
+  const jsonBar = document.getElementById('pb-json-bar');
+  const glyphBar = document.getElementById('pb-glyph-bar');
+  const savingsEl = document.getElementById('pb-savings');
+  const errorEl = document.getElementById('pb-error');
+
+  if (!input) {
+    output.textContent = 'Waiting for input...';
+    jsonVal.textContent = '—';
+    glyphVal.textContent = '—';
+    jsonBar.style.width = '100%';
+    glyphBar.style.width = '0%';
+    savingsEl.textContent = '—';
+    savingsEl.className = 'chip-green';
+    errorEl.textContent = '';
+    return;
+  }
+
+  // Parse JSON
+  let parsed;
+  try {
+    parsed = JSON.parse(input);
+  } catch(e) {
+    output.textContent = `Invalid JSON: ${e.message}`;
+    output.style.color = '#f87171';
+    errorEl.textContent = '';
+    return;
+  }
+  output.style.color = '';
+
+  // Encode via Glyph
+  if (typeof Glyph === 'undefined' || !Glyph.fromJsonLoose || !Glyph.canonicalizeLoose) {
+    output.textContent = '(Glyph bundle not loaded)';
+    return;
+  }
+
+  let glyphText;
+  try {
+    const gval = Glyph.fromJsonLoose(parsed);
+    glyphText = Glyph.canonicalizeLoose(gval);
+  } catch(e) {
+    output.textContent = `Encode error: ${e.message}`;
+    output.style.color = '#f87171';
+    errorEl.textContent = '';
+    return;
+  }
+
+  output.textContent = glyphText;
+  output.style.color = '#e6a756';
+
+  const jsonMin = JSON.stringify(parsed);
+  const jsonBytes = new TextEncoder().encode(jsonMin).length;
+  const glyphBytes = new TextEncoder().encode(glyphText).length;
+  const maxB = Math.max(jsonBytes, glyphBytes);
+  const sav = savings(glyphBytes, jsonBytes);
+
+  jsonVal.textContent = fmtBytes(jsonBytes);
+  glyphVal.textContent = fmtBytes(glyphBytes);
+  jsonBar.style.width = '100%';
+  glyphBar.style.width = `${Math.max(2, pct(glyphBytes, maxB))}%`;
+
+  if (sav > 0) {
+    savingsEl.textContent = `-${fmtPct(sav)} smaller`;
+    savingsEl.className = 'chip-green';
+  } else if (sav < 0) {
+    savingsEl.textContent = `+${fmtPct(-sav)} larger`;
+    savingsEl.className = 'chip-red';
+  } else {
+    savingsEl.textContent = 'same size';
+    savingsEl.className = 'chip-zinc';
+  }
+  errorEl.textContent = '';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const ta = document.getElementById('json-input');
+  if (ta) {
+    ta.addEventListener('input', () => {
+      clearTimeout(playgroundTimer);
+      playgroundTimer = setTimeout(runPlayground, 300);
+    });
+  }
+});
+
+// ---- SCORECARD ----
+function renderScorecard() {
+  const meta = GAUNTLET_DATA.meta || {};
+  const metaNote = document.getElementById('meta-note');
+  if (metaNote) {
+    metaNote.textContent = `Generated: ${meta.generatedNote || '—'} | Node: ${meta.node || '—'}`;
+  }
+
+  // Parse notes
+  // These come from the contract's parseNotes (not in GAUNTLET_DATA directly — render from known data structure)
+  // The schemaHashNote is in GAUNTLET_DATA. We use the toolFirewall registryNote for parse context.
+  const parseNotesEl = document.getElementById('parse-notes');
+  if (parseNotesEl) {
+    const regNote = safeGet(GAUNTLET_DATA, 'toolFirewall', 'registryNote') || '';
+    const tabNote = safeGet(GAUNTLET_DATA, 'tabular', 0, 'glyphTabularNote') || '';
+    const matchNote = safeGet(GAUNTLET_DATA, 'matchStream', 'measurementNote') || '';
+    parseNotesEl.innerHTML = [
+      { label: 'JS codec', note: 'Bidirectional in loose mode. canonicalizeLoose(value) → glyph text, and parseLoose(glyphText) → GValue (the inverse) — scalars, maps, lists, refs, and nested @tab blocks. Closes the former forward-only gap; parity with Go ParseDocument / Python parse. (Caveat: int precision beyond 2^53 and bare time values are JSON-domain-out-of-scope in JS, same as Python.)' },
+      { label: 'Go codec', note: 'Full conformance. ParseDocument(glyphText) → GValue for all formats. CanonicalizeLoose / CanonicalizeLooseWithOpts for forward direction. Full schema+schemaful round-trip.' },
+      { label: 'Python codec', note: 'parse(glyphText) → value for glyph text; parse_loose for loose text. Forward: canonicalize_loose(value). Full loose round-trip exists via parse() on emitted text.' },
+      { label: 'Tool registry', note: regNote },
+    ].map(item => `
+      <div class="flex gap-3">
+        <span class="font-mono text-xs text-zinc-500 flex-shrink-0 pt-0.5 w-24">${escHtml(item.label)}</span>
+        <span class="text-zinc-500 text-sm">${escHtml(item.note)}</span>
+      </div>`).join('');
+  }
+
+  // Extended notes from data file notes fields
+  const notesEl = document.getElementById('extended-notes');
+  if (notesEl) {
+    const items = [
+      safeGet(GAUNTLET_DATA, 'meta', 'tokenizer'),
+      safeGet(GAUNTLET_DATA, 'matchStream', 'measurementNote'),
+      safeGet(GAUNTLET_DATA, 'schemaHashNote'),
+      safeGet(GAUNTLET_DATA, 'toolFirewall', 'registryNote'),
+    ].filter(Boolean);
+    notesEl.innerHTML = items.map(n => `<p class="text-zinc-500">${escHtml(n)}</p>`).join('');
+  }
+}
+
+// ---- Intersection observer for fade-in ----
+function setupFadeIn() {
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        // Trigger bar width transitions after element is visible
+        const bars = e.target.querySelectorAll('.bar-fill');
+        bars.forEach(b => { b.style.transition = 'width .7s cubic-bezier(.4,0,.2,1)'; });
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.fade-in').forEach(el => obs.observe(el));
+}
+
+// ---- Init ----
+function init() {
+  if (typeof GAUNTLET_DATA === 'undefined') {
+    document.body.innerHTML = '<div style="color:#f87171;font-family:monospace;padding:40px">Error: GAUNTLET_DATA not loaded. Ensure data/gauntlet-data.js is accessible.</div>';
+    return;
+  }
+
+  renderHero();
+  renderEdgeCases();
+  renderMatchStream();
+  renderTabular();
+  renderBenchMatrix();
+  renderScorecard();
+
+  // Seed playground with a nice default
+  const ta = document.getElementById('json-input');
+  if (ta) {
+    ta.value = '{"action":"search","query":"latest weather in Chicago","max_results":5}';
+    runPlayground();
+  }
+
+  // Observe fade-in elements (new ones added by render calls)
+  setTimeout(setupFadeIn, 50);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>

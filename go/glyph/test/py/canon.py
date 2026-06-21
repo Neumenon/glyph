@@ -120,7 +120,7 @@ def cmd_parse_patch(patch_str: str) -> dict:
         patch = parse_patch(patch_str)
         result = {
             "schemaId": patch.schema_id,
-            "baseFingerprint": "",
+            "baseFingerprint": patch.base_fingerprint,
             "opsCount": len(patch.ops),
         }
         return {"success": True, "result": json.dumps(result)}

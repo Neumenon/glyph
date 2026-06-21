@@ -10,6 +10,9 @@ from glyph.patch import (
     PathSegKind,
     apply_patch,
     parse_patch,
+    verify_patch_base,
+    compute_base_fingerprint,
+    PatchBaseMismatch,
     _parse_op,
     _parse_path,
     _parse_value,
@@ -23,6 +26,7 @@ from glyph.patch import (
     _set_field,
     _delete_field,
 )
+from glyph import from_json_loose
 from glyph.types import GType, GValue, MapEntry, StructValue
 
 
@@ -193,9 +197,15 @@ class TestParsePath:
         assert segs[2].list_idx == 2
         assert segs[3].field == "name"
 
-    def test_path_not_starting_with_dot(self):
-        with pytest.raises(ValueError, match="path must start with '.'"):
-            _parse_path("noprefix")
+    def test_bare_path_parses_like_go_js(self):
+        """Bare (non-dotted) paths parse identically to the leading-dot form, so
+        a Python receiver can read patches emitted by Go/JS (which use bare paths
+        like 'home.score'). This is the cross-impl patch contract, not a regression
+        of the old dot-required rule."""
+        assert _parse_path("noprefix") == _parse_path(".noprefix")
+        bare = _parse_path("home.score")
+        assert [s.field for s in bare] == ["home", "score"]
+        assert _parse_path("items[2].name") == _parse_path(".items[2].name")
 
     def test_invalid_list_index(self):
         with pytest.raises(ValueError, match="invalid list index"):
@@ -847,3 +857,56 @@ class TestIntegration:
         assert len(items) == 2
         assert items[0].get("a").as_int() == 1
         assert items[1].get("b").as_int() == 2
+
+
+# ============================================================
+# Patch base fingerprint — cross-implementation contract
+# ============================================================
+
+
+class TestPatchBaseFingerprint:
+    """The @base= fingerprint is the cross-impl patch-base contract: the first 16
+    hex of sha256(canonicalize_loose(base)), byte-identical to Go WithBaseValue
+    and JS withBaseValue. These golden values are produced by the Go/JS impls and
+    pinned here, so the test fails loudly if Python's contract ever drifts."""
+
+    # Golden 16-hex fingerprints (verified equal to Go/JS output).
+    GOLDEN = {
+        # {a=1 b=2} — same canonical form in every impl.
+        ("a", 1, "b", 2): "f35719430d98a2fe",
+    }
+
+    def test_compute_matches_go_js_golden_simple(self):
+        base = from_json_loose({"a": 1, "b": 2})
+        assert compute_base_fingerprint(base) == "f35719430d98a2fe"
+        assert len(compute_base_fingerprint(base)) == 16
+
+    def test_compute_matches_go_js_golden_nested(self):
+        # {away={score=0} home={score=1} rating=1} — integer-valued float 1.0
+        # collapses to 1 under the unified number rule, exactly as Go/JS.
+        base = from_json_loose({"home": {"score": 1}, "away": {"score": 0}, "rating": 1.0})
+        assert compute_base_fingerprint(base) == "8cdae5d35aa1f4ae"
+
+    def test_parse_base_token(self):
+        patch = parse_patch(
+            "@patch @schema#abc @keys=wire @target=m:1 @base=deadbeef12345678\n"
+            "= home.score 2\n@end"
+        )
+        assert patch.base_fingerprint == "deadbeef12345678"
+
+    def test_verify_matching_base_passes(self):
+        base = from_json_loose({"a": 1, "b": 2})
+        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        verify_patch_base(base, patch)  # must not raise
+
+    def test_verify_wrong_base_raises(self):
+        base = from_json_loose({"a": 1, "b": 2})
+        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        with pytest.raises(PatchBaseMismatch):
+            verify_patch_base(from_json_loose({"a": 9}), patch)
+
+    def test_verify_no_base_is_noop(self):
+        base = from_json_loose({"a": 1, "b": 2})
+        patch = parse_patch("@patch @target=m:1\n= a 9\n@end")
+        assert patch.base_fingerprint == ""
+        verify_patch_base(base, patch)  # no base recorded -> no-op, must not raise

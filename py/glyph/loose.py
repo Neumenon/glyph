@@ -83,6 +83,12 @@ MAX_JSON_DEPTH = 128
 MAX_COLLECTION_LEN = 1_000_000  # 1M elements
 MAX_STRING_LEN = 10 * 1024 * 1024  # 10MB
 
+# IEEE-754 double safe-integer bound (2^53 - 1). GLYPH-Loose uses JSON-domain
+# (double) number semantics so canonical output is byte-identical across Go, JS,
+# and Python: integers within this window are integer literals; anything outside
+# is not representable as a JS Number and canonicalizes as a float64.
+MAX_SAFE_INT = (1 << 53) - 1  # 9007199254740991
+
 # Reserved words that must be quoted (D8: matches Go isValidBareString reject list)
 RESERVED_WORDS = {"t", "f", "true", "false", "null", "none", "nil", "_", "NaN", "Inf",
                    "struct", "sum", "list", "map"}
@@ -465,9 +471,12 @@ def _try_tabular(items: List[GValue], opts: LooseCanonOpts) -> Optional[str]:
     # Build tabular output
     lines = []
 
-    # Header: @tab _ [col1 col2 col3]
+    # Header: @tab _ rows=N cols=M [col1 col2 col3]
+    # The rows/cols metadata (v2.4.0, for streaming resync) is part of the
+    # canonical form across Go and JS; Go is the source of truth, so Python
+    # emits it too. parse() / parse_loose() tolerate its absence.
     col_header = " ".join(canon_string(c) for c in cols)
-    lines.append(f"@tab _ [{col_header}]")
+    lines.append(f"@tab _ rows={len(items)} cols={len(cols)} [{col_header}]")
 
     # Rows
     for item in items:
@@ -540,10 +549,21 @@ def from_json_loose(data: Any, _depth: int = 0) -> GValue:
     elif isinstance(data, bool):
         return GValue.bool_(data)
     elif isinstance(data, int):
-        return GValue.int_(data)
+        # JSON-domain number semantics: integers outside the IEEE-754 safe window
+        # are not representable as a JS Number, so they canonicalize as float64 —
+        # matching FromJSONLoose (Go) and fromJsonLoose (JS). This is lossy for
+        # huge ints by design; use GLYPH-Typed/int64 when full precision matters.
+        if -MAX_SAFE_INT <= data <= MAX_SAFE_INT:
+            return GValue.int_(data)
+        return GValue.float_(float(data))
     elif isinstance(data, float):
         if not math.isfinite(data):
             raise ValueError("non-finite floats are not supported")
+        # In the JSON number domain there is no int/float distinction: an
+        # integer-valued float within the safe window collapses to an integer
+        # literal (1e3 -> 1000, 3.0 -> 3, -0.0 -> 0), exactly as Go/JS do.
+        if data.is_integer() and -MAX_SAFE_INT <= data <= MAX_SAFE_INT:
+            return GValue.int_(int(data))
         return GValue.float_(data)
     elif isinstance(data, str):
         if len(data) > MAX_STRING_LEN:

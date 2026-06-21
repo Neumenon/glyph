@@ -1846,13 +1846,17 @@ func TestTripleImpl_PatchParse(t *testing.T) {
 			jsResultJSON, jsOK := runJSCanon(t, "parse-patch", tc.patch)
 			if jsOK {
 				var jsResult struct {
-					Target   interface{} `json:"target"`
-					SchemaId string      `json:"schemaId"`
-					OpsCount int         `json:"opsCount"`
+					Target          interface{} `json:"target"`
+					SchemaId        string      `json:"schemaId"`
+					BaseFingerprint string      `json:"baseFingerprint"`
+					OpsCount        int         `json:"opsCount"`
 				}
 				if err := json.Unmarshal([]byte(jsResultJSON), &jsResult); err == nil {
 					if jsResult.OpsCount != len(goPatch.Ops) {
 						t.Errorf("Go vs JS ops count mismatch: Go=%d, JS=%d", len(goPatch.Ops), jsResult.OpsCount)
+					}
+					if jsResult.BaseFingerprint != goPatch.BaseFingerprint {
+						t.Errorf("Go vs JS base fingerprint mismatch: Go=%s, JS=%s", goPatch.BaseFingerprint, jsResult.BaseFingerprint)
 					}
 				}
 			}

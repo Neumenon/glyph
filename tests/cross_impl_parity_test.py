@@ -34,7 +34,10 @@ CROSS_IMPL_VECTORS = [
     ("simple_scalars", {"a": 1, "b": "hello", "c": True}, "{a=1 b=hello c=t}"),
     ("negative_and_float", {"neg": -42, "pi": 3.14}, "{neg=-42 pi=3.14}"),
     ("string_escapes", {"s": "line1\nline2\ttab"}, '{s="line1\\nline2\\ttab"}'),
-    ("unicode", {"greeting": "你好"}, "{greeting=你好}"),
+    # Non-ASCII strings are quoted (conservative quoting: the bare-string lexer is
+    # ASCII-only, so quoting keeps round-trip exact). Matches Go/JS — see Go golden
+    # 008_unicode.want.
+    ("unicode", {"greeting": "你好"}, '{greeting="你好"}'),
     ("mixed_array", [1, "two", True, None], "[1 two t _]"),
     ("nested_object", {"outer": {"inner": 42}}, "{outer={inner=42}}"),
     ("nested_lists", [[1, 2], [3, 4]], "[[1 2] [3 4]]"),
@@ -44,7 +47,9 @@ CROSS_IMPL_VECTORS = [
     # Numbers edge cases
     ("negative_zero", -0.0, "0"),
     ("exponent_small", 1e-10, "1e-10"),
-    ("exponent_large", 1e15, "1e+15"),
+    # 1e15 is integer-valued and within the IEEE-754 safe window, so it
+    # canonicalizes as an integer literal (unified JSON-domain typing; matches Go/JS).
+    ("exponent_large", 1e15, "1000000000000000"),
 
     # Strings that need quoting
     ("string_with_space", "hello world", '"hello world"'),

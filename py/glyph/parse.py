@@ -600,9 +600,14 @@ class Parser:
             elif self.current.type == TokenType.NULL:
                 self.advance()
 
-            # Parse column headers
-            if self.current.type != TokenType.LBRACKET:
-                raise ValueError("expected [ for column headers")
+            # Skip optional v2.4.0 metadata (rows=N cols=M) and any other
+            # key=val attributes between the _ placeholder and the column
+            # bracket. Go/JS emit this header form and tolerate its absence;
+            # Python must accept it to read Go/JS tabular output.
+            while self.current.type != TokenType.LBRACKET:
+                if self.current.type in (TokenType.EOF, TokenType.NEWLINE):
+                    raise ValueError("expected [ for column headers")
+                self.advance()
 
             self.advance()
             cols = []

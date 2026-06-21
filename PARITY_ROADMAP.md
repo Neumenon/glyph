@@ -80,4 +80,4 @@ critiques are already handled or moot. The real remaining core is a focused **P0
 - **Does Loose preserve types or intentionally collapse to JSON-like?** (Determines whether time/ID/bytes round-trip through Loose or only through Typed.) — *biggest fork; decide first, it shapes P0.*
 - **Keep or drop Decimal128 and EmitV2** as advertised features, or move both behind experimental?
 - **`@lyph` vs `@glyph`** header spelling — parser accepts both (`parse_header.go:38`); pick one canonical for the emitter.
-- **Float rule** (already-open) — shortest-roundtrip (Go) vs threshold (Py/JS); unify or keep documented-divergent.
+- ~~**Float rule** — shortest-roundtrip (Go) vs threshold (Py/JS)~~ **RESOLVED:** unified to shortest-round-trip + safe-integer typing; byte-identical across Go/Py/JS (`tests/all_impl_parity_test.py`, `py/tests/test_golden_corpus.py`). Authoritative rule: `docs/CANONICAL_FORMS.md` §3.

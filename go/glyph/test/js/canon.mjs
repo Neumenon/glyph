@@ -190,6 +190,7 @@ function cmdParsePatch(patchStr, schemaJson) {
       result: JSON.stringify({
         target: patch.target,
         schemaId: patch.schemaId,
+        baseFingerprint: patch.baseFingerprint || "",
         opsCount: patch.ops.length,
       })
     };

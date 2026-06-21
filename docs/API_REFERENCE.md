@@ -9,10 +9,10 @@ The purpose is to give the current package names, import surfaces, and the core 
 | Language | Package | Primary Doc |
 |----------|---------|-------------|
 | Python | `glyph-py` | [../py/README.md](../py/README.md) |
-| Go | `github.com/Neumenon/glyph` | [../go/README.md](../go/README.md) |
+| Go | in-repo / source preview (module under `go/`; `go get` not yet a stable path) | [../go/README.md](../go/README.md) |
 | JavaScript / TypeScript | `cowrie-glyph` | [../js/README.md](../js/README.md) |
 | Rust | parked in `attic/` — emit-only, not published | [../attic/rust/glyph-codec/README.md](../attic/rust/glyph-codec/README.md) |
-| C | parked in `attic/` — emit-only, build from source | [../attic/c/glyph-codec/README.md](../attic/c/glyph-codec/README.md) |
+| C | parked in `attic/c/` — emit-only, build from source | [../attic/c/glyph-codec/README.md](../attic/c/glyph-codec/README.md) |
 
 ## Shared Concepts
 
@@ -70,7 +70,9 @@ fingerprint = glyph.fingerprint_loose(glyph.from_json(data))
 Use the `glyph` module after installing `glyph-py`. The Python README is the current source of truth for the shipped Python surface.
 
 ### Go
-The module is `github.com/Neumenon/glyph`. Import the codec package as:
+**In-repo / source preview.** The Go codec is a full conformance implementation, but it is not yet a polished external module: the module lives under `go/`, and `go get github.com/Neumenon/glyph` / `go mod tidy` do not yet resolve cleanly (subdirectory layout plus an optional dev-only bridge that pulls an unpublished dependency). Use it from a checkout of this repo (`cd go && go build ./...`) until module packaging is stabilized.
+
+Within the module, the import path is:
 
 ```go
 import "github.com/Neumenon/glyph/glyph"
