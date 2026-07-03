@@ -64,15 +64,16 @@ Poor fits:
 
 ## Token savings: shape-dependent, not a fixed number
 
-GLYPH's compactness comes from bare keys, `=` instead of `: `, no mandatory quoting, and auto-tabular packing for lists of same-shaped records. That helps a lot on some shapes and almost nothing on others. Measured against minified JSON (`json.dumps(x, separators=(",", ":"))`) with a real tokenizer (`tiktoken`, `cl100k_base`), not a heuristic character-count estimate:
+GLYPH's compactness comes from bare keys, `=` instead of `: `, no mandatory quoting, and auto-tabular packing for lists of same-shaped records. That helps a lot on some shapes and almost nothing on others. Measured against minified JSON (`json.dumps(x, separators=(",", ":"))`) with a real tokenizer (`tiktoken`, `cl100k_base`), not a heuristic character-count estimate. Every number below is reproduced by a committed script over fixed, deterministic payloads — run [`bench/token_savings.py`](./bench/token_savings.py) and you get this exact table:
 
-| Payload shape | Savings vs minified JSON | Why |
-|---|---:|---|
-| Homogeneous records — eval batches, uniform tool-call logs, tabular data | **~40%** | Auto-tabular packing emits repeated keys once; this is GLYPH's best case |
-| Structured traces — step logs with nested-but-repeated fields | **~25%** | Some repeated structure, but not fully tabular |
-| Nested chat-message state — multi-turn conversation history | **~1–2%** | Dominated by unique free-text content; punctuation savings apply to a small fraction of the payload |
+| Payload shape | Token savings (cl100k) | Bytes | Why |
+|---|---:|---:|---|
+| Homogeneous records — 40 uniform eval/log rows | **39.9%** | 61.6% | Auto-tabular packing emits repeated keys once; this is GLYPH's best case |
+| Structured trace — 12-step tool-call log, nested args | **24.2%** | 43.7% | Some repeated structure, but not fully tabular |
+| Nested chat-message state — multi-turn conversation history | **0.4%** (1.6% on o200k) | 11.8% | Dominated by unique free-text content; punctuation savings apply to a small fraction of the payload |
+| Prose-heavy document — long free-text sections | **−2.7%** (GLYPH larger) | 2.1% | Almost nothing repeated for tabular packing to work against |
 
-The gradient is the honest finding: **savings shrink toward zero, and can go negative, as payload content shifts from repeated structure toward unique prose.** A toy chat transcript we measured while writing this document — mostly long assistant/user message strings, punctuated by a couple of tool calls — came out at −4% (GLYPH *larger* in tokens than minified JSON), because tabular packing had almost nothing repeated to work against and structural savings were swamped by string content. Don't take "~40%" as a blanket number; measure your own payload shape before committing to GLYPH for a token-cost reason. If your reason is state identity or patch safety, the shape doesn't matter.
+The gradient is the honest finding: **savings shrink toward zero, and go negative, as payload content shifts from repeated structure toward unique prose.** Don't take "~40%" as a blanket number; measure your own payload shape (`bench/token_savings.py` is easy to point at your data) before committing to GLYPH for a token-cost reason. If your reason is state identity or patch safety, the shape doesn't matter.
 
 ## Install
 
