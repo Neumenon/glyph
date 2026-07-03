@@ -36,6 +36,7 @@ from glyph.stream import (
     FLAG_FINAL,
     Frame,
     MAX_PAYLOAD_SIZE,
+    MAX_HEADER_SIZE,
     ParseError,
     CRCMismatchError,
     BaseMismatchError,
@@ -354,6 +355,15 @@ class TestReader:
         wire = _encode(frame)
         got = _decode_one(wire)
         assert got.final is True
+
+    def test_header_too_long_rejected(self):
+        """go TestReader_HeaderTooLong: an over-long header line (no newline
+        within MAX_HEADER_SIZE bytes) is rejected without unbounded memory
+        allocation."""
+        prefix = b"@frame{v=1 sid=0 seq=0 kind=doc "
+        oversized = prefix + b"x" * (MAX_HEADER_SIZE + 1 - len(prefix))
+        with pytest.raises(ParseError):
+            Reader(io.BytesIO(oversized)).next()
 
 
 # ---------------------------------------------------------------------------

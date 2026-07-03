@@ -24,7 +24,7 @@ Example:
     Team{name=Arsenal rank=1}
 """
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 # Core types
 from .types import (
@@ -86,10 +86,12 @@ from .patch import (
     PathSeg,
     PathSegKind,
     parse_patch,
+    emit_patch,
     apply_patch,
     verify_patch_base,
     compute_base_fingerprint,
     PatchBaseMismatch,
+    diff,
 )
 
 # GS1 stream framing subpackage (accessible as glyph.stream)
@@ -155,8 +157,10 @@ __all__ = [
     "PathSeg",
     "PathSegKind",
     "parse_patch",
+    "emit_patch",
     "apply_patch",
     "verify_patch_base",
     "compute_base_fingerprint",
     "PatchBaseMismatch",
+    "diff",
 ]

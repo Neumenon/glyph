@@ -388,9 +388,15 @@ def _canonicalize_map(entries: List[MapEntry], opts: LooseCanonOpts) -> str:
 
 
 def _canonicalize_struct(type_name: str, fields: List[MapEntry], opts: LooseCanonOpts) -> str:
-    """Canonicalize a struct."""
+    """Canonicalize a struct.
+
+    Loose collapses structs to a plain map — sorted keys, NO TypeName
+    (CANONICAL_FORMS.md G1); TypeName is Typed-mode-only. Matches the Go
+    reference and JS. Python previously emitted "TypeName{...}" here, which
+    silently diverged struct fingerprints from Go/JS.
+    """
     if not fields:
-        return f"{type_name}{{}}"
+        return "{}"
 
     # Sort fields by canonical key
     sorted_fields = sorted(fields, key=lambda f: canon_string(f.key).encode('utf-8'))
@@ -401,16 +407,22 @@ def _canonicalize_struct(type_name: str, fields: List[MapEntry], opts: LooseCano
         val_str = _canonicalize_value(f.value, opts)
         parts.append(f"{key_str}={val_str}")
 
-    return f"{type_name}{{" + " ".join(parts) + "}"
+    return "{" + " ".join(parts) + "}"
 
 
 def _canonicalize_sum(tag: str, value: Optional[GValue], opts: LooseCanonOpts) -> str:
-    """Canonicalize a sum (tagged union)."""
+    """Canonicalize a sum (tagged union).
+
+    Loose is "{tag=value}" (CANONICAL_FORMS.md G2); the "Tag(value)" syntax is
+    Typed-mode-only. Matches the Go reference and JS. A tag with no payload
+    canonicalizes as {tag=_} (null payload), mirroring Go.
+    """
     tag_str = canon_string(tag)
     if value is None:
-        return f"{tag_str}()"
-    val_str = _canonicalize_value(value, opts)
-    return f"{tag_str}({val_str})"
+        val_str = _canonicalize_value(GValue.null(), opts)
+    else:
+        val_str = _canonicalize_value(value, opts)
+    return "{" + f"{tag_str}={val_str}" + "}"
 
 
 # ============================================================
@@ -638,8 +650,18 @@ def to_json_loose(v: GValue) -> Any:
 
 def fingerprint_loose(v: GValue, opts: Optional[LooseCanonOpts] = None) -> str:
     """
-    Compute SHA-256 fingerprint of canonical representation.
-    Returns hex string.
+    Compute the SHA-256 hex digest of the NO-tabular canonical form of v.
+    Returns a 64-character lowercase hex string that is byte-identical
+    across Go, Python, and JS for semantically equal values. This is the
+    value-identity digest (content hashing/dedup) — by default (opts=None)
+    it always uses the no-tabular form so the result does not depend on
+    cross-language agreement about tabular triggering thresholds.
+
+    Disambiguation: this is NOT a patch's base fingerprint
+    (compute_base_fingerprint / verify_patch_base / the @base= token), which
+    is 16 hex chars of SHA-256 over the WITH-tabular canonical form. Different
+    length, different pre-hash bytes — do not compare or substitute one for
+    the other.
     """
     if opts is None:
         opts = no_tabular_loose_canon_opts()  # Tabular affects fingerprint

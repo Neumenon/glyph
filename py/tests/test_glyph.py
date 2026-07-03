@@ -159,7 +159,10 @@ class TestCanonicalizeLoose:
             MapEntry("name", GValue.str_("Arsenal")),
             MapEntry("rank", GValue.int_(1))
         )
-        assert emit(v) == "Team{name=Arsenal rank=1}"
+        # Python's emit IS canonicalize_loose: Loose collapses structs to a
+        # plain map with no TypeName (CANONICAL_FORMS G1). Go's typed Emit
+        # keeps the TypeName; Python has no typed emitter yet (known gap).
+        assert emit(v) == "{name=Arsenal rank=1}"
 
     def test_id(self):
         assert emit(GValue.id("t", "ARS")) == "^t:ARS"
@@ -776,7 +779,8 @@ class TestLooseEdgeCases:
 
     def test_canonicalize_struct_empty(self):
         v = GValue.struct("Empty")
-        assert canonicalize_loose(v) == "Empty{}"
+        # Loose collapses structs to a plain map, no TypeName (CANONICAL_FORMS G1)
+        assert canonicalize_loose(v) == "{}"
 
     def test_canonicalize_struct_sorted(self):
         v = GValue.struct("S",
@@ -784,17 +788,18 @@ class TestLooseEdgeCases:
             MapEntry("a", GValue.int_(1))
         )
         result = canonicalize_loose(v)
-        assert result == "S{a=1 z=2}"
+        assert result == "{a=1 z=2}"
 
     def test_canonicalize_sum_empty(self):
         v = GValue.sum("None", None)
         result = canonicalize_loose(v)
-        assert result == "None()"
+        # Loose sum form is {tag=payload}, null payload -> _ (CANONICAL_FORMS G2)
+        assert result == "{None=_}"
 
     def test_canonicalize_sum_with_value(self):
         v = GValue.sum("Some", GValue.int_(42))
         result = canonicalize_loose(v)
-        assert result == "Some(42)"
+        assert result == "{Some=42}"
 
     def test_canonicalize_no_tabular(self):
         from glyph import canonicalize_loose_no_tabular

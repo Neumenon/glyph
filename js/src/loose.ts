@@ -1149,6 +1149,13 @@ function canonMapLooseWithOpts(entries: MapEntry[], opts: LooseCanonOpts): strin
  * not depend on cross-language agreement about tabular triggering thresholds
  * or escaping. Use canonicalizeLooseNoTabular for the pre-hash bytes.
  *
+ * Disambiguation: this is NOT the same digest as a patch's base fingerprint
+ * (verifyPatchBase / PatchBuilder.withBaseValue / the @base= token), which is
+ * 16 hex chars of SHA-256 over the WITH-tabular canonical form
+ * (canonicalizeLoose). Different length, different pre-hash bytes — do not
+ * compare or substitute one for the other. See the fingerprint
+ * disambiguation note above verifyPatchBase in patch.ts.
+ *
  * Node-only synchronous variant — uses node's crypto module. For browser/
  * async contexts, hash canonicalizeLooseNoTabular(v) with crypto.subtle.
  */

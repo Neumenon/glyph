@@ -616,7 +616,32 @@ func ResolvePathFIDs(path []PathSeg, rootType string, schema *Schema) error {
 // Paths must already be name-resolved (seg.Field populated). FID-mode patches —
 // whose parsed segments carry only a FID with an empty Field — must instead be
 // applied with ApplyPatchWithSchema, which runs the FID-resolution pre-pass.
+//
+// Base enforcement: if p carries a base fingerprint (p.BaseFingerprint != ""),
+// ApplyPatch first verifies it against v (equivalent to calling
+// VerifyPatchBase(v, p)) and returns a *PatchBaseMismatch without applying any
+// operation when it does not match. A patch with no recorded fingerprint is
+// applied unconditionally, exactly as before. Callers who have already
+// verified the base out-of-band (or who intentionally want to force-apply a
+// stale patch) should use ApplyPatchUnchecked instead.
 func ApplyPatch(v *GValue, p *Patch) (*GValue, error) {
+	if v == nil {
+		return nil, fmt.Errorf("cannot apply patch to nil value")
+	}
+	if err := VerifyPatchBase(v, p); err != nil {
+		return nil, err
+	}
+	return ApplyPatchUnchecked(v, p)
+}
+
+// ApplyPatchUnchecked applies a patch set to a value and returns the modified
+// copy WITHOUT verifying the patch's base fingerprint against v, even if one
+// is recorded on p. This is the pre-v2.4.1 ApplyPatch behavior, kept as an
+// explicit opt-out for callers who have already verified the base elsewhere
+// (e.g. a streaming cursor that checks it once per frame) or who intend to
+// force-apply despite a stale base. Prefer ApplyPatch unless you have a
+// specific reason to skip the check.
+func ApplyPatchUnchecked(v *GValue, p *Patch) (*GValue, error) {
 	if v == nil {
 		return nil, fmt.Errorf("cannot apply patch to nil value")
 	}
@@ -640,6 +665,10 @@ func ApplyPatch(v *GValue, p *Patch) (*GValue, error) {
 // Field) and then applies the patch. The root type for resolution is taken from
 // p.TargetType, falling back to the root struct's own type name when the patch
 // was parsed from wire text (which does not carry the type name).
+//
+// Base enforcement is inherited from ApplyPatch (called internally): a patch
+// carrying a base fingerprint is checked against v before any operation is
+// applied.
 func ApplyPatchWithSchema(v *GValue, p *Patch, schema *Schema) (*GValue, error) {
 	if v == nil {
 		return nil, fmt.Errorf("cannot apply patch to nil value")
@@ -1058,8 +1087,11 @@ func (pb *PatchBuilder) WithBaseFingerprint(fingerprint string) *PatchBuilder {
 	return pb
 }
 
-// WithBaseValue computes and sets the base fingerprint from a GValue.
-// Uses the SHA-256 hash of the loose canonical form.
+// WithBaseValue computes and sets the base fingerprint from a GValue: the
+// first 16 hex chars of SHA-256(CanonicalizeLoose(base)) — the WITH-tabular
+// canonical form. This is the patch base fingerprint, NOT FingerprintLoose
+// (64 hex, NO-tabular form); see the disambiguation note above
+// VerifyPatchBase. The two are not interchangeable.
 func (pb *PatchBuilder) WithBaseValue(base *GValue) *PatchBuilder {
 	// Compute hash of canonical form
 	canonical := CanonicalizeLoose(base)
@@ -1116,10 +1148,14 @@ func (pb *PatchBuilder) Build() *Patch {
 // Base-fingerprint verification
 // ============================================================
 
-// FingerprintMismatch is returned by VerifyPatchBase when the computed
+// FingerprintMismatch is returned by VerifyPatchBase (and, since ApplyPatch
+// verifies the base by default, by ApplyPatch itself) when the computed
 // fingerprint of the base document differs from the fingerprint recorded in
 // the patch. It is a typed error so callers can distinguish it from other
-// apply errors.
+// apply errors, e.g.:
+//
+//	var mismatch *glyph.FingerprintMismatch
+//	if errors.As(err, &mismatch) { ... }
 type FingerprintMismatch struct {
 	Got  string // fingerprint of the base document presented by the caller
 	Want string // fingerprint recorded in the patch
@@ -1129,24 +1165,53 @@ func (e *FingerprintMismatch) Error() string {
 	return fmt.Sprintf("patch base fingerprint mismatch: got %q, want %q", e.Got, e.Want)
 }
 
+// PatchBaseMismatch is FingerprintMismatch under the name used for this exact
+// error by the Python (PatchBaseMismatch) and JS (PatchBaseMismatch) ports.
+// It is a type alias, not a distinct type: a *FingerprintMismatch returned by
+// VerifyPatchBase or ApplyPatch already satisfies *PatchBaseMismatch, and
+// vice versa. Prefer whichever name reads better at the call site.
+type PatchBaseMismatch = FingerprintMismatch
+
+// ============================================================
+// Fingerprint disambiguation (read this before using either primitive)
+//
+// GLYPH has two same-shaped-but-different SHA-256 digests over a value's
+// canonical form. They are NOT interchangeable, are computed over different
+// canonicalizations, and are different lengths:
+//
+//   - Patch base fingerprint (VerifyPatchBase / WithBaseValue / the @base=
+//     token): first 16 hex chars of SHA-256(CanonicalizeLoose(v)) — the
+//     WITH-tabular canonical form (auto-tabular list encoding enabled). This
+//     is the cross-language patch-base contract; Go is the source of truth.
+//   - FingerprintLoose (go/glyph/loose.go): the full 64 hex chars of
+//     SHA-256(CanonicalizeLooseNoTabular(v)) — the NO-tabular canonical form.
+//     This is the value-identity digest used for content hashing/dedup.
+//
+// The two coincide only when v contains no auto-tabular-eligible list (so
+// WITH-tabular and NO-tabular canonicalization produce the same bytes) — do
+// not rely on that coincidence. Comparing a 16-hex patch base fingerprint
+// against a 64-hex FingerprintLoose value (or vice versa) is always a bug.
+// ============================================================
+
 // VerifyPatchBase is a read-only pre-flight check for standalone (non-streaming)
 // callers who hold both the current base document and an incoming patch.
 //
-// It computes SHA-256(CanonicalizeLoose(base)) and compares the first 16 hex
-// characters against patch.BaseFingerprint. If the fingerprints agree it
-// returns nil. If the patch carries no fingerprint (BaseFingerprint == "") it
-// also returns nil (opt-in: absence means "not checked").
+// It computes SHA-256(CanonicalizeLoose(base)) — the WITH-tabular canonical
+// form; see the fingerprint disambiguation note above — and compares the
+// first 16 hex characters against patch.BaseFingerprint. If the fingerprints
+// agree it returns nil. If the patch carries no fingerprint
+// (BaseFingerprint == "") it also returns nil (opt-in: absence means "not
+// checked").
 //
-// This closes the fingerprint-enforcement gap for the standalone ApplyPatch
-// path. The GS1 streaming cursor enforces the fingerprint on-stream; this
-// function is the equivalent for callers using ApplyPatch directly.
-//
-// Typical usage:
+// ApplyPatch calls this automatically before applying any operation; use
+// ApplyPatchUnchecked to skip it. This function remains public for callers
+// who want to verify ahead of time (e.g. to fail before allocating), or who
+// use ApplyPatchUnchecked and want the check back:
 //
 //	if err := VerifyPatchBase(base, patch); err != nil {
 //	    return nil, err
 //	}
-//	result, err := ApplyPatch(base, patch)
+//	result, err := ApplyPatchUnchecked(base, patch)
 func VerifyPatchBase(base *GValue, patch *Patch) error {
 	if patch == nil || patch.BaseFingerprint == "" {
 		return nil
@@ -1165,9 +1230,16 @@ func VerifyPatchBase(base *GValue, patch *Patch) error {
 // ============================================================
 
 // Diff computes the patch set needed to transform 'from' into 'to'.
+// The returned patch carries the base fingerprint of 'from' (same computation
+// as WithBaseValue), so ApplyPatch will reject it against any other state.
 func Diff(from, to *GValue, typeName string) *Patch {
 	p := NewPatch(RefID{}, "")
 	p.TargetType = typeName
+	if from != nil {
+		canonical := CanonicalizeLoose(from)
+		hash := sha256.Sum256([]byte(canonical))
+		p.BaseFingerprint = hex.EncodeToString(hash[:])[:16]
+	}
 	diffValues(from, to, nil, p)
 	return p
 }

@@ -108,6 +108,7 @@ export {
   PathSegKind,
   PatchBuilder,
   PatchEmitOptions,
+  ApplyPatchOptions,
   emitPatch,
   parsePatch,
   applyPatch,
@@ -115,6 +116,10 @@ export {
   fieldSeg,
   listIdxSeg,
   mapKeySeg,
+  verifyPatchBase,
+  computeBaseFingerprint,
+  PatchBaseMismatch,
+  diff,
 } from './patch';
 
 // Loose mode (schema-optional)
@@ -212,26 +217,31 @@ import { Schema } from './schema';
 import { GValue } from './types';
 
 /**
- * Convert JSON directly to packed GLYPH format
+ * Convert JSON directly to packed GLYPH format.
+ *
+ * Schema-driven emission wants typed values, so ref/date sniffing defaults ON
+ * here (unlike plain fromJson, which stays sniff-free for fingerprint parity).
  */
 export function jsonToPacked(
-  json: unknown, 
-  schema: Schema, 
+  json: unknown,
+  schema: Schema,
   options: FromJsonOptions & { typeName?: string } = {}
 ): string {
-  const gv = fromJson(json, { ...options, schema });
+  const gv = fromJson(json, { parseDates: true, parseRefs: true, ...options, schema });
   return emitPacked(gv, schema);
 }
 
 /**
- * Convert JSON directly to tabular GLYPH format
+ * Convert JSON directly to tabular GLYPH format.
+ *
+ * Sniffing defaults ON for the same reason as jsonToPacked.
  */
 export function jsonToTabular(
   json: unknown,
   schema: Schema,
   options: FromJsonOptions = {}
 ): string {
-  const gv = fromJson(json, { ...options, schema });
+  const gv = fromJson(json, { parseDates: true, parseRefs: true, ...options, schema });
   return emitTabular(gv, schema);
 }
 
@@ -243,7 +253,7 @@ export function jsonToLyph(
   schema: Schema,
   options: FromJsonOptions & V2Options = {}
 ): string {
-  const gv = fromJson(json, { ...options, schema });
+  const gv = fromJson(json, { parseDates: true, parseRefs: true, ...options, schema });
   return emitV2(gv, schema, options);
 }
 

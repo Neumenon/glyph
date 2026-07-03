@@ -250,13 +250,14 @@ export class PatchBuilder {
   }
 
   /**
-   * Compute and set the base fingerprint from a GValue.
-   * Uses the SHA-256 hash of the loose canonical form (first 16 hex chars).
+   * Compute and set the base fingerprint from a GValue: the first 16 hex
+   * chars of SHA-256(canonicalizeLoose(base)) — the WITH-tabular canonical
+   * form. This is the patch base fingerprint, NOT fingerprintLoose (64 hex,
+   * NO-tabular form; see the disambiguation note above verifyPatchBase). The
+   * two are not interchangeable.
    */
   withBaseValue(base: GValue): this {
-    const hash = stateHashLooseSync(base);
-    const hex = hashToHex(hash);
-    this.patch.baseFingerprint = hex.slice(0, 16);
+    this.patch.baseFingerprint = computeBaseFingerprint(base);
     return this;
   }
 
@@ -776,16 +777,108 @@ function tokenizeValues(s: string): string[] {
 }
 
 // ============================================================
+// Base-fingerprint verification
+//
+// Fingerprint disambiguation (read this before using either primitive):
+// GLYPH has two same-shaped-but-different SHA-256 digests over a value's
+// canonical form. They are NOT interchangeable, are computed over different
+// canonicalizations, and are different lengths:
+//
+//   - Patch base fingerprint (verifyPatchBase / withBaseValue / the @base=
+//     token): first 16 hex chars of SHA-256(canonicalizeLoose(v)) — the
+//     WITH-tabular canonical form (auto-tabular list encoding enabled). This
+//     is the cross-language patch-base contract; Go is the source of truth.
+//   - fingerprintLoose (loose.ts): the full 64 hex chars of
+//     SHA-256(canonicalizeLooseNoTabular(v)) — the NO-tabular canonical form.
+//     This is the value-identity digest used for content hashing/dedup.
+//
+// The two coincide only when v contains no auto-tabular-eligible list (so
+// WITH-tabular and NO-tabular canonicalization produce the same bytes) — do
+// not rely on that coincidence. Comparing a 16-hex patch base fingerprint
+// against a 64-hex fingerprintLoose value (or vice versa) is always a bug.
+// ============================================================
+
+/**
+ * Raised (thrown) when a patch's recorded base fingerprint does not match
+ * the base state presented to verifyPatchBase / applyPatch. Mirrors Go's
+ * FingerprintMismatch / PatchBaseMismatch and Python's PatchBaseMismatch.
+ */
+export class PatchBaseMismatch extends Error {
+  got: string;
+  want: string;
+
+  constructor(got: string, want: string) {
+    super(`patch base fingerprint mismatch: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    this.name = 'PatchBaseMismatch';
+    this.got = got;
+    this.want = want;
+  }
+}
+
+/**
+ * Compute the 16-hex patch base fingerprint of a value: the first 16 hex
+ * chars of SHA-256(canonicalizeLoose(v)) — the WITH-tabular canonical form.
+ * See the fingerprint disambiguation note above.
+ */
+export function computeBaseFingerprint(v: GValue): string {
+  const hash = stateHashLooseSync(v);
+  return hashToHex(hash).slice(0, 16);
+}
+
+/**
+ * Verify a patch's recorded base fingerprint against the base state.
+ *
+ * No-op when the patch records no base (patch.baseFingerprint falsy) —
+ * mirrors Go VerifyPatchBase / Python verify_patch_base. Throws
+ * PatchBaseMismatch when the recomputed fingerprint differs.
+ *
+ * applyPatch calls this automatically (unless { verifyBase: false } is
+ * passed) before applying any operation. This function remains exported for
+ * callers who want to verify ahead of time, or who use
+ * applyPatch(..., { verifyBase: false }) and want the check back.
+ */
+export function verifyPatchBase(base: GValue, patch: Patch): void {
+  if (!patch.baseFingerprint) return;
+  const got = computeBaseFingerprint(base);
+  if (got !== patch.baseFingerprint) {
+    throw new PatchBaseMismatch(got, patch.baseFingerprint);
+  }
+}
+
+// ============================================================
 // Patch Apply
 // ============================================================
 
-export function applyPatch(value: GValue, patch: Patch): GValue {
+export interface ApplyPatchOptions {
+  /**
+   * Verify the patch's recorded base fingerprint (if any) against value
+   * before applying any operation. Defaults to true. Pass false to skip the
+   * check entirely — e.g. a caller that has already verified the base
+   * out-of-band, or that intentionally wants to force-apply a stale patch.
+   */
+  verifyBase?: boolean;
+}
+
+/**
+ * Apply a patch to a GValue and return the modified copy.
+ *
+ * Base enforcement: when patch carries a base fingerprint
+ * (patch.baseFingerprint is truthy) and options.verifyBase is not false (the
+ * default), this verifies it against value via verifyPatchBase BEFORE
+ * applying any operation, throwing PatchBaseMismatch on a stale base. A
+ * patch with no recorded fingerprint is applied unconditionally either way.
+ */
+export function applyPatch(value: GValue, patch: Patch, options: ApplyPatchOptions = {}): GValue {
+  if (options.verifyBase !== false) {
+    verifyPatchBase(value, patch);
+  }
+
   let result = value.clone();
-  
+
   for (const op of patch.ops) {
     result = applyOp(result, op);
   }
-  
+
   return result;
 }
 
@@ -924,4 +1017,214 @@ function applyToParent(value: GValue, seg: PathSeg, op: PatchOp): GValue {
 function canonRef(ref: RefID): string {
   const full = ref.prefix ? `${ref.prefix}:${ref.value}` : ref.value;
   return `^${full}`;
+}
+
+// ============================================================
+// Diff Generation
+//
+// Port of Go's Diff (emit_patch.go): same semantics, including whole-list
+// replace on any list change (no per-index diffing) and the narrow
+// valuesEqual type coverage below (map/bytes/time/sum values are never
+// considered equal, so a list containing them is always replaced wholesale
+// on any diff — this mirrors Go's behavior exactly, not an improvement).
+// ============================================================
+
+/**
+ * Compute the patch set needed to transform `from` into `to`. Mirrors Go's
+ * Diff(from, to, typeName): the returned patch has a zero-value target and
+ * empty schema id (Diff does not scope to a target document); set
+ * patch.target before emitting/sending if needed. It carries the base
+ * fingerprint of `from` (same computation as computeBaseFingerprint), so
+ * applyPatch rejects it against any other state.
+ */
+export function diff(from: GValue | undefined | null, to: GValue | undefined | null, typeName?: string): Patch {
+  const p: Patch = {
+    target: { prefix: '', value: '' },
+    ops: [],
+  };
+  if (typeName) {
+    p.targetType = typeName;
+  }
+  if (from != null) {
+    p.baseFingerprint = computeBaseFingerprint(from);
+  }
+  diffValues(from ?? undefined, to ?? undefined, [], p);
+  return p;
+}
+
+function copyPath(path: PathSeg[]): PathSeg[] {
+  return path.slice();
+}
+
+function diffValues(from: GValue | undefined, to: GValue | undefined, path: PathSeg[], p: Patch): void {
+  if (from === undefined && to === undefined) {
+    return;
+  }
+  if (from === undefined) {
+    p.ops.push({ op: '=', path: copyPath(path), value: to });
+    return;
+  }
+  if (to === undefined) {
+    if (path.length > 0) {
+      p.ops.push({ op: '-', path: copyPath(path) });
+    }
+    return;
+  }
+  if (from.type !== to.type) {
+    p.ops.push({ op: '=', path: copyPath(path), value: to });
+    return;
+  }
+
+  switch (from.type) {
+    case 'null':
+      // Both null, no change.
+      break;
+
+    case 'bool':
+      if (from.asBool() !== to.asBool()) {
+        p.ops.push({ op: '=', path: copyPath(path), value: to });
+      }
+      break;
+
+    case 'int':
+      if (from.asInt() !== to.asInt()) {
+        p.ops.push({ op: '=', path: copyPath(path), value: to });
+      }
+      break;
+
+    case 'float':
+      if (from.asFloat() !== to.asFloat()) {
+        p.ops.push({ op: '=', path: copyPath(path), value: to });
+      }
+      break;
+
+    case 'str':
+      if (from.asStr() !== to.asStr()) {
+        p.ops.push({ op: '=', path: copyPath(path), value: to });
+      }
+      break;
+
+    case 'id': {
+      const a = from.asId();
+      const b = to.asId();
+      if (a.prefix !== b.prefix || a.value !== b.value) {
+        p.ops.push({ op: '=', path: copyPath(path), value: to });
+      }
+      break;
+    }
+
+    case 'struct':
+      diffStructValues(from, to, path, p);
+      break;
+
+    case 'map':
+      diffMapValues(from, to, path, p);
+      break;
+
+    case 'list':
+      // For now, just replace if different (whole-list replace, matches Go).
+      if (!listsEqual(from.asList(), to.asList())) {
+        p.ops.push({ op: '=', path: copyPath(path), value: to });
+      }
+      break;
+
+    default:
+      // Other types: replace if not equal.
+      p.ops.push({ op: '=', path: copyPath(path), value: to });
+      break;
+  }
+}
+
+function diffStructValues(from: GValue, to: GValue, path: PathSeg[], p: Patch): void {
+  const fromFields = new Map<string, GValue>();
+  for (const f of from.asStruct().fields) {
+    fromFields.set(f.key, f.value);
+  }
+  const toFields = new Map<string, GValue>();
+  for (const f of to.asStruct().fields) {
+    toFields.set(f.key, f.value);
+  }
+
+  for (const [key, toVal] of toFields) {
+    const fromVal = fromFields.get(key);
+    diffValues(fromVal, toVal, [...copyPath(path), fieldSeg(key)], p);
+  }
+
+  for (const key of fromFields.keys()) {
+    if (!toFields.has(key)) {
+      p.ops.push({ op: '-', path: [...copyPath(path), fieldSeg(key)] });
+    }
+  }
+}
+
+function diffMapValues(from: GValue, to: GValue, path: PathSeg[], p: Patch): void {
+  const fromMap = new Map<string, GValue>();
+  for (const e of from.asMap()) {
+    fromMap.set(e.key, e.value);
+  }
+  const toMap = new Map<string, GValue>();
+  for (const e of to.asMap()) {
+    toMap.set(e.key, e.value);
+  }
+
+  for (const [key, toVal] of toMap) {
+    const fromVal = fromMap.get(key);
+    diffValues(fromVal, toVal, [...copyPath(path), mapKeySeg(key)], p);
+  }
+
+  for (const key of fromMap.keys()) {
+    if (!toMap.has(key)) {
+      p.ops.push({ op: '-', path: [...copyPath(path), mapKeySeg(key)] });
+    }
+  }
+}
+
+function listsEqual(a: GValue[], b: GValue[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!valuesEqual(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+function valuesEqual(a: GValue | undefined | null, b: GValue | undefined | null): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  if (a.type !== b.type) return false;
+
+  switch (a.type) {
+    case 'null':
+      return true;
+    case 'bool':
+      return a.asBool() === (b as GValue).asBool();
+    case 'int':
+      return a.asInt() === (b as GValue).asInt();
+    case 'float':
+      return a.asFloat() === (b as GValue).asFloat();
+    case 'str':
+      return a.asStr() === (b as GValue).asStr();
+    case 'id': {
+      const ai = a.asId();
+      const bi = (b as GValue).asId();
+      return ai.prefix === bi.prefix && ai.value === bi.value;
+    }
+    case 'list':
+      return listsEqual(a.asList(), (b as GValue).asList());
+    case 'struct': {
+      const as = a.asStruct();
+      const bs = (b as GValue).asStruct();
+      if (as.typeName !== bs.typeName) return false;
+      if (as.fields.length !== bs.fields.length) return false;
+      const aFields = new Map<string, GValue>();
+      for (const f of as.fields) aFields.set(f.key, f.value);
+      for (const f of bs.fields) {
+        if (!valuesEqual(aFields.get(f.key), f.value)) return false;
+      }
+      return true;
+    }
+    // map/bytes/time/sum: not covered, mirrors Go's valuesEqual default case
+    // (always unequal) — see the module doc comment above.
+    default:
+      return false;
+  }
 }

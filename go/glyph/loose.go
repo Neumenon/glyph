@@ -125,6 +125,13 @@ func writeCanonBytes(b *strings.Builder, data []byte) {
 // Tabular form is excluded from the hash so that fingerprint stability does
 // not depend on cross-language agreement about tabular triggering thresholds
 // or escaping. Use CanonicalizeLooseNoTabular for the pre-hash bytes.
+//
+// Disambiguation: this is NOT the same digest as a patch's base fingerprint
+// (VerifyPatchBase / PatchBuilder.WithBaseValue / the @base= token), which is
+// 16 hex chars of SHA-256 over the WITH-tabular canonical form
+// (CanonicalizeLoose). Different length, different pre-hash bytes — do not
+// compare or substitute one for the other. See the fingerprint
+// disambiguation note above VerifyPatchBase in emit_patch.go.
 func FingerprintLoose(v *GValue) string {
 	canonical := CanonicalizeLooseWithOpts(v, NoTabularLooseCanonOpts())
 	sum := sha256.Sum256([]byte(canonical))

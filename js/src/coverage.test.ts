@@ -649,7 +649,7 @@ describe('JSON coverage', () => {
   });
 
   test('fromJson ref without prefix', () => {
-    const result = fromJson('^SOMETHING');
+    const result = fromJson('^SOMETHING', { parseRefs: true });
     expect(result.type).toBe('id');
     expect(result.asId().prefix).toBe('');
     expect(result.asId().value).toBe('SOMETHING');

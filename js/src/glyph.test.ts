@@ -10,6 +10,7 @@ import {
   parsePacked, parseTabular, parseHeader,
   jsonToPacked, jsonToLyph, compareTokens,
   PatchBuilder, emitPatch, parsePatch, applyPatch,
+  diff, verifyPatchBase, computeBaseFingerprint, PatchBaseMismatch,
   canonicalizeLoose, canonicalizeLooseNoTabular, canonicalizeLooseWithOpts,
   equalLoose, fromJsonLoose, toJsonLoose, jsonEqual,
   parseTabularLoose, unescapeTabularCell,
@@ -151,16 +152,24 @@ describe('JSON conversion', () => {
     expect(fromJson('hello').asStr()).toBe('hello');
   });
 
-  test('fromJson ref', () => {
-    const v = fromJson('^t:ARS');
+  test('fromJson ref (opt-in)', () => {
+    const v = fromJson('^t:ARS', { parseRefs: true });
     expect(v.type).toBe('id');
     expect(v.asId().prefix).toBe('t');
     expect(v.asId().value).toBe('ARS');
   });
 
-  test('fromJson date', () => {
-    const v = fromJson('2025-12-19T10:30:00Z');
+  test('fromJson date (opt-in)', () => {
+    const v = fromJson('2025-12-19T10:30:00Z', { parseDates: true });
     expect(v.type).toBe('time');
+  });
+
+  test('fromJson defaults never sniff strings (fingerprint parity)', () => {
+    // Default fromJson must keep strings as strings, matching fromJsonLoose,
+    // Go FromJSONLoose, and Python from_json_loose — otherwise the same JSON
+    // canonicalizes to different bytes (and SHA-256) depending on entrypoint.
+    expect(fromJson('^t:ARS').type).toBe('str');
+    expect(fromJson('2025-12-19T10:30:00Z').type).toBe('str');
   });
 
   test('fromJson array', () => {
@@ -524,6 +533,239 @@ describe('Patch', () => {
 @end`;
 
     expect(() => parsePatch(input)).toThrow('invalid patch index');
+  });
+});
+
+// ============================================================
+// applyPatch — base fingerprint enforcement at apply time
+//
+// applyPatch must verify a patch's recorded base fingerprint against the
+// value being patched BEFORE applying any operation — callers must no
+// longer remember to call verifyPatchBase separately.
+// ============================================================
+
+describe('applyPatch base fingerprint enforcement', () => {
+  test('matching base applies', () => {
+    const base = g.map(field('a', g.int(1)), field('b', g.int(2)));
+    const patch = new PatchBuilder({ prefix: 'm', value: '1' })
+      .withBaseValue(base)
+      .set('a', g.int(9))
+      .build();
+
+    const result = applyPatch(base, patch);
+    expect(result.get('a')?.asInt()).toBe(9);
+  });
+
+  test('stale base throws PatchBaseMismatch without an explicit verifyPatchBase call', () => {
+    const base = g.map(field('a', g.int(1)), field('b', g.int(2)));
+    const patch = new PatchBuilder({ prefix: 'm', value: '1' })
+      .withBaseValue(base)
+      .set('a', g.int(9))
+      .build();
+    const stale = g.map(field('a', g.int(1)), field('b', g.int(999)));
+
+    expect(() => applyPatch(stale, patch)).toThrow(PatchBaseMismatch);
+    // The stale value must be untouched.
+    expect(stale.get('b')?.asInt()).toBe(999);
+  });
+
+  test('no recorded base fingerprint applies unconditionally', () => {
+    const patch = new PatchBuilder({ prefix: 'm', value: '1' }).set('a', g.int(9)).build();
+    const result = applyPatch(g.map(field('a', g.int(1))), patch);
+    expect(result.get('a')?.asInt()).toBe(9);
+  });
+
+  test('{ verifyBase: false } is the explicit opt-out', () => {
+    const base = g.map(field('a', g.int(1)), field('b', g.int(2)));
+    const patch = new PatchBuilder({ prefix: 'm', value: '1' })
+      .withBaseValue(base)
+      .set('a', g.int(9))
+      .build();
+    const stale = g.map(field('a', g.int(1)), field('b', g.int(999)));
+
+    // Sanity: the default (checked) path rejects this combination.
+    expect(() => applyPatch(stale, patch)).toThrow(PatchBaseMismatch);
+
+    // verifyBase: false forces the apply through despite the stale base.
+    const result = applyPatch(stale, patch, { verifyBase: false });
+    expect(result.get('a')?.asInt()).toBe(9);
+  });
+});
+
+// ============================================================
+// diff() — auto-generate a patch from two states
+//
+// Port of Go's TestDiff / TestDiffWithDeletion: diff() must detect changed,
+// added, and deleted fields and leave unchanged fields untouched, matching
+// Go's Diff(from, to, typeName) semantics exactly (including whole-list
+// replace on any list change — no per-index diffing).
+// ============================================================
+
+describe('diff', () => {
+  test('scalar changes and additions', () => {
+    const from = g.struct('Match',
+      field('id', g.int(123)),
+      field('score', g.int(0)),
+      field('status', g.str('pending')),
+    );
+    const to = g.struct('Match',
+      field('id', g.int(123)),
+      field('score', g.int(3)),
+      field('status', g.str('finished')),
+      field('winner', g.str('home')),
+    );
+
+    const patch = diff(from, to, 'Match');
+    const byField = new Map(patch.ops.map(op => [op.path[0].field, op]));
+
+    expect(byField.has('id')).toBe(false); // unchanged field: no op emitted
+    expect(byField.get('score')?.op).toBe('=');
+    expect(byField.get('score')?.value?.asInt()).toBe(3);
+    expect(byField.get('status')?.value?.asStr()).toBe('finished');
+    expect(byField.get('winner')?.value?.asStr()).toBe('home');
+  });
+
+  test('deleted fields emit delete ops', () => {
+    const from = g.struct('Match',
+      field('id', g.int(123)),
+      field('odds', g.float(1.5)),
+      field('pred', g.str('home')),
+    );
+    const to = g.struct('Match', field('id', g.int(123)));
+
+    const patch = diff(from, to, 'Match');
+    const deletes = new Set(patch.ops.filter(op => op.op === '-').map(op => op.path[0].field));
+    expect(deletes).toEqual(new Set(['odds', 'pred']));
+  });
+
+  test('no change produces an empty patch', () => {
+    const from = g.struct('M', field('x', g.int(1)));
+    const to = g.struct('M', field('x', g.int(1)));
+    expect(diff(from, to, 'M').ops).toEqual([]);
+  });
+
+  test('list change is a whole-list replace', () => {
+    const from = g.struct('M', field('items', g.list(g.int(1), g.int(2), g.int(3))));
+    const to = g.struct('M', field('items', g.list(g.int(1), g.int(9), g.int(3), g.int(4))));
+
+    const patch = diff(from, to, 'M');
+    expect(patch.ops.length).toBe(1);
+    expect(patch.ops[0].op).toBe('=');
+    expect(patch.ops[0].path[0].field).toBe('items');
+    expect(patch.ops[0].value?.asList().map(v => v.asInt())).toEqual([1, 9, 3, 4]);
+  });
+
+  test('nested struct change', () => {
+    const from = g.struct('M', field('outer', g.struct('N', field('inner', g.struct('O', field('x', g.int(1)))))));
+    const to = g.struct('M', field('outer', g.struct('N', field('inner', g.struct('O', field('x', g.int(99)))))));
+
+    const patch = diff(from, to, 'M');
+    expect(patch.ops.length).toBe(1);
+    expect(patch.ops[0].path.map(seg => seg.field)).toEqual(['outer', 'inner', 'x']);
+    expect(patch.ops[0].value?.asInt()).toBe(99);
+  });
+});
+
+// ============================================================
+// diff() + applyPatch() round trip
+//
+// Invariant (mirrors Go's TestPatchRoundTripProperty):
+//   applyPatch(base, parsePatch(emitPatch(diff(base, next)))) === next
+// ============================================================
+
+describe('diff + applyPatch round trip', () => {
+  function roundTrip(base: GValue, next: GValue, typeName = 'M'): GValue {
+    const patch = diff(base, next, typeName);
+    const emitted = emitPatch(patch);
+    const parsed = parsePatch(emitted);
+    return applyPatch(base, parsed);
+  }
+
+  test('scalar fields round trip', () => {
+    const base = g.struct('M',
+      field('ok', g.bool(false)),
+      field('count', g.int(10)),
+      field('rate', g.float(1.5)),
+      field('label', g.str('old')),
+    );
+    const next = g.struct('M',
+      field('ok', g.bool(true)),
+      field('count', g.int(42)),
+      field('rate', g.float(3.14)),
+      field('label', g.str('new')),
+    );
+
+    const result = roundTrip(base, next);
+    expect(result.get('ok')?.asBool()).toBe(true);
+    expect(result.get('count')?.asInt()).toBe(42);
+    expect(result.get('rate')?.asFloat()).toBeCloseTo(3.14);
+    expect(result.get('label')?.asStr()).toBe('new');
+  });
+
+  test('added and deleted fields round trip', () => {
+    const base = g.struct('M', field('id', g.int(123)), field('odds', g.float(1.5)));
+    const next = g.struct('M', field('id', g.int(123)), field('winner', g.str('home')));
+
+    const result = roundTrip(base, next);
+    expect(result.get('id')?.asInt()).toBe(123);
+    expect(result.get('odds')).toBeNull();
+    expect(result.get('winner')?.asStr()).toBe('home');
+  });
+
+  test('list replace round trip', () => {
+    const base = g.struct('M', field('items', g.list(g.int(1), g.int(2), g.int(3))));
+    const next = g.struct('M', field('items', g.list(g.int(1), g.int(9), g.int(3), g.int(4))));
+
+    const result = roundTrip(base, next);
+    expect(result.get('items')?.asList().map(v => v.asInt())).toEqual([1, 9, 3, 4]);
+  });
+
+  test('nested struct round trip', () => {
+    const base = g.struct('M', field('outer', g.struct('N', field('inner', g.struct('O', field('x', g.int(1)))))));
+    const next = g.struct('M', field('outer', g.struct('N', field('inner', g.struct('O', field('x', g.int(99)))))));
+
+    const result = roundTrip(base, next);
+    expect(result.get('outer')?.get('inner')?.get('x')?.asInt()).toBe(99);
+  });
+});
+
+// ============================================================
+// diff() + emitPatch() — cross-language identical text
+//
+// The exact bytes emitted for this from/to pair are pinned from the Go
+// reference implementation (go/glyph/patch_roundtrip_test.go
+// TestDiffEmitCrossLanguageGolden) and must be byte-identical to the Python
+// port (py/tests/test_patch.py TestDiffEmitCrossLanguageGolden) — the whole
+// point of a shared wire format.
+// ============================================================
+
+describe('diff + emitPatch cross-language golden', () => {
+  const GOLDEN = [
+    '@patch @keys=wire @target=m:123 @base=4f9708ac7bbe01e1',
+    '- active',
+    '= count 42',
+    '= extra added',
+    '= label new',
+    '@end',
+  ].join('\n');
+
+  test('matches Go and Python', () => {
+    const from = g.struct('M',
+      field('count', g.int(10)),
+      field('label', g.str('old')),
+      field('rate', g.float(1.5)),
+      field('active', g.bool(false)),
+    );
+    const to = g.struct('M',
+      field('count', g.int(42)),
+      field('label', g.str('new')),
+      field('rate', g.float(1.5)),
+      field('extra', g.str('added')),
+    );
+
+    const patch = diff(from, to, 'M');
+    patch.target = { prefix: 'm', value: '123' };
+    expect(emitPatch(patch)).toBe(GOLDEN);
   });
 });
 

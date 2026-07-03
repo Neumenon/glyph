@@ -337,4 +337,121 @@ func TestPatchRoundTripProperty(t *testing.T) {
 			t.Errorf("VerifyPatchBase with no fingerprint: %v", err)
 		}
 	})
+
+	t.Run("apply-enforces-base-by-default", func(t *testing.T) {
+		// Subcase 11: ApplyPatch itself must verify a recorded base fingerprint
+		// (not just VerifyPatchBase, which callers had to remember to invoke
+		// separately) and must fail loudly, without applying any operation, on
+		// a stale base.
+		base := Struct("M", FieldVal("x", Int(1)))
+		pb := NewPatchBuilder(RefID{}).WithBaseValue(base)
+		pb.Set("x", Int(2))
+		patch := pb.Build()
+
+		// Matching base: applies normally.
+		result, err := ApplyPatch(base, patch)
+		if err != nil {
+			t.Fatalf("ApplyPatch on matching base: %v", err)
+		}
+		if result.Get("x").intVal != 2 {
+			t.Errorf("expected x=2, got %d", result.Get("x").intVal)
+		}
+
+		// Stale/mutated base: ApplyPatch must reject before applying, with a
+		// typed *PatchBaseMismatch (alias of *FingerprintMismatch).
+		stale := Struct("M", FieldVal("x", Int(99)))
+		_, err = ApplyPatch(stale, patch)
+		if err == nil {
+			t.Fatal("expected ApplyPatch to reject a stale base, got nil error")
+		}
+		mismatch, ok := err.(*PatchBaseMismatch)
+		if !ok {
+			t.Fatalf("expected *PatchBaseMismatch, got %T: %v", err, err)
+		}
+		if mismatch.Want != patch.BaseFingerprint {
+			t.Errorf("expected mismatch.Want = %q, got %q", patch.BaseFingerprint, mismatch.Want)
+		}
+
+		// The stale value itself must be untouched (ApplyPatch never mutates
+		// its input, but this also guards against a check that runs too late).
+		if stale.Get("x").intVal != 99 {
+			t.Errorf("stale base was mutated: x = %d", stale.Get("x").intVal)
+		}
+
+		// No base fingerprint recorded: applies unconditionally, as before.
+		bare := NewPatch(RefID{}, "")
+		bare.Ops = append(bare.Ops, &PatchOp{Op: OpSet, Path: []PathSeg{FieldSeg("x", 0)}, Value: Int(3)})
+		result, err = ApplyPatch(stale, bare)
+		if err != nil {
+			t.Fatalf("ApplyPatch with no base fingerprint: %v", err)
+		}
+		if result.Get("x").intVal != 3 {
+			t.Errorf("expected x=3, got %d", result.Get("x").intVal)
+		}
+	})
+
+	t.Run("apply-unchecked-skips-base-verification", func(t *testing.T) {
+		// Subcase 12: ApplyPatchUnchecked is the explicit opt-out — it must
+		// apply successfully even against a base that does not match the
+		// patch's recorded fingerprint.
+		base := Struct("M", FieldVal("x", Int(1)))
+		pb := NewPatchBuilder(RefID{}).WithBaseValue(base)
+		pb.Set("x", Int(2))
+		patch := pb.Build()
+
+		stale := Struct("M", FieldVal("x", Int(99)))
+
+		// Sanity: the checked path rejects this combination.
+		if _, err := ApplyPatch(stale, patch); err == nil {
+			t.Fatal("expected ApplyPatch to reject stale base (sanity check)")
+		}
+
+		// ApplyPatchUnchecked applies regardless.
+		result, err := ApplyPatchUnchecked(stale, patch)
+		if err != nil {
+			t.Fatalf("ApplyPatchUnchecked: %v", err)
+		}
+		if result.Get("x").intVal != 2 {
+			t.Errorf("expected x=2, got %d", result.Get("x").intVal)
+		}
+	})
+}
+
+// TestDiffEmitCrossLanguageGolden pins the exact bytes Diff+EmitPatch produce
+// for a fixed from/to pair. Go is the reference implementation for this
+// string: the Python (py/tests/test_patch.py TestDiffEmitCrossLanguageGolden)
+// and JS (js/src/glyph.test.ts) ports assert the identical literal, so this
+// test fails loudly if Go's own output ever drifts out from under them.
+func TestDiffEmitCrossLanguageGolden(t *testing.T) {
+	from := Struct("M",
+		FieldVal("count", Int(10)),
+		FieldVal("label", Str("old")),
+		FieldVal("rate", Float(1.5)),
+		FieldVal("active", Bool(false)),
+	)
+	to := Struct("M",
+		FieldVal("count", Int(42)),
+		FieldVal("label", Str("new")),
+		FieldVal("rate", Float(1.5)),
+		FieldVal("extra", Str("added")),
+	)
+
+	patch := Diff(from, to, "M")
+	patch.Target = RefID{Prefix: "m", Value: "123"}
+
+	got, err := EmitPatch(patch, nil)
+	if err != nil {
+		t.Fatalf("EmitPatch: %v", err)
+	}
+
+	want := "@patch @keys=wire @target=m:123 @base=4f9708ac7bbe01e1\n" +
+		"- active\n" +
+		"= count 42\n" +
+		"= extra added\n" +
+		"= label new\n" +
+		"@end"
+
+	if got != want {
+		t.Errorf("cross-language golden mismatch\nwant:\n%s\ngot:\n%s", want, got)
+	}
 }

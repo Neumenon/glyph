@@ -157,7 +157,16 @@ def error(code: str, msg: str, sid: int, seq: int) -> GValue:
 # ---------------------------------------------------------------------------
 
 def emit_ui(v: GValue) -> bytes:
-    """Emit any UI event value as UTF-8 bytes."""
+    """Emit any UI event value as UTF-8 bytes (typed form, matching Go EmitUI).
+
+    Go's EmitUI uses the typed emitter, which keeps the struct type name —
+    parse_ui_event requires a struct. canonicalize_loose collapses structs to
+    a plain map (CANONICAL_FORMS.md G1), which would break both round-trip
+    and byte-parity with Go frames. UI event type names (ui.progress, …) are
+    lexer-safe, so prefixing the loose body reproduces Go's bytes exactly.
+    """
+    if v.type.value == "struct":
+        return (v.as_struct().type_name + canonicalize_loose(v)).encode("utf-8")
     return canonicalize_loose(v).encode("utf-8")
 
 

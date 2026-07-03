@@ -26,7 +26,16 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from .types import GType, GValue, MapEntry, StructValue
-from .loose import canonicalize_loose
+from .loose import (
+    canonicalize_loose,
+    canon_int,
+    canon_float,
+    canon_string,
+    canon_id,
+    canon_bytes,
+    canon_time,
+    escape_string,
+)
 
 
 class PatchOpKind(Enum):
@@ -68,6 +77,11 @@ class Patch:
     # baseFingerprint (Go is the cross-language source of truth for @base) so a
     # Python receiver can verify a Go/JS-emitted patch.
     base_fingerprint: str = ""
+    # Root type name, set by diff() (mirrors Go Patch.TargetType / JS
+    # patch.targetType). Python has no schema/FID resolution pass yet, so this
+    # is carried for signature parity with Go's Diff(from, to, typeName) but
+    # is not otherwise consumed.
+    target_type: str = ""
 
 
 # Base-fingerprint length (hex chars). Mirrors Go/JS: first 16 of the SHA-256.
@@ -108,9 +122,12 @@ def verify_patch_base(base: GValue, patch: Patch) -> None:
     """Verify a patch's recorded base fingerprint against the base state.
 
     No-op when the patch records no base (mirrors Go VerifyPatchBase). Raises
-    PatchBaseMismatch when the recomputed fingerprint differs. Standalone
-    apply_patch does NOT call this — callers verify before applying, exactly as
-    the Go/JS standalone APIs do (the GS1 cursor layer enforces on the stream).
+    PatchBaseMismatch when the recomputed fingerprint differs.
+
+    apply_patch calls this automatically (unless verify_base=False is passed)
+    before applying any operation. This function remains public for callers
+    who want to verify ahead of time, or who use apply_patch(..., verify_base=
+    False) and want the check back.
     """
     if not patch.base_fingerprint:
         return
@@ -355,8 +372,22 @@ def _split_next_value(s: str) -> tuple[str, str]:
     return s[:idx], s[idx:]
 
 
-def apply_patch(value: GValue, patch: Patch) -> GValue:
-    """Apply a patch to a GValue and return the modified copy."""
+def apply_patch(value: GValue, patch: Patch, verify_base: bool = True) -> GValue:
+    """Apply a patch to a GValue and return the modified copy.
+
+    Base enforcement: when patch carries a base fingerprint
+    (patch.base_fingerprint is non-empty) and verify_base is True (the
+    default), this verifies it against value via verify_patch_base BEFORE
+    applying any operation, raising PatchBaseMismatch on a stale base. A
+    patch with no recorded fingerprint is applied unconditionally either way.
+
+    Pass verify_base=False to skip the check entirely — e.g. a caller that
+    has already verified the base out-of-band, or that intentionally wants
+    to force-apply a stale patch.
+    """
+    if verify_base:
+        verify_patch_base(value, patch)
+
     result = _deep_copy_gvalue(value)
 
     for op in patch.ops:
@@ -485,3 +516,307 @@ def _delete_field(v: GValue, key: str) -> None:
         v._map = [f for f in v._map if f.key != key]
     else:
         raise ValueError(f"cannot delete field from {v.type.value}")
+
+
+# ============================================================
+# Patch Emit (schema-less / generic — mirrors Go EmitPatch(schema=nil) and
+# JS emitPatch({}))
+#
+# Python has no schema-driven patch builder yet (no FID resolution, no
+# packed-struct wire keys), so this only supports the "wire" key mode with
+# plain field names — the same fallback path Go/JS use when no schema is
+# given. This is enough to emit patches built by diff() below, and to
+# round-trip anything parse_patch can read back.
+# ============================================================
+
+
+def _is_letter_patch(c: str) -> bool:
+    return ("a" <= c <= "z") or ("A" <= c <= "Z")
+
+
+def _is_digit_patch(c: str) -> bool:
+    return "0" <= c <= "9"
+
+
+def _path_needs_quoting(s: str) -> bool:
+    """Mirrors Go emit_patch.go needsQuoting for PATH field segments — a
+    separate, more permissive rule than canon_string's value-quoting rule
+    (allows '-' after the first character; no reserved-word exclusion)."""
+    if not s:
+        return True
+    for i, c in enumerate(s):
+        if i == 0:
+            if not _is_letter_patch(c) and c != "_":
+                return True
+        else:
+            if not _is_letter_patch(c) and not _is_digit_patch(c) and c not in ("_", "-"):
+                return True
+    return False
+
+
+def _emit_field_name(name: str) -> str:
+    if _path_needs_quoting(name):
+        return f'"{escape_string(name)}"'
+    return name
+
+
+def _path_to_string(path: List[PathSeg]) -> str:
+    """Canonical string form of a path, used both for op emission and for
+    sorting ops by path (mirrors Go pathSegsToString / JS pathSegsToString)."""
+    parts: List[str] = []
+    for i, seg in enumerate(path):
+        if seg.kind == PathSegKind.FIELD:
+            if i > 0:
+                parts.append(".")
+            parts.append(_emit_field_name(seg.field))
+        elif seg.kind == PathSegKind.LIST_IDX:
+            parts.append(f"[{seg.list_idx}]")
+        else:  # MAP_KEY
+            parts.append(f'["{escape_string(seg.map_key)}"]')
+    return "".join(parts)
+
+
+def _emit_value(v: Optional[GValue]) -> str:
+    """Emit a value in the generic (schema-less) patch/packed form. Mirrors
+    Go emitPackedValue and JS emitValue for the types they both support."""
+    if v is None or v.type == GType.NULL:
+        return "∅"  # canonNull() is always "∅" in packed/patch mode
+
+    t = v.type
+    if t == GType.BOOL:
+        return "t" if v.as_bool() else "f"
+    if t == GType.INT:
+        return canon_int(v.as_int())
+    if t == GType.FLOAT:
+        return canon_float(v.as_float())
+    if t == GType.STR:
+        return canon_string(v.as_str())
+    if t == GType.ID:
+        return canon_id(v.as_id())
+    if t == GType.TIME:
+        return canon_time(v.as_time())
+    if t == GType.BYTES:
+        return canon_bytes(v.as_bytes())
+    if t == GType.LIST:
+        return "[" + " ".join(_emit_value(e) for e in v.as_list()) + "]"
+    if t == GType.MAP:
+        parts = [f"{canon_string(e.key)}:{_emit_value(e.value)}" for e in v.as_map()]
+        return "{" + " ".join(parts) + "}"
+    if t == GType.STRUCT:
+        sv = v.as_struct()
+        fparts = [f"{canon_string(f.key)}={_emit_value(f.value)}" for f in sv.fields]
+        return f"{sv.type_name}{{{' '.join(fparts)}}}"
+    if t == GType.SUM:
+        sm = v.as_sum()
+        if sm.value is None or sm.value.type == GType.NULL:
+            return f"{sm.tag}()"
+        if sm.value.type == GType.STRUCT:
+            fparts = [f"{canon_string(f.key)}={_emit_value(f.value)}" for f in sm.value.as_struct().fields]
+            return f"{sm.tag}{{{' '.join(fparts)}}}"
+        return f"{sm.tag}({_emit_value(sm.value)})"
+
+    raise ValueError(f"unsupported value type in patch emit: {t.value}")
+
+
+def _emit_op(op: PatchOp) -> str:
+    line = f"{op.op.value} {_path_to_string(op.path)}"
+    if op.op in (PatchOpKind.SET, PatchOpKind.APPEND):
+        if op.value is not None:
+            line += " " + _emit_value(op.value)
+    elif op.op == PatchOpKind.DELTA:
+        sign = "+" if op.delta >= 0 else ""
+        line += " " + sign + canon_float(op.delta)
+    # DELETE: no value
+    return line
+
+
+def emit_patch(patch: Patch, sort_ops: bool = True) -> str:
+    """Emit a @patch block from a Patch — the inverse of parse_patch.
+
+    Mirrors Go EmitPatch(patch, schema=nil) / JS emitPatch(patch, {}): the
+    "wire" key mode with plain field names (Python has no schema-driven
+    packed/FID emission yet). Ops are sorted by canonical path string by
+    default (sort_ops=True, matching Go/JS DefaultPatchOptions.SortOps),
+    so a patch diffed independently in any of the three languages for the
+    same from/to pair emits byte-identical text.
+    """
+    header = "@patch"
+    if patch.schema_id:
+        header += f" @schema#{patch.schema_id}"
+    header += " @keys=wire"
+    header += f" @target={patch.target}"
+    if patch.base_fingerprint:
+        header += f" @base={patch.base_fingerprint}"
+
+    ops = list(patch.ops)
+    if sort_ops:
+        ops.sort(key=lambda op: (_path_to_string(op.path), op.op.value))
+
+    lines = [header]
+    lines.extend(_emit_op(op) for op in ops)
+    lines.append("@end")
+    return "\n".join(lines)
+
+
+# ============================================================
+# Diff Generation
+#
+# Port of Go's Diff (emit_patch.go): same semantics, including whole-list
+# replace on any list change (no per-index diffing) and the narrow
+# _values_equal type coverage below (map/bytes/time/sum values are never
+# considered equal, so a list containing them is always replaced wholesale
+# on any diff) — this mirrors Go's behavior exactly, not an improvement.
+# ============================================================
+
+
+def diff(from_value: Optional[GValue], to_value: Optional[GValue], type_name: str = "") -> Patch:
+    """Compute the patch set needed to transform from_value into to_value.
+
+    Port of Go's Diff(from, to, typeName) / JS's diff(from, to, typeName).
+    The returned patch has an empty target (Diff does not scope to a target
+    document) — set patch.target before emit_patch if the caller needs one.
+    It carries the base fingerprint of from_value (same computation as
+    compute_base_fingerprint), so apply_patch rejects it against other states.
+    """
+    patch = Patch()
+    patch.target_type = type_name
+    if from_value is not None:
+        patch.base_fingerprint = compute_base_fingerprint(from_value)
+    _diff_values(from_value, to_value, [], patch)
+    return patch
+
+
+def _copy_path(path: List[PathSeg]) -> List[PathSeg]:
+    return list(path)
+
+
+def _diff_values(
+    from_v: Optional[GValue], to_v: Optional[GValue], path: List[PathSeg], patch: Patch
+) -> None:
+    if from_v is None and to_v is None:
+        return
+    if from_v is None:
+        patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+        return
+    if to_v is None:
+        if path:
+            patch.ops.append(PatchOp(op=PatchOpKind.DELETE, path=_copy_path(path)))
+        return
+    if from_v.type != to_v.type:
+        patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+        return
+
+    t = from_v.type
+    if t == GType.NULL:
+        return  # both null, no change
+    if t == GType.BOOL:
+        if from_v.as_bool() != to_v.as_bool():
+            patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+        return
+    if t == GType.INT:
+        if from_v.as_int() != to_v.as_int():
+            patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+        return
+    if t == GType.FLOAT:
+        if from_v.as_float() != to_v.as_float():
+            patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+        return
+    if t == GType.STR:
+        if from_v.as_str() != to_v.as_str():
+            patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+        return
+    if t == GType.ID:
+        if from_v.as_id() != to_v.as_id():
+            patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+        return
+    if t == GType.STRUCT:
+        _diff_struct_values(from_v, to_v, path, patch)
+        return
+    if t == GType.MAP:
+        _diff_map_values(from_v, to_v, path, patch)
+        return
+    if t == GType.LIST:
+        # Whole-list replace on any change (matches Go — no per-index diffing).
+        if not _lists_equal(from_v.as_list(), to_v.as_list()):
+            patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+        return
+
+    # Other types (bytes, time, sum): unconditional replace, mirroring Go's
+    # diffValues default case exactly (it does not compare these for
+    # equality either, despite the "replace if not equal" comment there).
+    patch.ops.append(PatchOp(op=PatchOpKind.SET, path=_copy_path(path), value=to_v))
+
+
+def _diff_struct_values(from_v: GValue, to_v: GValue, path: List[PathSeg], patch: Patch) -> None:
+    from_fields = {f.key: f.value for f in from_v.as_struct().fields}
+    to_fields = {f.key: f.value for f in to_v.as_struct().fields}
+
+    for key, to_val in to_fields.items():
+        from_val = from_fields.get(key)
+        child_path = path + [PathSeg(kind=PathSegKind.FIELD, field=key)]
+        _diff_values(from_val, to_val, child_path, patch)
+
+    for key in from_fields:
+        if key not in to_fields:
+            child_path = path + [PathSeg(kind=PathSegKind.FIELD, field=key)]
+            patch.ops.append(PatchOp(op=PatchOpKind.DELETE, path=child_path))
+
+
+def _diff_map_values(from_v: GValue, to_v: GValue, path: List[PathSeg], patch: Patch) -> None:
+    from_map = {e.key: e.value for e in from_v.as_map()}
+    to_map = {e.key: e.value for e in to_v.as_map()}
+
+    for key, to_val in to_map.items():
+        from_val = from_map.get(key)
+        child_path = path + [PathSeg(kind=PathSegKind.MAP_KEY, map_key=key)]
+        _diff_values(from_val, to_val, child_path, patch)
+
+    for key in from_map:
+        if key not in to_map:
+            child_path = path + [PathSeg(kind=PathSegKind.MAP_KEY, map_key=key)]
+            patch.ops.append(PatchOp(op=PatchOpKind.DELETE, path=child_path))
+
+
+def _lists_equal(a: List[GValue], b: List[GValue]) -> bool:
+    if len(a) != len(b):
+        return False
+    return all(_values_equal(x, y) for x, y in zip(a, b))
+
+
+def _values_equal(a: Optional[GValue], b: Optional[GValue]) -> bool:
+    if a is None and b is None:
+        return True
+    if a is None or b is None:
+        return False
+    if a.type != b.type:
+        return False
+
+    t = a.type
+    if t == GType.NULL:
+        return True
+    if t == GType.BOOL:
+        return a.as_bool() == b.as_bool()
+    if t == GType.INT:
+        return a.as_int() == b.as_int()
+    if t == GType.FLOAT:
+        return a.as_float() == b.as_float()
+    if t == GType.STR:
+        return a.as_str() == b.as_str()
+    if t == GType.ID:
+        return a.as_id() == b.as_id()
+    if t == GType.LIST:
+        return _lists_equal(a.as_list(), b.as_list())
+    if t == GType.STRUCT:
+        as_, bs = a.as_struct(), b.as_struct()
+        if as_.type_name != bs.type_name:
+            return False
+        if len(as_.fields) != len(bs.fields):
+            return False
+        a_fields = {f.key: f.value for f in as_.fields}
+        for f in bs.fields:
+            if not _values_equal(a_fields.get(f.key), f.value):
+                return False
+        return True
+    # map/bytes/time/sum: not covered, mirrors Go's valuesEqual default case
+    # (always unequal) — see the module doc comment above.
+    return False

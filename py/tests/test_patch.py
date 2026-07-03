@@ -10,6 +10,8 @@ from glyph.patch import (
     PathSegKind,
     apply_patch,
     parse_patch,
+    emit_patch,
+    diff,
     verify_patch_base,
     compute_base_fingerprint,
     PatchBaseMismatch,
@@ -910,3 +912,244 @@ class TestPatchBaseFingerprint:
         patch = parse_patch("@patch @target=m:1\n= a 9\n@end")
         assert patch.base_fingerprint == ""
         verify_patch_base(base, patch)  # no base recorded -> no-op, must not raise
+
+
+# ============================================================
+# apply_patch — base fingerprint enforcement at apply time
+# ============================================================
+
+
+class TestApplyPatchBaseEnforcement:
+    """apply_patch must verify a patch's recorded base fingerprint against the
+    value being patched BEFORE applying any operation — callers must no
+    longer remember to call verify_patch_base separately. Mirrors Go's
+    TestPatchRoundTripProperty/apply-enforces-base-by-default subcase."""
+
+    def test_apply_matching_base_applies(self):
+        base = from_json_loose({"a": 1, "b": 2})
+        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        result = apply_patch(base, patch)
+        assert result.get("a").as_int() == 9
+
+    def test_apply_stale_base_raises_without_explicit_verify_call(self):
+        base = from_json_loose({"a": 1, "b": 2})
+        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        stale = from_json_loose({"a": 1, "b": 999})
+
+        with pytest.raises(PatchBaseMismatch) as exc_info:
+            apply_patch(stale, patch)
+
+        assert exc_info.value.want == patch.base_fingerprint
+        # No operation must have been applied, and the caller's value must be
+        # untouched (apply_patch never mutates its input regardless, but this
+        # also guards against a check that runs too late).
+        assert stale.get("b").as_int() == 999
+
+    def test_apply_no_base_recorded_applies_unconditionally(self):
+        patch = parse_patch("@patch @target=m:1\n= a 9\n@end")
+        result = apply_patch(from_json_loose({"a": 1}), patch)
+        assert result.get("a").as_int() == 9
+
+    def test_apply_verify_base_false_is_explicit_opt_out(self):
+        base = from_json_loose({"a": 1, "b": 2})
+        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        stale = from_json_loose({"a": 1, "b": 999})
+
+        # Sanity: the default (checked) path rejects this combination.
+        with pytest.raises(PatchBaseMismatch):
+            apply_patch(stale, patch)
+
+        # verify_base=False forces the apply through despite the stale base.
+        result = apply_patch(stale, patch, verify_base=False)
+        assert result.get("a").as_int() == 9
+
+
+# ============================================================
+# diff() — auto-generate a patch from two states
+#
+# Port of Go's TestDiff / TestDiffWithDeletion: diff() must detect changed,
+# added, and deleted fields and leave unchanged fields untouched, matching Go
+# Diff(from, to, typeName)'s semantics exactly (including whole-list replace
+# on any list change — no per-index diffing).
+# ============================================================
+
+
+class TestDiff:
+    def test_scalar_changes_and_additions(self):
+        frm = GValue.struct(
+            "Match",
+            MapEntry("id", GValue.int_(123)),
+            MapEntry("score", GValue.int_(0)),
+            MapEntry("status", GValue.str_("pending")),
+        )
+        to = GValue.struct(
+            "Match",
+            MapEntry("id", GValue.int_(123)),
+            MapEntry("score", GValue.int_(3)),
+            MapEntry("status", GValue.str_("finished")),
+            MapEntry("winner", GValue.str_("home")),
+        )
+        patch = diff(frm, to, "Match")
+        by_field = {op.path[0].field: op for op in patch.ops}
+
+        assert "id" not in by_field  # unchanged field: no op emitted
+        assert by_field["score"].op == PatchOpKind.SET
+        assert by_field["score"].value.as_int() == 3
+        assert by_field["status"].value.as_str() == "finished"
+        assert by_field["winner"].value.as_str() == "home"
+
+    def test_deleted_fields_emit_delete_ops(self):
+        frm = GValue.struct(
+            "Match",
+            MapEntry("id", GValue.int_(123)),
+            MapEntry("odds", GValue.float_(1.5)),
+            MapEntry("pred", GValue.str_("home")),
+        )
+        to = GValue.struct("Match", MapEntry("id", GValue.int_(123)))
+
+        patch = diff(frm, to, "Match")
+        deletes = {op.path[0].field for op in patch.ops if op.op == PatchOpKind.DELETE}
+        assert deletes == {"odds", "pred"}
+
+    def test_no_change_produces_empty_patch(self):
+        frm = GValue.struct("M", MapEntry("x", GValue.int_(1)))
+        to = GValue.struct("M", MapEntry("x", GValue.int_(1)))
+        assert diff(frm, to, "M").ops == []
+
+    def test_list_change_is_whole_list_replace(self):
+        # Diff does not per-index diff lists: any change replaces the whole
+        # list with a single SET op (parity with Go, not an improvement).
+        frm = GValue.struct("M", MapEntry("items", GValue.list_(GValue.int_(1), GValue.int_(2), GValue.int_(3))))
+        to = GValue.struct(
+            "M", MapEntry("items", GValue.list_(GValue.int_(1), GValue.int_(9), GValue.int_(3), GValue.int_(4)))
+        )
+        patch = diff(frm, to, "M")
+        assert len(patch.ops) == 1
+        op = patch.ops[0]
+        assert op.op == PatchOpKind.SET
+        assert op.path[0].field == "items"
+        assert [v.as_int() for v in op.value.as_list()] == [1, 9, 3, 4]
+
+    def test_nested_struct_change(self):
+        frm = GValue.struct(
+            "M", MapEntry("outer", GValue.struct("N", MapEntry("inner", GValue.struct("O", MapEntry("x", GValue.int_(1))))))
+        )
+        to = GValue.struct(
+            "M", MapEntry("outer", GValue.struct("N", MapEntry("inner", GValue.struct("O", MapEntry("x", GValue.int_(99))))))
+        )
+        patch = diff(frm, to, "M")
+        assert len(patch.ops) == 1
+        op = patch.ops[0]
+        assert [seg.field for seg in op.path] == ["outer", "inner", "x"]
+        assert op.value.as_int() == 99
+
+
+# ============================================================
+# diff() + apply_patch() round trip
+#
+# Invariant (mirrors Go's TestPatchRoundTripProperty):
+#   apply_patch(base, parse_patch(emit_patch(diff(base, next)))) == next
+# ============================================================
+
+
+class TestDiffApplyRoundTrip:
+    def _round_trip(self, base: GValue, nxt: GValue, type_name: str = "M") -> GValue:
+        patch = diff(base, nxt, type_name)
+        emitted = emit_patch(patch)
+        parsed = parse_patch(emitted)
+        return apply_patch(base, parsed)
+
+    def test_scalar_fields_round_trip(self):
+        base = GValue.struct(
+            "M",
+            MapEntry("ok", GValue.bool_(False)),
+            MapEntry("count", GValue.int_(10)),
+            MapEntry("rate", GValue.float_(1.5)),
+            MapEntry("label", GValue.str_("old")),
+        )
+        nxt = GValue.struct(
+            "M",
+            MapEntry("ok", GValue.bool_(True)),
+            MapEntry("count", GValue.int_(42)),
+            MapEntry("rate", GValue.float_(3.14)),
+            MapEntry("label", GValue.str_("new")),
+        )
+        result = self._round_trip(base, nxt)
+        assert result.get("ok").as_bool() is True
+        assert result.get("count").as_int() == 42
+        assert result.get("rate").as_float() == 3.14
+        assert result.get("label").as_str() == "new"
+
+    def test_added_and_deleted_fields_round_trip(self):
+        base = GValue.struct(
+            "M",
+            MapEntry("id", GValue.int_(123)),
+            MapEntry("odds", GValue.float_(1.5)),
+        )
+        nxt = GValue.struct(
+            "M",
+            MapEntry("id", GValue.int_(123)),
+            MapEntry("winner", GValue.str_("home")),
+        )
+        result = self._round_trip(base, nxt)
+        assert result.get("id").as_int() == 123
+        assert result.get("odds") is None
+        assert result.get("winner").as_str() == "home"
+
+    def test_list_replace_round_trip(self):
+        base = GValue.struct("M", MapEntry("items", GValue.list_(GValue.int_(1), GValue.int_(2), GValue.int_(3))))
+        nxt = GValue.struct(
+            "M", MapEntry("items", GValue.list_(GValue.int_(1), GValue.int_(9), GValue.int_(3), GValue.int_(4)))
+        )
+        result = self._round_trip(base, nxt)
+        assert [v.as_int() for v in result.get("items").as_list()] == [1, 9, 3, 4]
+
+    def test_nested_struct_round_trip(self):
+        base = GValue.struct(
+            "M", MapEntry("outer", GValue.struct("N", MapEntry("inner", GValue.struct("O", MapEntry("x", GValue.int_(1))))))
+        )
+        nxt = GValue.struct(
+            "M", MapEntry("outer", GValue.struct("N", MapEntry("inner", GValue.struct("O", MapEntry("x", GValue.int_(99))))))
+        )
+        result = self._round_trip(base, nxt)
+        assert result.get("outer").get("inner").get("x").as_int() == 99
+
+
+# ============================================================
+# diff() + emit_patch() — cross-language identical text
+#
+# The exact bytes emitted for this from/to pair are pinned from the Go
+# reference implementation (go/glyph/patch_roundtrip_test.go
+# TestDiffEmitCrossLanguageGolden) and must be byte-identical to the JS port
+# (js/src/glyph.test.ts) — the whole point of a shared wire format.
+# ============================================================
+
+
+class TestDiffEmitCrossLanguageGolden:
+    GOLDEN = (
+        "@patch @keys=wire @target=m:123 @base=4f9708ac7bbe01e1\n"
+        "- active\n"
+        "= count 42\n"
+        "= extra added\n"
+        "= label new\n"
+        "@end"
+    )
+
+    def test_matches_go_and_js(self):
+        frm = GValue.struct(
+            "M",
+            MapEntry("count", GValue.int_(10)),
+            MapEntry("label", GValue.str_("old")),
+            MapEntry("rate", GValue.float_(1.5)),
+            MapEntry("active", GValue.bool_(False)),
+        )
+        to = GValue.struct(
+            "M",
+            MapEntry("count", GValue.int_(42)),
+            MapEntry("label", GValue.str_("new")),
+            MapEntry("rate", GValue.float_(1.5)),
+            MapEntry("extra", GValue.str_("added")),
+        )
+        patch = diff(frm, to, "M")
+        patch.target = "m:123"
+        assert emit_patch(patch) == self.GOLDEN

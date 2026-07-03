@@ -26,18 +26,25 @@ export interface FromJsonOptions {
   schema?: Schema;
   /** Type name hint for root value */
   typeName?: string;
-  /** Parse ISO date strings as time values */
+  /** Parse ISO date strings as time values (off by default: string sniffing
+   * changes canonical bytes, so it would break fingerprint parity with the Go
+   * and Python bridges, which never sniff) */
   parseDates?: boolean;
-  /** Parse ^prefix:value strings as refs */
+  /** Parse ^prefix:value strings as refs (off by default, same reason) */
   parseRefs?: boolean;
 }
 
 /**
- * Convert JSON value to GValue
+ * Convert JSON value to GValue.
+ *
+ * By default this is byte-equivalent to fromJsonLoose / Go FromJSONLoose /
+ * Python from_json_loose: strings stay strings, so canonical bytes and
+ * fingerprints agree across languages. Pass parseDates/parseRefs to opt in
+ * to type sniffing — doing so changes the canonical form.
  */
 export function fromJson(json: unknown, options: FromJsonOptions = {}): GValue {
-  const { schema, typeName, parseDates = true, parseRefs = true } = options;
-  
+  const { schema, typeName, parseDates = false, parseRefs = false } = options;
+
   return convertValue(json, schema, typeName, parseDates, parseRefs);
 }
 
