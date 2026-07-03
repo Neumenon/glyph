@@ -27,9 +27,10 @@ A `.glyph` file contains GLYPH-Loose canonical text, as produced by `Canonicaliz
 
 2. **With directives**: Optional `@schema` or `@tab` preamble followed by a value
    ```
-   @tab _ [step tool status]
-   |1 search ok|
-   |2 fetch ok|
+   @tab _ rows=2 cols=3 [status step tool]
+   |ok|1|search|
+   |ok|2|fetch|
+   @end
    ```
 
 3. **Patch**: A `@patch ... @end` block (for delta files)
@@ -45,7 +46,7 @@ A `.glyph` file contains GLYPH-Loose canonical text, as produced by `Canonicaliz
 | Directive | Purpose |
 |-----------|---------|
 | `@schema#<id>` | Schema reference or inline definition |
-| `@tab _ [col1 col2 ...]` | Tabular (column-oriented) encoding |
+| `@tab _ rows=N cols=N [col1 col2 ...]` | Tabular (column-oriented) encoding |
 | `@patch ... @end` | Semantic delta encoding |
 
 ## Detection

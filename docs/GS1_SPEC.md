@@ -4,7 +4,7 @@
 **Date:** 2026-01-13  
 **Status:** Frozen (v1.0)
 
-> **Implementation scope:** GS1 framing is currently implemented in Go and JavaScript / TypeScript only. Python, Rust, and C do not implement GS1.
+> **Implementation scope:** GS1 framing is implemented in Go, Python, and JavaScript / TypeScript. Rust and C do not implement GS1.
 
 > This document specifies the GS1 stream framing protocol for GLYPH payloads.
 > GS1 headers are NOT part of GLYPH canonicalization.
@@ -111,7 +111,7 @@ Receiver **MUST NOT** parse payload boundaries using delimiters.
 ```
 @frame{v=1 sid=1 seq=12 kind=patch len=32 crc=89abcdef base=sha256:0123456789abcdef...}
 @patch
-set .foo 42
+= .foo 42
 @end
 
 ```
@@ -220,7 +220,7 @@ For each `sid`:
 
 - `kind=ack` acknowledges receipt of `(sid, seq)`
 - `ack` frames typically have `len=0`
-- `ack` with payload **SHOULD** use an `Error@(...)` payload (see §8.2) to
+- `ack` with payload **SHOULD** use an `Error{...}` payload (see §8.2) to
   carry failure details
 
 ### 7.3 FINAL Flag
@@ -239,18 +239,18 @@ For each `sid`:
 ### 8.1 UI Event
 
 ```glyph
-UIEvent@(type "progress" pct 0.42 msg "processing")
-UIEvent@(type "log" level "info" msg "decoded 1000 rows")
-UIEvent@(type "artifact" mime "image/png" ref "blob:sha256:..." name "plot.png")
+UIEvent{type="progress" pct=0.42 msg="processing"}
+UIEvent{type="log" level="info" msg="decoded 1000 rows"}
+UIEvent{type="artifact" mime="image/png" ref="blob:sha256:..." name="plot.png"}
 ```
 
 ### 8.2 Error Event
 
 ```glyph
-Error@(code "BASE_MISMATCH" msg "state hash mismatch" sid 1 seq 13)
+Error{code="BASE_MISMATCH" msg="state hash mismatch" sid=1 seq=13}
 ```
 
-The struct type name is `Error@` (not `Err@`). Valid `code` values are
+The struct type name is `Error` (not `Err`). Valid `code` values are
 defined in §8.5.
 
 ### 8.3 Row Event
@@ -261,15 +261,15 @@ Payload is a single GLYPH value (struct/list) representing one row.
 
 ```glyph
 @patch
-set .items[0].qty 5
-append .items[+] Item@(id 2 name "widget")
+= .items[0].qty 5
++ .items Item{id=2 name="widget"}
 @end
 ```
 
 ### 8.5 Error Code Registry
 
-The following `code` values are defined for `Error@(...)` payloads and
-`ResyncRequest@(...)` `reason` fields:
+The following `code` values are defined for `Error{...}` payloads and
+`ResyncRequest{...}` `reason` fields:
 
 | Code | Trigger |
 |------|---------|
@@ -286,10 +286,10 @@ The following `code` values are defined for `Error@(...)` payloads and
 ### 8.6 Resync Request
 
 When a receiver detects a base mismatch or sequence gap, it SHOULD send a
-resync request using `kind=ui` with a `ResyncRequest@(...)` payload:
+resync request using `kind=ui` with a `ResyncRequest{...}` payload:
 
 ```glyph
-ResyncRequest@(sid 1 seq 42 want "sha256:..." reason "BASE_MISMATCH")
+ResyncRequest{sid=1 seq=42 want="sha256:..." reason="BASE_MISMATCH"}
 ```
 
 Fields:
@@ -343,12 +343,12 @@ Full frame:
 ### 11.2 Patch with CRC
 
 Header: `@frame{v=1 sid=1 seq=5 kind=patch len=24 crc=a1b2c3d4}`
-Payload: `@patch\nset .x 1\n@end`
+Payload: `@patch\n= .x 1\n@end`
 
 ### 11.3 UI Event
 
 Header: `@frame{v=1 sid=1 seq=10 kind=ui len=35}`
-Payload: `UIEvent@(type "progress" pct 0.5)`
+Payload: `UIEvent{type="progress" pct=0.5}`
 
 ### 11.4 ACK (no payload)
 

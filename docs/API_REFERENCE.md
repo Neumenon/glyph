@@ -46,7 +46,7 @@ Where implemented, the schema layer covers:
 - schema evolution helpers
 
 ### Streaming
-The streaming layer covers (Go and JS only — Python, Rust, and C do not implement GS1):
+The streaming layer covers (Go, Python, and JS; Rust and C do not implement GS1):
 - GS1 framing
 - stream cursors / readers / writers
 - UI event frames

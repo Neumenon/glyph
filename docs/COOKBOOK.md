@@ -151,7 +151,7 @@ user_data = {
 glyph_text = glyph.json_to_glyph(user_data)
 print("GLYPH output:")
 print(glyph_text)
-# {email=alice@example.com id=user_123 metadata={created_at=2024-01-15T10:30:00Z ...} ...}
+# {email="alice@example.com" id=user_123 metadata={created_at="2024-01-15T10:30:00Z" ...} name="Alice Chen" ...}
 
 # Compare sizes
 json_text = json.dumps(user_data)
@@ -415,12 +415,12 @@ rows = GValue.list_(*[
 table_text = glyph.emit(rows)
 print(table_text)
 # Output:
-# @tab _ [id score title]
-# |doc_1|0.95|Introduction to GLYPH|
-# |doc_2|0.89|Streaming Validation|
-# |doc_3|0.84|Agent State Management|
-# |doc_4|0.82|Tabular Mode Guide|
-# |doc_5|0.78|JSON Migration Path|
+# @tab _ rows=5 cols=3 [id score title]
+# |doc_1|0.95|"Introduction to GLYPH"|
+# |doc_2|0.89|"Streaming Validation"|
+# |doc_3|0.84|"Agent State Management"|
+# |doc_4|0.82|"Tabular Mode Guide"|
+# |doc_5|0.78|"JSON Migration Path"|
 # @end
 
 # Compare to JSON

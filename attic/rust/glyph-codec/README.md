@@ -7,9 +7,25 @@ Rust implementation of the GLYPH codec.
 
 ## Install
 
+**Not published.** `Cargo.toml` sets `publish = false`, and this crate has
+never been pushed to crates.io — `cargo add glyph-rs` will fail to resolve.
+It is a parked, emit-only port kept for reference in `attic/`; build it from
+source.
+
+Build and test in place:
+
+```bash
+cd attic/rust/glyph-codec
+cargo build
+cargo test
+```
+
+To depend on it from another crate in this repo, use a path dependency
+(adjust the relative path to your crate's location):
+
 ```toml
 [dependencies]
-glyph-rs = "1.0"
+glyph-rs = { path = "../attic/rust/glyph-codec" }
 serde_json = "1"
 ```
 

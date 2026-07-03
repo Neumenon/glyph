@@ -87,7 +87,7 @@ assert result.tool_name == "search"
 
 ## Notes
 
-- Python has no GS1 stream framing and no `pack` surface.
+- Python has full GS1 stream framing (`glyph.stream`) but no `pack` surface.
 - Fingerprint output is byte-identical to Go and JavaScript.
 
 ## Attic

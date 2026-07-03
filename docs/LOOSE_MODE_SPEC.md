@@ -276,13 +276,13 @@ Auto-Tabular mode provides compact representation for homogeneous lists of objec
 ### Syntax
 
 ```
-@tab _ [col1 col2 col3]
+@tab _ rows=2 cols=3 [col1 col2 col3]
 |val1|val2|val3|
 |val4|val5|val6|
 @end
 ```
 
-- **Header:** `@tab _` followed by sorted column names in brackets
+- **Header:** `@tab _` followed by `rows=N cols=N` and sorted column names in brackets
 - **Rows:** Pipe-delimited cells, one row per line
 - **Footer:** `@end` marker
 
@@ -324,7 +324,7 @@ const canonical = canonicalizeLooseWithOpts(value, {
 ```bash
 echo '[{"id":1,"name":"a"},{"id":2,"name":"b"},{"id":3,"name":"c"}]' | glyph fmt-loose
 # Output:
-# @tab _ [id name]
+# @tab _ rows=3 cols=2 [id name]
 # |1|a|
 # |2|b|
 # |3|c|
@@ -357,7 +357,7 @@ When a row is missing a key present in other rows, the cell contains `_`:
 ```
 Input:  [{"id":1,"name":"a"},{"id":2},{"id":3,"name":"c"}]
 Output:
-@tab _ [id name]
+@tab _ rows=3 cols=2 [id name]
 |1|a|
 |2|_|
 |3|c|
@@ -371,7 +371,7 @@ Pipes in cell values are escaped as `\|`:
 ```
 Input:  [{"val":"a|b"},{"val":"c|d"},{"val":"e|f"}]
 Output:
-@tab _ [val]
+@tab _ rows=3 cols=1 [val]
 |"a\|b"|
 |"c\|d"|
 |"e\|f"|
@@ -385,7 +385,7 @@ Nested maps and lists are emitted inline:
 ```
 Input:  [{"id":1,"meta":{"x":10}},{"id":2,"meta":{"x":20}},{"id":3,"meta":{"x":30}}]
 Output:
-@tab _ [id meta]
+@tab _ rows=3 cols=2 [id meta]
 |1|{x=10}|
 |2|{x=20}|
 |3|{x=30}|
@@ -409,7 +409,7 @@ const result = parseTabularLoose(input);
 
 ### Tabular Resync Metadata
 
-Row/column counts can be added to tabular headers for streaming resync:
+Row/column counts are included in every tabular header by default (see the `@tab _ rows=N cols=N [...]` form used throughout this section), which supports streaming resync:
 
 ```
 @tab _ rows=120 cols=6 [id name score status created updated]

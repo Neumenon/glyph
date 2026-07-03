@@ -1,6 +1,14 @@
 # GLYPH Codec - C
 
 > **PARKED: emit-only C port, not a conformance port (no GLYPH text parser). Lives in attic/.**
+>
+> **This port does not participate in cross-language conformance testing**
+> (see `conformance/run_conformance.py` and the golden corpus under
+> `go/glyph/testdata/loose_json`). Its output is not checked against
+> Go/Python/JS, and — as documented below — `glyph_hash_loose` here is not
+> byte-comparable with those languages' `fingerprint_loose` /
+> `FingerprintLoose`. Do not rely on this port for cross-language value
+> identity.
 
 Token-efficient serialization for AI agents.
 
@@ -103,10 +111,21 @@ glyph_value_t* glyph_get(v, key);   // Get map/struct value by key
 char* glyph_canonicalize_loose(v);              // Default options
 char* glyph_canonicalize_loose_no_tabular(v);   // No auto-tabular
 char* glyph_canonicalize_loose_with_opts(v, opts);
-char* glyph_fingerprint_loose(v);               // Same as canonicalize
-char* glyph_hash_loose(v);                      // Hash (16 hex chars)
+char* glyph_fingerprint_loose(v);               // NOT a hash: alias for glyph_canonicalize_loose(v), returns canonical GLYPH text
+char* glyph_hash_loose(v);                      // Real SHA-256: first 16 hex chars (8 bytes) of SHA-256 over the WITH-tabular canonical form
 bool glyph_equal_loose(a, b);                   // Semantic equality
 ```
+
+> **Warning — naming trap:** despite the name, `glyph_fingerprint_loose` does
+> **not** compute a hash. It is a plain alias for `glyph_canonicalize_loose`
+> and returns the canonical GLYPH string itself. The only function here that
+> actually hashes is `glyph_hash_loose`, and even that is **not**
+> interchangeable with Go/Python/JS `fingerprint_loose` / `FingerprintLoose`:
+> those hash the *no-tabular* canonical form and return the full
+> 64-hex-character SHA-256 digest, while this C port hashes the
+> *with-tabular* canonical form and truncates to 16 hex characters (8 bytes).
+> Do not compare, persist, or transmit `glyph_hash_loose` output expecting it
+> to match another language's fingerprint of the same value.
 
 ### JSON Bridge
 

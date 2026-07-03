@@ -34,7 +34,7 @@ GLYPH flow: LLM generates → validate as tokens stream → cancel immediately i
 
 **Problem 3: State Conflicts**
 Two agents update the same state → conflicts → data loss
-GLYPH: patches carry a base fingerprint; in the GS1 stream layer the cursor rejects any patch whose base doesn't match current state (standalone apply does not yet self-verify)
+GLYPH: patches carry a base fingerprint; the GS1 stream cursor rejects any patch whose base doesn't match current state, and `apply_patch`/`ApplyPatch`/`applyPatch` enforce the same check by default for standalone (non-streaming) callers, raising `PatchBaseMismatch` on a stale base
 
 ### Format Basics
 
@@ -138,7 +138,7 @@ GLYPH (129 characters):
 5. **Wasted**: All those tokens, all that latency
 
 **GLYPH approach:**
-1. Tokens stream: `{tool=unknown...`
+1. Tokens stream: `unknown{...`
 2. Error detected as soon as "unknown" appears
 3. **Cancel immediately**
 4. **Saved**: Tokens, time, reduced failures
@@ -216,22 +216,22 @@ JSON (168 characters):
 ```
 
 ```glyph
-GLYPH table (95 characters):
-@tab _ [id score title]
-|doc1|0.95|GLYPH Guide|
-|doc2|0.89|API Docs|
+GLYPH table (112 characters):
+@tab _ rows=3 cols=3 [id score title]
+|doc1|0.95|"GLYPH Guide"|
+|doc2|0.89|"API Docs"|
 |doc3|0.84|Tutorial|
 @end
 ```
 
-**~43% fewer characters** → keys appear once, not per row.
+**~33% fewer characters** → keys appear once, not per row. (Multi-word values like `"GLYPH Guide"` stay quoted; only bare-safe single-word strings like `Tutorial` are unquoted.)
 
 ### When Auto-Tabular Triggers
 
 GLYPH automatically detects homogeneous lists:
 - All elements are objects
 - All have the same keys
-- At least 2 elements
+- At least 3 elements (`min_rows` default)
 
 ```python
 import glyph
@@ -286,30 +286,29 @@ text = glyph.canonicalize_loose_no_tabular(glyph.from_json(data))
 
 ### Solution: Base Fingerprints
 
-Fingerprint the current state and embed it in the patch header. The receiver only applies the patch when its own state fingerprint matches:
+Fingerprint the current state and embed it in the patch's `@base=` field. `apply_patch` verifies this fingerprint automatically, before applying any operation, and raises `PatchBaseMismatch` if the receiver's state has diverged — no manual pre-check needed:
 
 ```python
 import glyph
 
-# Sender: fingerprint current state
+# Sender: compute the patch base fingerprint from current state
 state = {"current": "processing", "count": 5}
-base_hash = glyph.fingerprint_loose(glyph.from_json(state))
-# base_hash: "a1b2c3..." (64 lowercase hex chars)
+base_fp = glyph.compute_base_fingerprint(glyph.from_json(state))
+# base_fp: "a1b2c3d4e5f6a7b8" (16 lowercase hex chars)
 
-# Embed base hash in a GS1 patch frame header (see GS1_SPEC.md)
-# @frame{v=1 sid=1 seq=2 kind=patch len=... base=sha256:<base_hash>}
-# @patch
-# = .count 6
-# @end
+patch_text = f"""@patch @base={base_fp}
+= .count 6
+@end"""
 
-# Receiver: verify before applying
-receiver_hash = glyph.fingerprint_loose(glyph.from_json(current_state))
-if receiver_hash != base_hash:
-    request_snapshot()  # State diverged — request full doc frame instead
-else:
+# Receiver: apply_patch checks the fingerprint before applying
+try:
     updated = glyph.apply_patch(glyph.from_json(current_state),
                                  glyph.parse_patch(patch_text))
+except glyph.PatchBaseMismatch:
+    request_snapshot()  # State diverged — request full doc frame instead
 ```
+
+Note: `compute_base_fingerprint` (16 hex chars, WITH-tabular canonical form) is a *different* digest from `fingerprint_loose` below (64 hex chars, NO-tabular form) — they are not interchangeable, and the GS1 stream protocol's own frame-level `base=sha256:...` header (enforced by the stream cursor, not by `apply_patch`) is a third, separately-computed hash again. See [GS1_SPEC.md](GS1_SPEC.md) for the streaming frame contract. Pass `verify_base=False` to `apply_patch` to opt out of the check (e.g. a caller that already verified the base out-of-band).
 
 ### How Fingerprinting Works
 
@@ -426,7 +425,7 @@ Tools available:
 
 **LLM responds:**
 ```glyph
-{tool=search query="GLYPH documentation" max_results=5}
+search{query="GLYPH documentation" max_results=5}
 ```
 
 **Validate during streaming**, execute if valid.
@@ -595,7 +594,7 @@ print(f"Token savings: {savings:.1f}%")
 - [API Reference](API_REFERENCE.md) - Per-language APIs
 
 **Examples:**
-- [Cookbook](archive/COOKBOOK.md) - 10 detailed recipes
+- [Cookbook](COOKBOOK.md) - 10 detailed recipes
 - [Visual Guide](visual-guide.html) - Interactive examples
 
 **Research:**
