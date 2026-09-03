@@ -16,7 +16,7 @@ import (
 // Components:
 //   @lyph v2       - Format identifier and version
 //   @schema#hash   - Optional schema hash for validation
-//   @mode=X        - Encoding mode: auto, struct, packed, tabular, patch
+//   @mode=X        - Encoding mode: auto, struct, packed, tabular
 //   @keys=X        - Key format: wire, name, fid
 
 // Header represents parsed GLYPH v2 header information.
@@ -75,8 +75,6 @@ func ParseHeader(input string) (*Header, error) {
 				h.Mode = ModePacked
 			case "tabular", "tab":
 				h.Mode = ModeTabular
-			case "patch":
-				h.Mode = ModePatch
 			default:
 				return nil, fmt.Errorf("unknown mode: %s", mode)
 			}
@@ -97,9 +95,6 @@ func ParseHeader(input string) (*Header, error) {
 		case strings.HasPrefix(tok, "@target="):
 			target := tok[8:]
 			h.Target = parseRefIDFromTarget(target)
-
-		case tok == "@patch":
-			h.Mode = ModePatch
 
 		case tok == "@tab":
 			h.Mode = ModeTabular
@@ -212,7 +207,6 @@ func EmitHeader(h *Header) string {
 type Document struct {
 	Header *Header // Parsed header
 	Body   *GValue // Main content
-	Patch  *Patch  // For patch mode
 	Errors []error // Parse errors (tolerant mode)
 }
 
@@ -226,11 +220,6 @@ func DetectMode(input string) Mode {
 		if h != nil {
 			return h.Mode
 		}
-	}
-
-	// Check for patch header
-	if strings.HasPrefix(trimmed, "@patch") {
-		return ModePatch
 	}
 
 	// Check for tabular
@@ -254,7 +243,7 @@ func DetectMode(input string) Mode {
 // V2Options configures GLYPH v2 encoding.
 //
 // Deprecated: experimental, not part of the stable surface; may change or be removed.
-// Used only by EmitV2/EmitV2Patch. See PARITY_ROADMAP.md (P4).
+// Used only by EmitV2. See PARITY_ROADMAP.md (P4).
 type V2Options struct {
 	Schema        *Schema
 	Mode          Mode    // Preferred mode (ModeAuto for automatic)
@@ -346,19 +335,4 @@ func EmitV2(v *GValue, opts V2Options) (string, error) {
 	}
 
 	return body, nil
-}
-
-// EmitV2Patch encodes a patch in GLYPH v2 format.
-//
-// Deprecated: experimental, not part of the stable surface; may change or be removed.
-// Shares EmitV2's emit-only status (no v2 document parser). The supported patch
-// path is EmitPatch/ParsePatch. See PARITY_ROADMAP.md (P4).
-func EmitV2Patch(p *Patch, opts V2Options) (string, error) {
-	patchOpts := PatchOptions{
-		Schema:       opts.Schema,
-		KeyMode:      opts.KeyMode,
-		SortOps:      true,
-		IndentPrefix: opts.IndentPrefix,
-	}
-	return EmitPatchWithOptions(p, patchOpts)
 }

@@ -66,6 +66,15 @@ from .loose import (
     glyph_to_json,
 )
 
+# Canonical JSON identity (SPEC-CANON.md)
+from .canon import (
+    canon_json,
+    fingerprint,
+    is_canonical,
+    tensor_ref,
+    CanonError,
+)
+
 # Streaming validation
 from .stream_validator import (
     StreamingValidator,
@@ -78,7 +87,7 @@ from .stream_validator import (
     TimelineEvent,
 )
 
-# Patch (canonical @patch format)
+# Patch (JSON wire form, SPEC-CANON.md §7)
 from .patch import (
     Patch,
     PatchOp,
@@ -124,6 +133,12 @@ __all__ = [
     "canonicalize_loose_no_tabular",
     "fingerprint_loose",
     "equal_loose",
+    # Canonical JSON identity
+    "canon_json",
+    "fingerprint",
+    "is_canonical",
+    "tensor_ref",
+    "CanonError",
     # Options
     "LooseCanonOpts",
     "NullStyle",

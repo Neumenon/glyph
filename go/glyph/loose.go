@@ -1,9 +1,7 @@
 package glyph
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"sort"
@@ -119,28 +117,9 @@ func writeCanonBytes(b *strings.Builder, data []byte) {
 // ============================================================
 
 // FingerprintLoose returns the SHA-256 hex digest of the no-tabular canonical
-// form of v. The output is a 64-character lowercase hex string that is
-// byte-identical across Go, Python, and JS for semantically equal values.
-//
-// Tabular form is excluded from the hash so that fingerprint stability does
-// not depend on cross-language agreement about tabular triggering thresholds
-// or escaping. Use CanonicalizeLooseNoTabular for the pre-hash bytes.
-//
-// Disambiguation: this is NOT the same digest as a patch's base fingerprint
-// (VerifyPatchBase / PatchBuilder.WithBaseValue / the @base= token), which is
-// 16 hex chars of SHA-256 over the WITH-tabular canonical form
-// (CanonicalizeLoose). Different length, different pre-hash bytes — do not
-// compare or substitute one for the other. See the fingerprint
-// disambiguation note above VerifyPatchBase in emit_patch.go.
-func FingerprintLoose(v *GValue) string {
-	canonical := CanonicalizeLooseWithOpts(v, NoTabularLooseCanonOpts())
-	sum := sha256.Sum256([]byte(canonical))
-	return hex.EncodeToString(sum[:])
-}
-
 // EqualLoose checks if two GValues are semantically equal using loose
 // canonicalization. Compares no-tabular canonical bytes directly so the
-// result aligns with FingerprintLoose equality.
+// result aligns with Fingerprint equality.
 func EqualLoose(a, b *GValue) bool {
 	return CanonicalizeLooseNoTabular(a) == CanonicalizeLooseNoTabular(b)
 }

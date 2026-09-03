@@ -6,10 +6,7 @@
  * implementation, and prints a single JSON evidence object to stdout. It does
  * NOT decide pass/fail — the orchestrator is the single evaluator.
  *
- * Applicable scenarios: S1, S2, S3, S4, S5, S6 (base fingerprint only — JS has
- * no standalone verify export), S7, S8.
- * (S6 standalone accept/reject verification is Go+Py; JS base enforcement is
- * exercised through the GS1 cursor in S7.)
+ * Applicable scenarios: S1, S2, S3, S4, S5, S6, S7, S8.
  *
  * Usage:  node runner.cjs <inputs.json>
  */
@@ -102,11 +99,18 @@ function s5(inp) {
 function s6(inp) {
   const d = inp.S6_patch_base;
   const state = G.fromJsonLoose(d.state);
-  const pb = new G.PatchBuilder({ prefix: '', value: d.target })
-    .withBaseValue(state)
-    .set('minute', G.g.int(90))
-    .build();
-  return { base16: pb.baseFingerprint, verify_accept: null, verify_reject: null };
+  const base16 = G.computeBaseFingerprint(state);
+  const wire = (base) => JSON.stringify({ glyph_patch: 1, ops: d.patch_ops, base, target: d.target });
+  const verify = (base) => {
+    try {
+      G.verifyPatchBase(state, G.parsePatch(wire(base)));
+      return true;
+    } catch (e) {
+      if (e instanceof G.PatchBaseMismatch) return false;
+      throw e;
+    }
+  };
+  return { base16, verify_accept: verify(base16), verify_reject: !verify(d.stale_base) };
 }
 
 // ── S7 ──────────────────────────────────────────────────────────────────────

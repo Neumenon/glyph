@@ -447,18 +447,17 @@ describe('PatchApply: emitPatch / parsePatch / applyPatch', () => {
     });
   }
 
-  test('emitPatch produces @patch text with correct header', () => {
+  test('emitPatch produces the canonical JSON wire form', () => {
     const patch = new PatchBuilder({ prefix: 'match', value: '001' })
       .set('minute', g.int(45))
       .set('score_home', g.int(1))
       .set('score_away', g.int(0))
       .build();
 
-    const text = emitPatch(patch);
-    expect(text).toContain('@patch');
-    expect(text).toContain('@target=match:001');
-    expect(text).toContain('= minute 45');
-    expect(text).toContain('@end');
+    // Byte-identical to gauntlet-data.json matchStream.samplePatchText.
+    expect(emitPatch(patch)).toBe(
+      '{"glyph_patch":1,"ops":[{"op":"=","path":["minute"],"value":45},{"op":"=","path":["score_away"],"value":0},{"op":"=","path":["score_home"],"value":1}],"target":"match:001"}'
+    );
   });
 
   test('parsePatch recovers patch from emitPatch output', () => {
@@ -511,30 +510,9 @@ describe('PatchApply: emitPatch / parsePatch / applyPatch', () => {
     expect(updated.get('status')!.asStr()).toBe('live');
   });
 
-  test('patch bytes < snapshot bytes (gauntlet matchStream finding)', () => {
-    // The gauntlet data records 32.81% savings for patches vs full snapshots.
-    // We verify the inequality holds in the live codec.
-    const state = makeMatchState(45, 1, 0);
-    const snapshotText = JSON.stringify(toJsonLoose(state));
-    const snapshotBytes = Buffer.byteLength(snapshotText, 'utf8');
-
-    const patch = new PatchBuilder({ prefix: 'match', value: '001' })
-      .set('minute', g.int(45))
-      .set('score_home', g.int(1))
-      .set('score_away', g.int(0))
-      .build();
-
-    const patchText = emitPatch(patch);
-    const patchBytes = Buffer.byteLength(patchText, 'utf8');
-
-    // Patches should be smaller than full snapshots
-    expect(patchBytes).toBeLessThan(snapshotBytes);
-  });
-
   test('sample patch text from gauntlet data parses correctly', () => {
-    // gauntlet-data.json samplePatchText (sorted ops by emitPatch default):
-    // "@patch @keys=wire @target=match:001\n= minute 45\n= score_away 0\n= score_home 1\n@end"
-    const samplePatch = '@patch @keys=wire @target=match:001\n= minute 45\n= score_away 0\n= score_home 1\n@end';
+    // gauntlet-data.json matchStream.samplePatchText (ops sorted by emitPatch)
+    const samplePatch = '{"glyph_patch":1,"ops":[{"op":"=","path":["minute"],"value":45},{"op":"=","path":["score_away"],"value":0},{"op":"=","path":["score_home"],"value":1}],"target":"match:001"}';
     const parsed = parsePatch(samplePatch);
     expect(parsed.target.prefix).toBe('match');
     expect(parsed.target.value).toBe('001');

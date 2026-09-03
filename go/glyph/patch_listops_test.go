@@ -231,11 +231,11 @@ func TestApplyListIndexThroughEmitParse(t *testing.T) {
 		Value: Str("C"),
 	})
 
-	emitted, err := EmitPatch(patch, nil)
+	emitted, err := EmitPatch(patch)
 	if err != nil {
 		t.Fatalf("EmitPatch error: %v", err)
 	}
-	parsed, err := ParsePatch(emitted, nil)
+	parsed, err := ParsePatch(emitted)
 	if err != nil {
 		t.Fatalf("ParsePatch error: %v (emitted: %q)", err, emitted)
 	}
@@ -284,12 +284,12 @@ func TestDiffApplyRoundTripInvariant(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			diff := Diff(tc.base, tc.next, "M")
-			emitted, err := EmitPatch(diff, nil)
+			diff := mustDiff(tc.base, tc.next, "M")
+			emitted, err := EmitPatch(diff)
 			if err != nil {
 				t.Fatalf("EmitPatch error: %v", err)
 			}
-			parsed, err := ParsePatch(emitted, nil)
+			parsed, err := ParsePatch(emitted)
 			if err != nil {
 				t.Fatalf("ParsePatch error: %v\npatch:\n%s", err, emitted)
 			}
@@ -319,11 +319,11 @@ func TestDiffApplyRoundTripListIndex(t *testing.T) {
 		Value: Str("B"),
 	})
 
-	emitted, err := EmitPatch(patch, nil)
+	emitted, err := EmitPatch(patch)
 	if err != nil {
 		t.Fatalf("EmitPatch error: %v", err)
 	}
-	parsed, err := ParsePatch(emitted, nil)
+	parsed, err := ParsePatch(emitted)
 	if err != nil {
 		t.Fatalf("ParsePatch error: %v", err)
 	}
@@ -339,8 +339,8 @@ func TestDiffApplyRoundTripListIndex(t *testing.T) {
 // ---- FID-resolution pre-pass ----------------------------------------------
 
 // TestFIDModeApplyRoundTrip proves the required FID-resolution pre-pass: a
-// FID-mode patch emitted with only #fid path segments parses back with empty
-// Field names and must be resolved (via ApplyPatchWithSchema) before it applies.
+// patch built with only #fid path segments has empty Field names and must be
+// resolved (via ApplyPatchWithSchema) before it applies.
 func TestFIDModeApplyRoundTrip(t *testing.T) {
 	schema := makePatchTestSchema()
 	base := Struct("Match",
@@ -356,28 +356,19 @@ func TestFIDModeApplyRoundTrip(t *testing.T) {
 	patch := NewPatch(RefID{Prefix: "m", Value: "ARS-LIV"}, schema.Hash)
 	patch.TargetType = "Match"
 	// FID-only segments (no field names).
-	patch.SetWithSegs([]PathSeg{{Kind: PathSegField, FID: 2}}, Str("live"))           // status
+	patch.SetWithSegs([]PathSeg{{Kind: PathSegField, FID: 2}}, Str("live"))                          // status
 	patch.SetWithSegs([]PathSeg{{Kind: PathSegField, FID: 3}, {Kind: PathSegField, FID: 3}}, Int(2)) // home.score
 
-	emitted, err := EmitPatchWithOptions(patch, PatchOptions{Schema: schema, KeyMode: KeyModeFID, SortOps: true})
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
-	}
-
-	parsed, err := ParsePatch(emitted, schema)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v\n%s", err, emitted)
-	}
-	// Parsed FID paths have empty Field — plain ApplyPatch must refuse them.
-	if _, err := ApplyPatch(base, parsed); err == nil {
+	// FID-only paths have empty Field — plain ApplyPatch must refuse them.
+	if _, err := ApplyPatch(base, patch); err == nil {
 		t.Errorf("expected ApplyPatch to refuse unresolved FID path")
 	}
 
 	// ApplyPatchWithSchema runs the resolution pre-pass (root type derived from
 	// the base struct) and applies.
-	result, err := ApplyPatchWithSchema(base, parsed, schema)
+	result, err := ApplyPatchWithSchema(base, patch, schema)
 	if err != nil {
-		t.Fatalf("ApplyPatchWithSchema error: %v\n%s", err, emitted)
+		t.Fatalf("ApplyPatchWithSchema error: %v", err)
 	}
 	if s := result.Get("status"); s == nil || s.strVal != "live" {
 		t.Errorf("expected status=live, got %v", s)

@@ -537,7 +537,7 @@ func Test_Gauntlet_PatchApply(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			patch := Diff(tc.base, tc.next, "")
+			patch := mustDiff(tc.base, tc.next, "")
 			if patch == nil {
 				t.Fatalf("Diff returned nil patch")
 			}
@@ -549,7 +549,7 @@ func Test_Gauntlet_PatchApply(t *testing.T) {
 
 			if !EqualLoose(applied, tc.next) {
 				opts := NoTabularLooseCanonOpts()
-				t.Errorf("ApplyPatch(base, Diff(base,next)) != next\n  next:    %s\n  applied: %s",
+				t.Errorf("ApplyPatch(base, mustDiff(base,next)) != next\n  next:    %s\n  applied: %s",
 					CanonicalizeLooseWithOpts(tc.next, opts),
 					CanonicalizeLooseWithOpts(applied, opts),
 				)

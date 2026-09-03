@@ -1,0 +1,5 @@
+# cc comprehension harness dependencies.
+# The GLYPH codec is used in-tree from ../../py (added to sys.path on import).
+# The Anthropic SDK is required for the live run (and for count_tokens — the only
+# correct tokenizer for Claude; do not substitute tiktoken).
+anthropic>=0.87

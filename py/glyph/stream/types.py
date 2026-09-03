@@ -22,8 +22,8 @@ VERSION: int = 1
 # Kind values match the GS1 spec wire integers exactly.
 FrameKind = int
 
-KIND_DOC:   FrameKind = 0  # Snapshot or general GLYPH document
-KIND_PATCH: FrameKind = 1  # GLYPH patch doc (@patch ... @end)
+KIND_DOC:   FrameKind = 0  # State snapshot: canonical JSON (SPEC-CANON.md §5)
+KIND_PATCH: FrameKind = 1  # Patch: canonical JSON wire form (SPEC-CANON.md §7)
 KIND_ROW:   FrameKind = 2  # Single row value (streaming tabular)
 KIND_UI:    FrameKind = 3  # UI event (progress/log/artifact)
 KIND_ACK:   FrameKind = 4  # Acknowledgement

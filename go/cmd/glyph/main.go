@@ -199,7 +199,10 @@ func cmdFmtLoose(r io.Reader, noTabular, llmMode, compactMode bool) {
 	if compactMode {
 		// Build key dictionary and emit with schema header + compact keys
 		keyDict := glyph.BuildKeyDictFromValue(gv)
-		hash := stream.StateHashLoose(gv)
+		hash, err := stream.StateHashLoose(gv)
+		if err != nil {
+			fatal("fingerprint: %v", err)
+		}
 		schemaRef := stream.HashToHex(hash)[:16] // Use first 16 chars of hash
 		opts.SchemaRef = schemaRef
 		opts.KeyDict = keyDict
@@ -320,7 +323,10 @@ func cmdStreamDemo() {
 	)
 
 	currentState := initialState
-	stateHash := stream.StateHashLoose(currentState)
+	stateHash, err := stream.StateHashLoose(currentState)
+	if err != nil {
+		fatal("state hash: %v", err)
+	}
 
 	seq++
 	writeFrame(&stream.Frame{
@@ -328,7 +334,7 @@ func cmdStreamDemo() {
 		SID:     sid,
 		Seq:     seq,
 		Kind:    stream.KindDoc,
-		Payload: []byte(glyph.Emit(currentState)),
+		Payload: mustCanon(currentState),
 	})
 
 	fmt.Fprintln(os.Stderr, "[demo] Sent initial state")
@@ -358,11 +364,16 @@ func cmdStreamDemo() {
 			Payload: stream.EmitLog("info", fmt.Sprintf("Step %d: generated item_%d", step, step)),
 		})
 
-		// Patch: Update state
-		patchPayload := fmt.Sprintf(`@patch
-= .step %d
-+ .items {id=%d name="item_%d"}
-@end`, step, step, step)
+		// Patch: Update state (SPEC-CANON.md §7 wire form)
+		patchPayload, err := glyph.EmitPatch(glyph.NewPatch(glyph.RefID{}, "").
+			Set("step", glyph.Int(int64(step))).
+			Append("items", glyph.Map(
+				glyph.MapEntry{Key: "id", Value: glyph.Int(int64(step))},
+				glyph.MapEntry{Key: "name", Value: glyph.Str(fmt.Sprintf("item_%d", step))},
+			)))
+		if err != nil {
+			fatal("emit patch: %v", err)
+		}
 
 		seq++
 		writeFrame(&stream.Frame{
@@ -375,7 +386,7 @@ func cmdStreamDemo() {
 		})
 
 		// Apply the patch to update state (real parse + apply, not simulated)
-		parsed, err := glyph.ParsePatch(patchPayload, nil)
+		parsed, err := glyph.ParsePatch(patchPayload)
 		if err != nil {
 			fatal("parse patch: %v", err)
 		}
@@ -383,7 +394,10 @@ func cmdStreamDemo() {
 		if err != nil {
 			fatal("apply patch: %v", err)
 		}
-		stateHash = stream.StateHashLoose(currentState)
+		stateHash, err = stream.StateHashLoose(currentState)
+		if err != nil {
+			fatal("state hash: %v", err)
+		}
 
 		// UI: Metric every 3 steps
 		if step%3 == 0 {
@@ -434,7 +448,7 @@ func cmdStreamDemo() {
 		SID:     sid,
 		Seq:     seq,
 		Kind:    stream.KindDoc,
-		Payload: []byte(glyph.Emit(finalState)),
+		Payload: mustCanon(finalState),
 		Final:   true,
 	})
 
@@ -442,8 +456,16 @@ func cmdStreamDemo() {
 	fmt.Fprintf(os.Stderr, "[demo] Sent %d frames\n", seq)
 }
 
+// mustCanon renders a doc-frame payload: canonical JSON (SPEC-CANON.md §5).
+func mustCanon(v *glyph.GValue) []byte {
+	b, err := glyph.CanonJSON(v)
+	if err != nil {
+		fatal("canon json: %v", err)
+	}
+	return b
+}
+
 func fatal(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "glyph: "+format+"\n", args...)
 	os.Exit(1)
 }
-

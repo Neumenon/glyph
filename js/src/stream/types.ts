@@ -16,8 +16,8 @@ export const VERSION = 1;
 
 /** Frame kind indicates the semantic category of the payload */
 export type FrameKind = 
-  | 'doc'    // Snapshot or general GLYPH document
-  | 'patch'  // GLYPH patch doc (@patch ... @end)
+  | 'doc'    // Snapshot: canonical JSON of the state (SPEC-CANON.md §5)
+  | 'patch'  // Patch wire form: canonical JSON (SPEC-CANON.md §7)
   | 'row'    // Single row value (streaming tabular)
   | 'ui'     // UI event (progress/log/artifact)
   | 'ack'    // Acknowledgement

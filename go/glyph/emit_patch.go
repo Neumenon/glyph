@@ -2,37 +2,24 @@ package glyph
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 )
 
 // ============================================================
-// GLYPH v2 Patch Mode Encoder
+// Patch model, apply, and diff
 // ============================================================
 //
-// Patch mode encodes a set of changes (delta) to a document:
-//
-//   @patch @schema#abc123 @keys=wire @target=M-123
-//   = home.ft_h 2
-//   = away.ft_a 1
-//   + events 90' Goal{scorer=^p:smith assist=∅}
-//   - odds
-//   ~ home.rating +0.15
-//   @end
+// The wire form is canonical JSON (SPEC-CANON.md §7); see patch_json.go for
+// EmitPatch/ParsePatch. This file holds the Patch/PatchOp model, the builder,
+// ApplyPatch, FID resolution, and Diff.
 //
 // Operations:
 //   =  Set (replace value at path)
 //   +  Append (add to list, or add field)
 //   -  Delete (remove field or list element)
 //   ~  Delta (numeric increment/decrement)
-//
-// FID paths (v2):
-//   @keys=fid -> paths use .#<fid> instead of .fieldName
-//   Example: .#3.#2 instead of .home.score
 
 // PathSeg represents a single segment in a patch path.
 type PathSeg struct {
@@ -274,228 +261,6 @@ func parsePathToSegs(path string) []PathSeg {
 	return segs
 }
 
-// PatchOptions configures patch encoding.
-type PatchOptions struct {
-	Schema       *Schema
-	KeyMode      KeyMode // How to encode path segments
-	SortOps      bool    // Sort operations by path for determinism
-	IndentPrefix string  // Prefix for each operation line
-}
-
-// DefaultPatchOptions returns default patch encoding options.
-func DefaultPatchOptions(schema *Schema) PatchOptions {
-	return PatchOptions{
-		Schema:       schema,
-		KeyMode:      KeyModeWire,
-		SortOps:      true,
-		IndentPrefix: "",
-	}
-}
-
-// EmitPatch encodes a patch set.
-func EmitPatch(p *Patch, schema *Schema) (string, error) {
-	return EmitPatchWithOptions(p, DefaultPatchOptions(schema))
-}
-
-// EmitPatchWithOptions encodes a patch set with custom options.
-func EmitPatchWithOptions(p *Patch, opts PatchOptions) (string, error) {
-	if p == nil {
-		return "", fmt.Errorf("nil patch set")
-	}
-
-	var buf bytes.Buffer
-
-	// Header
-	buf.WriteString("@patch")
-
-	if p.SchemaID != "" {
-		buf.WriteString(" @schema#")
-		buf.WriteString(p.SchemaID)
-	}
-
-	buf.WriteString(" @keys=")
-	switch opts.KeyMode {
-	case KeyModeName:
-		buf.WriteString("name")
-	case KeyModeFID:
-		buf.WriteString("fid")
-	default:
-		buf.WriteString("wire")
-	}
-
-	buf.WriteString(" @target=")
-	buf.WriteString(canonRef(p.Target)[1:]) // Remove ^ prefix for target
-
-	// v2.4.0: Base fingerprint for state validation
-	if p.BaseFingerprint != "" {
-		buf.WriteString(" @base=")
-		buf.WriteString(p.BaseFingerprint)
-	}
-
-	buf.WriteByte('\n')
-
-	// Operations
-	ops := p.Ops
-	if opts.SortOps {
-		ops = sortPatchOps(ops, opts.KeyMode)
-	}
-
-	packOpts := PackedOptions{
-		Schema:    opts.Schema,
-		UseBitmap: true,
-		KeyMode:   opts.KeyMode,
-	}
-
-	for _, op := range ops {
-		buf.WriteString(opts.IndentPrefix)
-		if err := emitPatchOp(&buf, op, opts, packOpts); err != nil {
-			return "", err
-		}
-		buf.WriteByte('\n')
-	}
-
-	// Footer
-	buf.WriteString("@end")
-
-	return buf.String(), nil
-}
-
-// sortPatchOps returns a copy of ops sorted by path for determinism.
-func sortPatchOps(ops []*PatchOp, keyMode KeyMode) []*PatchOp {
-	sorted := make([]*PatchOp, len(ops))
-	copy(sorted, ops)
-
-	sort.Slice(sorted, func(i, j int) bool {
-		// Compare paths using canonical string form
-		pi := pathSegsToString(sorted[i].Path, keyMode)
-		pj := pathSegsToString(sorted[j].Path, keyMode)
-		if pi != pj {
-			return pi < pj
-		}
-		// Same path, sort by op kind
-		return sorted[i].Op < sorted[j].Op
-	})
-
-	return sorted
-}
-
-// emitPatchOp writes a single patch operation.
-func emitPatchOp(out *bytes.Buffer, op *PatchOp, patchOpts PatchOptions, packOpts PackedOptions) error {
-	// Operation symbol
-	out.WriteRune(rune(op.Op))
-	out.WriteByte(' ')
-
-	// Path - emit according to KeyMode
-	emitPathSegs(out, op.Path, patchOpts.KeyMode, patchOpts.Schema)
-
-	// Value (for =, +, ~)
-	switch op.Op {
-	case OpSet, OpAppend:
-		if op.Value != nil {
-			out.WriteByte(' ')
-			if err := emitPackedValue(out, op.Value, nil, packOpts); err != nil {
-				return err
-			}
-		}
-		// For append with index
-		if op.Op == OpAppend && op.Index >= 0 {
-			out.WriteString(fmt.Sprintf(" @idx=%d", op.Index))
-		}
-
-	case OpDelta:
-		out.WriteByte(' ')
-		if op.Value != nil && op.Value.typ == TypeFloat {
-			f := op.Value.floatVal
-			if f >= 0 {
-				out.WriteByte('+')
-			}
-			out.WriteString(canonFloat(f))
-		} else if op.Value != nil && op.Value.typ == TypeInt {
-			n := op.Value.intVal
-			if n >= 0 {
-				out.WriteByte('+')
-			}
-			out.WriteString(canonInt(n))
-		}
-
-	case OpDelete:
-		// No value needed
-	}
-
-	return nil
-}
-
-// emitPathSegs writes path segments according to KeyMode.
-func emitPathSegs(out *bytes.Buffer, path []PathSeg, keyMode KeyMode, schema *Schema) {
-	for i, seg := range path {
-		switch seg.Kind {
-		case PathSegField:
-			if i > 0 {
-				out.WriteByte('.')
-			}
-			if keyMode == KeyModeFID && seg.FID > 0 {
-				// FID mode: emit .#<fid>
-				out.WriteByte('#')
-				out.WriteString(strconv.Itoa(seg.FID))
-			} else if keyMode == KeyModeWire && schema != nil && seg.Field != "" {
-				// Wire mode: use wire key if available
-				// Need type context to resolve - for now just use field name
-				if needsQuoting(seg.Field) {
-					out.WriteString(quoteString(seg.Field))
-				} else {
-					out.WriteString(seg.Field)
-				}
-			} else {
-				// Name mode or fallback
-				if needsQuoting(seg.Field) {
-					out.WriteString(quoteString(seg.Field))
-				} else {
-					out.WriteString(seg.Field)
-				}
-			}
-
-		case PathSegListIdx:
-			out.WriteByte('[')
-			out.WriteString(strconv.Itoa(seg.ListIdx))
-			out.WriteByte(']')
-
-		case PathSegMapKey:
-			// quoteString already adds surrounding double-quotes; wrap in brackets.
-			out.WriteByte('[')
-			out.WriteString(quoteString(seg.MapKey))
-			out.WriteByte(']')
-		}
-	}
-}
-
-// pathSegsToString converts path segments to canonical string for sorting.
-func pathSegsToString(path []PathSeg, keyMode KeyMode) string {
-	var buf bytes.Buffer
-	for i, seg := range path {
-		switch seg.Kind {
-		case PathSegField:
-			if i > 0 {
-				buf.WriteByte('.')
-			}
-			if keyMode == KeyModeFID && seg.FID > 0 {
-				buf.WriteByte('#')
-				buf.WriteString(strconv.Itoa(seg.FID))
-			} else {
-				buf.WriteString(seg.Field)
-			}
-		case PathSegListIdx:
-			buf.WriteByte('[')
-			buf.WriteString(strconv.Itoa(seg.ListIdx))
-			buf.WriteByte(']')
-		case PathSegMapKey:
-			buf.WriteByte('[')
-			buf.WriteString(quoteString(seg.MapKey))
-			buf.WriteByte(']')
-		}
-	}
-	return buf.String()
-}
-
 // pathSegsStr returns path as string for error messages.
 func pathSegsStr(path []PathSeg) string {
 	var buf bytes.Buffer
@@ -506,33 +271,6 @@ func pathSegsStr(path []PathSeg) string {
 		buf.WriteString(seg.String())
 	}
 	return buf.String()
-}
-
-// needsQuoting checks if a path component needs quoting.
-func needsQuoting(s string) bool {
-	if len(s) == 0 {
-		return true
-	}
-	for i, r := range s {
-		if i == 0 {
-			if !isLetterPatch(r) && r != '_' {
-				return true
-			}
-		} else {
-			if !isLetterPatch(r) && !isDigitPatch(r) && r != '_' && r != '-' {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func isLetterPatch(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
-}
-
-func isDigitPatch(r rune) bool {
-	return r >= '0' && r <= '9'
 }
 
 // ============================================================
@@ -736,16 +474,20 @@ func applyAtPathSegs(v *GValue, path []PathSeg, op *PatchOp) (*GValue, error) {
 		if key == "" && seg.FID > 0 {
 			return nil, fmt.Errorf("unresolved FID #%d in path; apply with ApplyPatchWithSchema", seg.FID)
 		}
-		if v.typ != TypeStruct {
+		// Wire paths carry one string kind for struct fields and map keys.
+		entries := v.mapVal
+		if v.typ == TypeStruct {
+			entries = v.structVal.Fields
+		} else if v.typ != TypeMap {
 			return nil, fmt.Errorf("cannot navigate into %s with field", v.typ)
 		}
-		for i, f := range v.structVal.Fields {
+		for i, f := range entries {
 			if f.Key == key {
 				newChild, err := applyAtPathSegs(f.Value, rest, op)
 				if err != nil {
 					return nil, err
 				}
-				v.structVal.Fields[i].Value = newChild
+				entries[i].Value = newChild
 				return v, nil
 			}
 		}
@@ -1080,24 +822,23 @@ func (pb *PatchBuilder) WithTargetType(typeName string) *PatchBuilder {
 }
 
 // WithBaseFingerprint sets the base state fingerprint for validation.
-// The fingerprint should be the first 16 chars of the SHA-256 hash
-// of the canonical form of the base state.
+// The fingerprint is Fingerprint(base) (SPEC-CANON.md §5): 64 lowercase hex
+// characters of SHA-256(canon_json(base)).
 func (pb *PatchBuilder) WithBaseFingerprint(fingerprint string) *PatchBuilder {
 	pb.patch.BaseFingerprint = fingerprint
 	return pb
 }
 
-// WithBaseValue computes and sets the base fingerprint from a GValue: the
-// first 16 hex chars of SHA-256(CanonicalizeLoose(base)) — the WITH-tabular
-// canonical form. This is the patch base fingerprint, NOT FingerprintLoose
-// (64 hex, NO-tabular form); see the disambiguation note above
-// VerifyPatchBase. The two are not interchangeable.
+// WithBaseValue sets the base fingerprint to Fingerprint(base) (SPEC-CANON.md §5).
+// It panics if base cannot be canonicalized (NaN/Inf, int beyond ±(2^53-1),
+// duplicate key, depth > 1000); use Fingerprint + WithBaseFingerprint to
+// handle that error yourself.
 func (pb *PatchBuilder) WithBaseValue(base *GValue) *PatchBuilder {
-	// Compute hash of canonical form
-	canonical := CanonicalizeLoose(base)
-	hash := sha256.Sum256([]byte(canonical))
-	// Use first 16 chars of hex
-	pb.patch.BaseFingerprint = hex.EncodeToString(hash[:])[:16]
+	fp, err := Fingerprint(base)
+	if err != nil {
+		panic("glyph: WithBaseValue: " + err.Error())
+	}
+	pb.patch.BaseFingerprint = fp
 	return pb
 }
 
@@ -1172,33 +913,11 @@ func (e *FingerprintMismatch) Error() string {
 // vice versa. Prefer whichever name reads better at the call site.
 type PatchBaseMismatch = FingerprintMismatch
 
-// ============================================================
-// Fingerprint disambiguation (read this before using either primitive)
-//
-// GLYPH has two same-shaped-but-different SHA-256 digests over a value's
-// canonical form. They are NOT interchangeable, are computed over different
-// canonicalizations, and are different lengths:
-//
-//   - Patch base fingerprint (VerifyPatchBase / WithBaseValue / the @base=
-//     token): first 16 hex chars of SHA-256(CanonicalizeLoose(v)) — the
-//     WITH-tabular canonical form (auto-tabular list encoding enabled). This
-//     is the cross-language patch-base contract; Go is the source of truth.
-//   - FingerprintLoose (go/glyph/loose.go): the full 64 hex chars of
-//     SHA-256(CanonicalizeLooseNoTabular(v)) — the NO-tabular canonical form.
-//     This is the value-identity digest used for content hashing/dedup.
-//
-// The two coincide only when v contains no auto-tabular-eligible list (so
-// WITH-tabular and NO-tabular canonicalization produce the same bytes) — do
-// not rely on that coincidence. Comparing a 16-hex patch base fingerprint
-// against a 64-hex FingerprintLoose value (or vice versa) is always a bug.
-// ============================================================
-
 // VerifyPatchBase is a read-only pre-flight check for standalone (non-streaming)
 // callers who hold both the current base document and an incoming patch.
 //
-// It computes SHA-256(CanonicalizeLoose(base)) — the WITH-tabular canonical
-// form; see the fingerprint disambiguation note above — and compares the
-// first 16 hex characters against patch.BaseFingerprint. If the fingerprints
+// It computes Fingerprint(base) (SPEC-CANON.md §5, 64 hex chars) and compares
+// it against patch.BaseFingerprint. If the fingerprints
 // agree it returns nil. If the patch carries no fingerprint
 // (BaseFingerprint == "") it also returns nil (opt-in: absence means "not
 // checked").
@@ -1216,9 +935,10 @@ func VerifyPatchBase(base *GValue, patch *Patch) error {
 	if patch == nil || patch.BaseFingerprint == "" {
 		return nil
 	}
-	canonical := CanonicalizeLoose(base)
-	hash := sha256.Sum256([]byte(canonical))
-	got := hex.EncodeToString(hash[:])[:16]
+	got, err := Fingerprint(base)
+	if err != nil {
+		return err
+	}
 	if got != patch.BaseFingerprint {
 		return &FingerprintMismatch{Got: got, Want: patch.BaseFingerprint}
 	}
@@ -1230,18 +950,21 @@ func VerifyPatchBase(base *GValue, patch *Patch) error {
 // ============================================================
 
 // Diff computes the patch set needed to transform 'from' into 'to'.
-// The returned patch carries the base fingerprint of 'from' (same computation
-// as WithBaseValue), so ApplyPatch will reject it against any other state.
-func Diff(from, to *GValue, typeName string) *Patch {
+// The returned patch carries Fingerprint(from) as its base, so ApplyPatch will
+// reject it against any other state. Errors only if 'from' cannot be
+// canonicalized (see CanonJSON).
+func Diff(from, to *GValue, typeName string) (*Patch, error) {
 	p := NewPatch(RefID{}, "")
 	p.TargetType = typeName
 	if from != nil {
-		canonical := CanonicalizeLoose(from)
-		hash := sha256.Sum256([]byte(canonical))
-		p.BaseFingerprint = hex.EncodeToString(hash[:])[:16]
+		fp, err := Fingerprint(from)
+		if err != nil {
+			return nil, err
+		}
+		p.BaseFingerprint = fp
 	}
 	diffValues(from, to, nil, p)
-	return p
+	return p, nil
 }
 
 // diffValues recursively computes differences.

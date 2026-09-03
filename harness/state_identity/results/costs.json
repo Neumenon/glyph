@@ -1,0 +1,103 @@
+{
+  "bench_ns_per_op": {
+    "go": [
+      {
+        "glyph_ns": 2065,
+        "id": "small_state",
+        "iters": 300,
+        "jcs_ns": 4786,
+        "naive_ns": 2250
+      },
+      {
+        "glyph_ns": 20644,
+        "id": "tabular_batch",
+        "iters": 300,
+        "jcs_ns": 76018,
+        "naive_ns": 34461
+      },
+      {
+        "glyph_ns": 1733,
+        "id": "nested_trace",
+        "iters": 300,
+        "jcs_ns": 5629,
+        "naive_ns": 3871
+      }
+    ],
+    "js": [
+      {
+        "glyph_ns": 16811,
+        "id": "small_state",
+        "iters": 300,
+        "jcs_ns": 8042,
+        "naive_ns": 7802
+      },
+      {
+        "glyph_ns": 62646,
+        "id": "tabular_batch",
+        "iters": 300,
+        "jcs_ns": 66047,
+        "naive_ns": 19907
+      },
+      {
+        "glyph_ns": 8880,
+        "id": "nested_trace",
+        "iters": 300,
+        "jcs_ns": 5202,
+        "naive_ns": 3635
+      }
+    ],
+    "python": [
+      {
+        "glyph_ns": 17137,
+        "id": "small_state",
+        "iters": 300,
+        "jcs_ns": 11967,
+        "minified_ns": 3139,
+        "naive_ns": 3426
+      },
+      {
+        "glyph_ns": 289098,
+        "id": "tabular_batch",
+        "iters": 300,
+        "jcs_ns": 215832,
+        "minified_ns": 34203,
+        "naive_ns": 35316
+      },
+      {
+        "glyph_ns": 48962,
+        "id": "nested_trace",
+        "iters": 300,
+        "jcs_ns": 29603,
+        "minified_ns": 5492,
+        "naive_ns": 5371
+      }
+    ]
+  },
+  "note": "timings informational only; see README reproducibility contract",
+  "tokens_bytes_cl100k": {
+    "nested_trace": {
+      "bytes_vs_json_pct": -26.0,
+      "glyph_bytes": 142,
+      "glyph_tokens": 87,
+      "glyph_vs_json_pct": -1.1,
+      "json_bytes": 192,
+      "json_tokens": 88
+    },
+    "small_state": {
+      "bytes_vs_json_pct": -22.9,
+      "glyph_bytes": 108,
+      "glyph_tokens": 35,
+      "glyph_vs_json_pct": -16.7,
+      "json_bytes": 140,
+      "json_tokens": 42
+    },
+    "tabular_batch": {
+      "bytes_vs_json_pct": -63.0,
+      "glyph_bytes": 1016,
+      "glyph_tokens": 661,
+      "glyph_vs_json_pct": -41.2,
+      "json_bytes": 2749,
+      "json_tokens": 1124
+    }
+  }
+}

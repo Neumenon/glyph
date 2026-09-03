@@ -107,8 +107,8 @@ export {
   PathSeg,
   PathSegKind,
   PatchBuilder,
-  PatchEmitOptions,
   ApplyPatchOptions,
+  PATCH_WIRE_VERSION,
   emitPatch,
   parsePatch,
   applyPatch,
@@ -122,12 +122,22 @@ export {
   diff,
 } from './patch';
 
+// Canonical JSON identity (SPEC-CANON.md)
+export {
+  canonJson,
+  fingerprint,
+  fingerprintLoose,
+  isCanonical,
+  CanonError,
+  CANON_MAX_DEPTH,
+  tensorRef,
+} from './canon';
+
 // Loose mode (schema-optional)
 export {
   canonicalizeLoose,
   canonicalizeLooseNoTabular,
   canonicalizeLooseWithOpts,
-  fingerprintLoose,
   equalLoose,
   fromJsonLoose,
   toJsonLoose,

@@ -34,8 +34,20 @@ coverage/
 explainer.html
 gauntlet/scenarios/report.json
 
+# cc-trace harness: live captures may contain prompts/commands — never commit.
+# (The committed sample under harness/cc-trace/fixtures/ is synthetic and safe.)
+harness/cc-trace/traces/raw-jsonl/*.jsonl
+harness/cc-trace/traces/raw-jsonl/*.log
+harness/cc-trace/traces/reports/*.json
+
+# comprehension harness: per-run benchmark outputs (regenerable)
+harness/comprehension/results/*.json
+
 # AI tool context dumps (not source)
 glyph_*_context.txt
 
 # Hypothesis test database
 .hypothesis/
+
+# harness/state_identity JS subject deps (npm-installed, regenerable)
+harness/state_identity/subjects/js/node_modules/

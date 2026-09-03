@@ -142,8 +142,8 @@ tailwind.config = {
         <div class="text-zinc-600 text-xs font-mono mt-1">vs JSON min (1k rows)</div>
       </div>
       <div class="stat-chip fade-in">
-        <div class="text-zinc-500 text-xs font-mono uppercase tracking-wider mb-1">Patch savings</div>
-        <div class="font-mono text-2xl font-bold text-green-400" id="stat-patch">—</div>
+        <div class="text-zinc-500 text-xs font-mono uppercase tracking-wider mb-1">Patch size</div>
+        <div class="font-mono text-2xl font-bold text-zinc-300" id="stat-patch">—</div>
         <div class="text-zinc-600 text-xs font-mono mt-1">vs full snapshots</div>
       </div>
       <div class="stat-chip fade-in">
@@ -221,7 +221,7 @@ tailwind.config = {
         <span class="font-mono text-xs uppercase tracking-widest text-zinc-600">Act II</span>
         <h3 class="text-lg font-semibold text-zinc-200">Live Match Stream</h3>
       </div>
-      <p class="text-zinc-500 text-sm mb-2">100 match updates. Full JSON snapshot per update vs real <code class="font-mono text-xs text-zinc-300">@patch</code> output.</p>
+      <p class="text-zinc-500 text-sm mb-2">100 match updates. Full JSON snapshot per update vs the real <code class="font-mono text-xs text-zinc-300">glyph_patch</code> wire form — which is bigger here, and carries the base fingerprint the snapshot can't.</p>
       <p class="text-zinc-600 text-xs font-mono mb-5" id="match-note">—</p>
 
       <div class="bg-panel border border-zinc-800 rounded-lg p-5 space-y-4">
@@ -470,8 +470,8 @@ function safeGet(obj, ...keys) {
 function byteBarRow(label, bytes, maxBytes, isWinner, savingsPct) {
   const fillClass = isWinner ? 'bar-fill-green' : 'bar-fill-zinc';
   const widthPct = maxBytes > 0 ? Math.max(2, pct(bytes, maxBytes)) : 0;
-  const savChip = (isWinner && savingsPct != null)
-    ? `<span class="chip-green ml-2">-${fmtPct(savingsPct)}</span>` : '';
+  const savChip = (savingsPct != null)
+    ? `<span class="${savingsPct >= 0 ? 'chip-green' : 'chip-amber'} ml-2">${savingsPct >= 0 ? '-' : '+'}${fmtPct(Math.abs(savingsPct))}</span>` : '';
   return `
     <div class="flex items-center gap-3">
       <span class="text-zinc-500 font-mono text-xs flex-shrink-0" style="width:120px">${label}</span>
@@ -493,7 +493,10 @@ function renderHero() {
   const avoided = safeGet(d, 'toolFirewall', 'blocked', 'bytesAvoided');
 
   document.getElementById('stat-tabular').textContent = tabSavings != null ? `-${fmtPct(tabSavings)}` : '(no data)';
-  document.getElementById('stat-patch').textContent = patchSavings != null ? `-${fmtPct(patchSavings)}` : '(no data)';
+  // Signed: the JSON patch wire is bigger than a small snapshot, and the page
+  // should say so rather than print a minus in front of a negative number.
+  document.getElementById('stat-patch').textContent = patchSavings != null
+    ? `${patchSavings >= 0 ? '-' : '+'}${fmtPct(Math.abs(patchSavings))}` : '(no data)';
   document.getElementById('stat-firewall').textContent = firewallDetect != null ? `char ${firewallDetect}` : '(no data)';
   document.getElementById('stat-avoided').textContent = avoided != null ? `${avoided} B` : '(no data)';
 }
@@ -735,7 +738,7 @@ function renderMatchStream() {
   bars.innerHTML = `
     <div class="space-y-3">
       ${byteBarRow('JSON snapshots', ms.cumSnapshotBytes, maxBytes, false, null)}
-      ${byteBarRow('Glyph patches', ms.cumPatchBytes, maxBytes, true, sav)}
+      ${byteBarRow('Glyph patches', ms.cumPatchBytes, maxBytes, sav >= 0, sav)}
       <div class="flex items-center gap-3 pt-1">
         <span class="text-zinc-600 font-mono text-xs" style="width:120px">Updates</span>
         <span class="text-zinc-400 font-mono text-xs">${ms.totalUpdates} updates</span>

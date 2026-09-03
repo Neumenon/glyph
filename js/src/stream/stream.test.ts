@@ -46,6 +46,9 @@ import {
 } from './index';
 import { g } from '../types';
 import { emit } from '../emit';
+import { fromJsonLoose } from '../loose';
+import { canonJson } from '../canon';
+import { createHash } from 'crypto';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -76,7 +79,7 @@ describe('encodeFrame', () => {
     base[0] = 0x01;
     base[1] = 0x02;
     
-    const frame = patchFrame(1n, 10n, '@patch\nset .x 1\n@end', base);
+    const frame = patchFrame(1n, 10n, '{"glyph_patch":1,"ops":[]}', base);
     const bytes = encodeFrame(frame);
     const str = decoder.decode(bytes);
     
@@ -153,7 +156,7 @@ describe('decodeFrame', () => {
   });
   
   test('payload with newlines', () => {
-    const payload = '@patch\nset .x 1\nset .y 2\n@end';
+    const payload = '{"glyph_patch":1,\n"ops":[]}';
     const input = `@frame{v=1 sid=1 seq=1 kind=patch len=${payload.length}}\n${payload}\n`;
     const frame = decodeFrame(encoder.encode(input));
     
@@ -263,7 +266,7 @@ describe('round-trip', () => {
     { name: 'minimal doc', frame: docFrame(0n, 0n, '{}') },
     { 
       name: 'patch with base', 
-      frame: patchFrame(1n, 5n, '@patch\nset .x 1\n@end', new Uint8Array([0x01, 0x02, ...new Array(30).fill(0)])) 
+      frame: patchFrame(1n, 5n, '{"glyph_patch":1,"ops":[]}', new Uint8Array([0x01, 0x02, ...new Array(30).fill(0)])) 
     },
     { name: 'row', frame: { version: 1, sid: 2n, seq: 100n, kind: 'row', payload: encoder.encode('Row@(id 1 name foo)') } },
     { name: 'ui', frame: uiFrame(1n, 50n, 'UIEvent@(type "progress" pct 0.5)') },
@@ -273,7 +276,7 @@ describe('round-trip', () => {
     { name: 'pong', frame: pongFrame(0n, 0n) },
     { 
       name: 'final', 
-      frame: { version: 1, sid: 1n, seq: 999n, kind: 'doc', payload: encoder.encode('done'), final: true } 
+      frame: { version: 1, sid: 1n, seq: 999n, kind: 'doc', payload: encoder.encode('"done"'), final: true } 
     },
     { 
       name: 'large seq', 
@@ -496,7 +499,7 @@ describe('StreamCursor', () => {
     
     // Patch with correct base should succeed
     const correctBase = state.stateHash!;
-    cursor.processFrame(patchFrame(1n, 1n, '@patch\nset .x 2\n@end', correctBase));
+    cursor.processFrame(patchFrame(1n, 1n, '{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":2}]}', correctBase));
     
     // Update state
     const doc2 = g.map({ key: 'x', value: g.int(2) });
@@ -507,7 +510,7 @@ describe('StreamCursor', () => {
     wrongBase[0] = 0xde;
     
     expect(() => {
-      cursor.processFrame(patchFrame(1n, 2n, '@patch\nset .x 3\n@end', wrongBase));
+      cursor.processFrame(patchFrame(1n, 2n, '{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":3}]}', wrongBase));
     }).toThrow();
   });
   
@@ -539,7 +542,7 @@ describe('StreamCursor', () => {
       sid: 1n,
       seq: 1n,
       kind: 'doc',
-      payload: encoder.encode('done'),
+      payload: encoder.encode('"done"'),
       final: true,
     });
     
@@ -563,13 +566,15 @@ describe('FrameHandler', () => {
       onUI: (sid, seq, payload) => { uiEvents.push(decoder.decode(payload)); },
     });
     
-    handler.handle(docFrame(1n, 1n, '{x=1}'));
-    handler.handle(patchFrame(1n, 2n, 'set .x 2'));
+    const p2 = '{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":2}]}';
+    const p3 = '{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":3}]}';
+    handler.handle(docFrame(1n, 1n, '{"x":1}'));
+    handler.handle(patchFrame(1n, 2n, p2));
     handler.handle(uiFrame(1n, 3n, 'progress 50%'));
-    handler.handle(patchFrame(1n, 4n, 'set .x 3'));
-    
-    expect(docs).toEqual(['{x=1}']);
-    expect(patches).toEqual(['set .x 2', 'set .x 3']);
+    handler.handle(patchFrame(1n, 4n, p3));
+
+    expect(docs).toEqual(['{"x":1}']);
+    expect(patches).toEqual([p2, p3]);
     expect(uiEvents).toEqual(['progress 50%']);
   });
   
@@ -583,8 +588,8 @@ describe('FrameHandler', () => {
       },
     });
     
-    handler.handle(docFrame(1n, 1n, 'a'));
-    handler.handle(docFrame(1n, 5n, 'b')); // Gap!
+    handler.handle(docFrame(1n, 1n, '"a"'));
+    handler.handle(docFrame(1n, 5n, '"b"')); // Gap!
     
     expect(gaps.length).toBe(1);
     expect(gaps[0]).toEqual([2n, 5n]);
@@ -600,13 +605,13 @@ describe('FrameHandler', () => {
       onFinal: (sid) => { finalSIDs.push(sid); },
     });
     
-    handler.handle(docFrame(1n, 1n, 'a'));
+    handler.handle(docFrame(1n, 1n, '"a"'));
     handler.handle({
       version: 1,
       sid: 1n,
       seq: 2n,
       kind: 'doc',
-      payload: encoder.encode('done'),
+      payload: encoder.encode('"done"'),
       final: true,
     });
     
@@ -620,11 +625,51 @@ describe('FrameHandler', () => {
       onDoc: () => { count++; },
     });
     
-    handler.handle(docFrame(1n, 1n, 'a'));
-    handler.handle(docFrame(1n, 1n, 'b')); // Duplicate
-    handler.handle(docFrame(1n, 2n, 'c'));
+    handler.handle(docFrame(1n, 1n, '"a"'));
+    handler.handle(docFrame(1n, 1n, '"b"')); // Duplicate
+    handler.handle(docFrame(1n, 2n, '"c"'));
     
     expect(count).toBe(2);
+  });
+});
+
+// ============================================================
+// Canonical payload ingest (SPEC-CANON.md §5)
+// ============================================================
+
+describe('canonical payload ingest', () => {
+  const mk = (kind: 'doc' | 'patch' | 'row', payload: string): Frame =>
+    ({ version: 1, sid: 1n, seq: 1n, kind, payload: encoder.encode(payload) });
+  const nonCanonical = ['{"b":1,"a":2}', '{"a": 1}', '{"a":1.0}', 'x', ''];
+
+  test.each(['doc', 'patch'] as const)('%s payload must be canonical JSON (strict and lenient)', (kind) => {
+    for (const payload of nonCanonical) {
+      expect(() => new StreamCursor().processFrame(mk(kind, payload))).toThrow(`${kind} payload is not canonical JSON`);
+      expect(() => new FrameHandler().handle(mk(kind, payload))).toThrow(`${kind} payload is not canonical JSON`);
+    }
+    new StreamCursor().processFrame(mk(kind, '{"a":1,"b":2}'));
+    new FrameHandler().handle(mk(kind, '{"a":1,"b":2}'));
+  });
+
+  test('a rejected frame does not advance the cursor', () => {
+    const cursor = new StreamCursor();
+    expect(() => cursor.processFrame(mk('doc', 'x'))).toThrow();
+    expect(cursor.get(1n).lastSeq).toBe(0n);
+  });
+
+  test('other kinds stay opaque', () => {
+    for (const payload of nonCanonical) {
+      new StreamCursor().processFrame(mk('row', payload));
+      new FrameHandler().handle(mk('row', payload));
+    }
+  });
+
+  test('sha256(doc payload) is the state hash', () => {
+    const value = fromJsonLoose({ b: [1, 2.0], a: null });
+    const payload = canonJson(value);
+    expect(payload).toBe('{"a":null,"b":[1,2]}');
+    expect(Buffer.from(stateHashLooseSync(value)).toString('hex'))
+      .toBe(createHash('sha256').update(payload).digest('hex'));
   });
 });
 

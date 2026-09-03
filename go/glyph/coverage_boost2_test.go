@@ -410,7 +410,6 @@ func TestMode_String(t *testing.T) {
 		{ModeStruct, "struct"},
 		{ModePacked, "packed"},
 		{ModeTabular, "tabular"},
-		{ModePatch, "patch"},
 		{Mode(99), "unknown"},
 	}
 	for _, tt := range tests {
@@ -501,7 +500,7 @@ func TestEmitPacked_WithTypes(t *testing.T) {
 
 // ============================================================
 // emit_patch.go coverage — PatchOpKind.String, SetWithSegs, InsertAt,
-// Diff, ParsePatchRoundTrip, valuesEqual, diffMapValues
+// Diff, valuesEqual, diffMapValues
 // ============================================================
 
 func TestPatchOpKind_String(t *testing.T) {
@@ -543,67 +542,67 @@ func TestPatch_InsertAt(t *testing.T) {
 
 func TestDiff_BasicTypes(t *testing.T) {
 	// Bool change
-	p := Diff(Bool(true), Bool(false), "")
+	p := mustDiff(Bool(true), Bool(false), "")
 	if len(p.Ops) != 1 {
 		t.Errorf("expected 1 op for bool diff, got %d", len(p.Ops))
 	}
 
 	// Int change
-	p = Diff(Int(1), Int(2), "")
+	p = mustDiff(Int(1), Int(2), "")
 	if len(p.Ops) != 1 {
 		t.Errorf("expected 1 op for int diff, got %d", len(p.Ops))
 	}
 
 	// Float change
-	p = Diff(Float(1.0), Float(2.0), "")
+	p = mustDiff(Float(1.0), Float(2.0), "")
 	if len(p.Ops) != 1 {
 		t.Errorf("expected 1 op for float diff, got %d", len(p.Ops))
 	}
 
 	// String change
-	p = Diff(Str("a"), Str("b"), "")
+	p = mustDiff(Str("a"), Str("b"), "")
 	if len(p.Ops) != 1 {
 		t.Errorf("expected 1 op for string diff, got %d", len(p.Ops))
 	}
 
 	// No change
-	p = Diff(Int(1), Int(1), "")
+	p = mustDiff(Int(1), Int(1), "")
 	if len(p.Ops) != 0 {
 		t.Errorf("expected 0 ops for same value, got %d", len(p.Ops))
 	}
 
 	// Null to null
-	p = Diff(Null(), Null(), "")
+	p = mustDiff(Null(), Null(), "")
 	if len(p.Ops) != 0 {
 		t.Errorf("expected 0 ops for null==null, got %d", len(p.Ops))
 	}
 
 	// Nil to non-nil
-	p = Diff(nil, Int(1), "")
+	p = mustDiff(nil, Int(1), "")
 	if len(p.Ops) != 1 {
 		t.Errorf("expected 1 op for nil->int, got %d", len(p.Ops))
 	}
 
 	// Non-nil to nil
-	p = Diff(Int(1), nil, "")
+	p = mustDiff(Int(1), nil, "")
 	if len(p.Ops) != 0 {
 		// root deletion with empty path results in 0 ops since path check fails
 	}
 
 	// Both nil
-	p = Diff(nil, nil, "")
+	p = mustDiff(nil, nil, "")
 	if len(p.Ops) != 0 {
 		t.Errorf("expected 0 ops for nil==nil, got %d", len(p.Ops))
 	}
 
 	// Type mismatch
-	p = Diff(Int(1), Str("a"), "")
+	p = mustDiff(Int(1), Str("a"), "")
 	if len(p.Ops) != 1 {
 		t.Errorf("expected 1 op for type mismatch, got %d", len(p.Ops))
 	}
 
 	// ID change
-	p = Diff(IDFromRef(RefID{Value: "a"}), IDFromRef(RefID{Value: "b"}), "")
+	p = mustDiff(IDFromRef(RefID{Value: "a"}), IDFromRef(RefID{Value: "b"}), "")
 	if len(p.Ops) != 1 {
 		t.Errorf("expected 1 op for ID diff, got %d", len(p.Ops))
 	}
@@ -619,7 +618,7 @@ func TestDiff_StructValues(t *testing.T) {
 		MapEntry{Key: "b", Value: Str("new")},
 		MapEntry{Key: "c", Value: Int(3)},
 	)
-	p := Diff(from, to, "S")
+	p := mustDiff(from, to, "S")
 	if len(p.Ops) < 1 {
 		t.Errorf("expected ops for struct diff, got %d", len(p.Ops))
 	}
@@ -634,7 +633,7 @@ func TestDiff_MapValues(t *testing.T) {
 		MapEntry{Key: "x", Value: Int(1)},
 		MapEntry{Key: "z", Value: Int(3)},
 	)
-	p := Diff(from, to, "")
+	p := mustDiff(from, to, "")
 	// Should have delete y, add z
 	if len(p.Ops) < 2 {
 		t.Errorf("expected at least 2 ops for map diff, got %d", len(p.Ops))
@@ -644,7 +643,7 @@ func TestDiff_MapValues(t *testing.T) {
 func TestDiff_ListValues(t *testing.T) {
 	from := List(Int(1), Int(2))
 	to := List(Int(1), Int(3))
-	p := Diff(from, to, "")
+	p := mustDiff(from, to, "")
 	if len(p.Ops) != 1 {
 		t.Errorf("expected 1 op for list diff, got %d", len(p.Ops))
 	}
@@ -653,7 +652,7 @@ func TestDiff_ListValues(t *testing.T) {
 func TestDiff_SameList(t *testing.T) {
 	from := List(Int(1), Int(2))
 	to := List(Int(1), Int(2))
-	p := Diff(from, to, "")
+	p := mustDiff(from, to, "")
 	if len(p.Ops) != 0 {
 		t.Errorf("expected 0 ops for same list, got %d", len(p.Ops))
 	}
@@ -978,22 +977,6 @@ func TestTokenType_String_Coverage(t *testing.T) {
 		if s == "" {
 			t.Errorf("empty string for token type %d", tt)
 		}
-	}
-}
-
-// ============================================================
-// Additional parse_header.go coverage — EmitV2Patch
-// ============================================================
-
-func TestEmitV2Patch(t *testing.T) {
-	p := NewPatch(RefID{Value: "M-42"}, "abc123")
-	p.Set("name", Str("alice"))
-	result, err := EmitV2Patch(p, V2Options{})
-	if err != nil {
-		t.Fatalf("EmitV2Patch: %v", err)
-	}
-	if !strings.Contains(result, "@patch") {
-		t.Errorf("expected @patch, got %q", result)
 	}
 }
 

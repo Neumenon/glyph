@@ -5,420 +5,199 @@ import (
 	"testing"
 )
 
-func TestParsePatchBasic(t *testing.T) {
-	input := `@patch @schema#abc123 @keys=wire @target=m:ARS-LIV
-= home.score 2
-= away.score 1
-+ events "Goal!"
-- odds
-~ rating +0.15
-@end`
+// parse_patch_test.go: ParsePatch on the SPEC-CANON.md §7 wire form. The
+// cases mirror py/tests/test_patch.py so the three implementations reject
+// the same inputs.
 
-	patch, err := ParsePatch(input, nil)
+func mustParsePatch(t *testing.T, input string) *Patch {
+	t.Helper()
+	p, err := ParsePatch(input)
 	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
+		t.Fatalf("ParsePatch(%s): %v", input, err)
+	}
+	return p
+}
+
+func TestParsePatchHeader(t *testing.T) {
+	p := mustParsePatch(t, `{"glyph_patch":1,"ops":[],"base":"abab","schema":"s1","target":"m:ARS-LIV","type":"Match"}`)
+	if p.BaseFingerprint != "abab" || p.SchemaID != "s1" || p.TargetType != "Match" {
+		t.Errorf("header fields: %+v", p)
+	}
+	if p.Target != (RefID{Prefix: "m", Value: "ARS-LIV"}) {
+		t.Errorf("target: %v", p.Target)
+	}
+	if len(p.Ops) != 0 {
+		t.Errorf("ops: want empty, got %d", len(p.Ops))
 	}
 
-	// Verify header
-	if patch.SchemaID != "abc123" {
-		t.Errorf("SchemaID = %q, want %q", patch.SchemaID, "abc123")
+	// target splits at the FIRST colon; no colon means value only.
+	if p := mustParsePatch(t, `{"glyph_patch":1,"ops":[],"target":"a:b:c"}`); p.Target != (RefID{Prefix: "a", Value: "b:c"}) {
+		t.Errorf("target a:b:c → %v", p.Target)
 	}
-	if patch.Target.Prefix != "m" || patch.Target.Value != "ARS-LIV" {
-		t.Errorf("Target = %v, want m:ARS-LIV", patch.Target)
+	if p := mustParsePatch(t, `{"glyph_patch":1,"ops":[],"target":"solo"}`); p.Target != (RefID{Value: "solo"}) {
+		t.Errorf("target solo → %v", p.Target)
 	}
+	// Any JSON spelling is accepted by the parser (canonical bytes are a
+	// receiver concern).
+	mustParsePatch(t, "{ \"ops\" : [ ] ,\n \"glyph_patch\" : 1 }")
+}
 
-	// Verify operations
-	if len(patch.Ops) != 5 {
-		t.Fatalf("len(Ops) = %d, want 5", len(patch.Ops))
+func TestParsePatchOps(t *testing.T) {
+	p := mustParsePatch(t, `{"glyph_patch":1,"ops":[
+		{"op":"=","path":["home","score"],"value":2},
+		{"op":"+","path":["events"],"value":"Goal","index":0},
+		{"op":"+","path":["events"],"value":{"minute":90,"who":{"$id":["p","smith"]}}},
+		{"op":"-","path":["odds"]},
+		{"op":"~","path":["rating"],"value":-0.5},
+		{"op":"~","path":["n"],"value":3},
+		{"op":"=","path":["items",2,"name"],"value":null}
+	]}`)
+	if len(p.Ops) != 7 {
+		t.Fatalf("ops: want 7, got %d", len(p.Ops))
 	}
-
-	// Op 0: = home.score 2
-	if patch.Ops[0].Op != OpSet {
-		t.Errorf("Op[0].Op = %v, want OpSet", patch.Ops[0].Op)
+	set := p.Ops[0]
+	if set.Op != OpSet || pathSegsStr(set.Path) != "home.score" || mustAsInt(t, set.Value) != 2 || set.Index != -1 {
+		t.Errorf("set op: %+v", set)
 	}
-	if len(patch.Ops[0].Path) != 2 {
-		t.Errorf("Op[0].Path len = %d, want 2", len(patch.Ops[0].Path))
+	ins := p.Ops[1]
+	if ins.Op != OpAppend || ins.Index != 0 || mustAsStr(t, ins.Value) != "Goal" {
+		t.Errorf("insert op: %+v", ins)
 	}
-	if patch.Ops[0].Path[0].Field != "home" {
-		t.Errorf("Op[0].Path[0] = %q, want home", patch.Ops[0].Path[0].Field)
+	app := p.Ops[2]
+	if app.Op != OpAppend || app.Index != -1 {
+		t.Errorf("append op: %+v", app)
 	}
-	if patch.Ops[0].Value.intVal != 2 {
-		t.Errorf("Op[0].Value = %v, want 2", patch.Ops[0].Value)
+	if who := app.Value.Get("who"); who == nil || who.Type() != TypeID || who.idVal != (RefID{Prefix: "p", Value: "smith"}) {
+		t.Errorf("append value $id not decoded: %v", who)
 	}
-
-	// Op 2: + events "Goal!"
-	if patch.Ops[2].Op != OpAppend {
-		t.Errorf("Op[2].Op = %v, want OpAppend", patch.Ops[2].Op)
+	del := p.Ops[3]
+	if del.Op != OpDelete || del.Value != nil {
+		t.Errorf("delete op: %+v", del)
 	}
-	if patch.Ops[2].Value.strVal != "Goal!" {
-		t.Errorf("Op[2].Value = %q, want Goal!", patch.Ops[2].Value.strVal)
+	if d := p.Ops[4]; d.Op != OpDelta || mustAsFloat(t, d.Value) != -0.5 {
+		t.Errorf("delta op: %+v", d)
 	}
-
-	// Op 3: - odds
-	if patch.Ops[3].Op != OpDelete {
-		t.Errorf("Op[3].Op = %v, want OpDelete", patch.Ops[3].Op)
+	if d := p.Ops[5]; d.Op != OpDelta || mustAsFloat(t, d.Value) != 3 {
+		t.Errorf("integral delta op: %+v", d)
 	}
-
-	// Op 4: ~ rating +0.15
-	if patch.Ops[4].Op != OpDelta {
-		t.Errorf("Op[4].Op = %v, want OpDelta", patch.Ops[4].Op)
+	path := p.Ops[6].Path
+	if len(path) != 3 || path[0].Kind != PathSegField || path[1].Kind != PathSegListIdx || path[1].ListIdx != 2 || path[2].Field != "name" {
+		t.Errorf("mixed path: %+v", path)
 	}
-	if patch.Ops[4].Value.floatVal != 0.15 {
-		t.Errorf("Op[4].Value = %v, want 0.15", patch.Ops[4].Value.floatVal)
+	if !p.Ops[6].Value.IsNull() {
+		t.Errorf("null value: %v", p.Ops[6].Value)
 	}
 }
 
-func TestParsePatchFIDMode(t *testing.T) {
-	input := `@patch @keys=fid @target=m:123
-= #1.#2 42
-= #3 "hello"
-@end`
-
-	patch, err := ParsePatch(input, nil)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
+func TestParsePatchRejects(t *testing.T) {
+	cases := []struct{ name, input string }{
+		{"not json", `not json`},
+		{"empty", ``},
+		{"array root", `[]`},
+		{"string root", `"x"`},
+		{"trailing garbage", `{"glyph_patch":1,"ops":[]} x`},
+		{"missing glyph_patch", `{"ops":[]}`},
+		{"glyph_patch 2", `{"glyph_patch":2,"ops":[]}`},
+		{"glyph_patch true", `{"glyph_patch":true,"ops":[]}`},
+		{"glyph_patch string", `{"glyph_patch":"1","ops":[]}`},
+		{"glyph_patch float", `{"glyph_patch":1.0,"ops":[]}`},
+		{"missing ops", `{"glyph_patch":1}`},
+		{"ops null", `{"glyph_patch":1,"ops":null}`},
+		{"ops object", `{"glyph_patch":1,"ops":{}}`},
+		{"extra header key", `{"glyph_patch":1,"ops":[],"extra":1}`},
+		{"base not string", `{"glyph_patch":1,"ops":[],"base":7}`},
+		{"schema not string", `{"glyph_patch":1,"ops":[],"schema":null}`},
+		{"target not string", `{"glyph_patch":1,"ops":[],"target":["m","1"]}`},
+		{"type not string", `{"glyph_patch":1,"ops":[],"type":1}`},
+		{"op not object", `{"glyph_patch":1,"ops":[1]}`},
+		{"op unknown", `{"glyph_patch":1,"ops":[{"op":"?","path":["a"],"value":1}]}`},
+		{"op missing", `{"glyph_patch":1,"ops":[{"path":["a"],"value":1}]}`},
+		{"op not string", `{"glyph_patch":1,"ops":[{"op":1,"path":["a"],"value":1}]}`},
+		{"path missing", `{"glyph_patch":1,"ops":[{"op":"=","value":1}]}`},
+		{"path string", `{"glyph_patch":1,"ops":[{"op":"=","path":"a","value":1}]}`},
+		{"seg negative", `{"glyph_patch":1,"ops":[{"op":"=","path":[-1],"value":1}]}`},
+		{"seg float", `{"glyph_patch":1,"ops":[{"op":"=","path":[1.5],"value":1}]}`},
+		{"seg bool", `{"glyph_patch":1,"ops":[{"op":"=","path":[true],"value":1}]}`},
+		{"seg null", `{"glyph_patch":1,"ops":[{"op":"=","path":[null],"value":1}]}`},
+		{"seg array", `{"glyph_patch":1,"ops":[{"op":"=","path":[["x"]],"value":1}]}`},
+		{"set missing value", `{"glyph_patch":1,"ops":[{"op":"=","path":["a"]}]}`},
+		{"append missing value", `{"glyph_patch":1,"ops":[{"op":"+","path":["a"]}]}`},
+		{"delta missing value", `{"glyph_patch":1,"ops":[{"op":"~","path":["a"]}]}`},
+		{"delete with value", `{"glyph_patch":1,"ops":[{"op":"-","path":["a"],"value":1}]}`},
+		{"delta string", `{"glyph_patch":1,"ops":[{"op":"~","path":["a"],"value":"1"}]}`},
+		{"delta bool", `{"glyph_patch":1,"ops":[{"op":"~","path":["a"],"value":true}]}`},
+		{"delta null", `{"glyph_patch":1,"ops":[{"op":"~","path":["a"],"value":null}]}`},
+		{"index on set", `{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":1,"index":0}]}`},
+		{"index on delete", `{"glyph_patch":1,"ops":[{"op":"-","path":["a"],"index":0}]}`},
+		{"index negative", `{"glyph_patch":1,"ops":[{"op":"+","path":["a"],"value":1,"index":-1}]}`},
+		{"index string", `{"glyph_patch":1,"ops":[{"op":"+","path":["a"],"value":1,"index":"abc"}]}`},
+		{"index float", `{"glyph_patch":1,"ops":[{"op":"+","path":["a"],"value":1,"index":1.5}]}`},
+		{"extra op key", `{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":1,"extra":1}]}`},
+		{"malformed $bytes", `{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":{"$bytes":"!!"}}]}`},
+		{"malformed $id", `{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":{"$id":["p"]}}]}`},
+		{"malformed $time", `{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":{"$time":"yesterday"}}]}`},
 	}
-
-	if len(patch.Ops) != 2 {
-		t.Fatalf("len(Ops) = %d, want 2", len(patch.Ops))
-	}
-
-	// First op: = #1.#2 42
-	if patch.Ops[0].Path[0].FID != 1 {
-		t.Errorf("Op[0].Path[0].FID = %d, want 1", patch.Ops[0].Path[0].FID)
-	}
-	if patch.Ops[0].Path[1].FID != 2 {
-		t.Errorf("Op[0].Path[1].FID = %d, want 2", patch.Ops[0].Path[1].FID)
-	}
-}
-
-func TestParsePatchWithPackedStruct(t *testing.T) {
-	schema := makeTeamSchema()
-
-	input := `@patch @target=m:123
-= home Team@(^t:ARS Arsenal EPL)
-@end`
-
-	patch, err := ParsePatch(input, schema)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
-	}
-
-	if len(patch.Ops) != 1 {
-		t.Fatalf("len(Ops) = %d, want 1", len(patch.Ops))
-	}
-
-	val := patch.Ops[0].Value
-	if val.typ != TypeStruct {
-		t.Errorf("Value.typ = %v, want TypeStruct", val.typ)
-	}
-	if val.structVal.TypeName != "Team" {
-		t.Errorf("TypeName = %q, want Team", val.structVal.TypeName)
-	}
-}
-
-func TestParsePatchRoundTrip(t *testing.T) {
-	schema := makeMatchSchema()
-
-	// Emit a patch
-	original := NewPatch(RefID{Prefix: "m", Value: "ARS-LIV"}, schema.Hash)
-	original.TargetType = "Match"
-	original.Set("ft_h", Int(2))
-	original.Set("ft_a", Int(1))
-	original.Append("events", Str("Goal!"))
-	original.Delete("odds")
-	original.Delta("rating", 0.15)
-
-	emitted, err := EmitPatch(original, schema)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
-	}
-
-	t.Logf("Emitted:\n%s", emitted)
-
-	// Parse it back
-	parsed, err := ParsePatch(emitted, schema)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
-	}
-
-	// Verify same number of operations
-	if len(parsed.Ops) != len(original.Ops) {
-		t.Fatalf("Parsed %d ops, original had %d", len(parsed.Ops), len(original.Ops))
-	}
-
-	// Re-emit and compare
-	reEmitted, err := EmitPatch(parsed, schema)
-	if err != nil {
-		t.Fatalf("Re-emit error: %v", err)
-	}
-
-	t.Logf("Re-emitted:\n%s", reEmitted)
-
-	if emitted != reEmitted {
-		t.Errorf("Round-trip mismatch:\nOriginal:\n%s\nRe-emitted:\n%s", emitted, reEmitted)
-	}
-}
-
-func TestParsePatchApplyRoundTrip(t *testing.T) {
-	schema := makeMatchSchema()
-
-	// Create a match
-	home := makeTeamValue("ARS", "Arsenal", "EPL")
-	away := makeTeamValue("LIV", "Liverpool", "EPL")
-	odds := makeOddsValue(2.1, 3.4, 3.25)
-	match := makeMatchValue("ARS-LIV", mustParseTime("2025-12-19T20:00:00Z"), home, away, odds, nil, nil, nil)
-
-	// Create and emit patch
-	patch := NewPatch(RefID{Prefix: "m", Value: "ARS-LIV"}, schema.Hash)
-	patch.TargetType = "Match"
-	ftH := 2
-	ftA := 1
-	patch.Set("ft_h", Int(int64(ftH)))
-	patch.Set("ft_a", Int(int64(ftA)))
-
-	emitted, err := EmitPatch(patch, schema)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
-	}
-
-	t.Logf("Patch:\n%s", emitted)
-
-	// Parse patch back
-	parsedPatch, err := ParsePatch(emitted, schema)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
-	}
-
-	// Apply parsed patch
-	result, err := ApplyPatch(match, parsedPatch)
-	if err != nil {
-		t.Fatalf("ApplyPatch error: %v", err)
-	}
-
-	// Verify result
-	ftHVal := result.Get("ft_h")
-	if ftHVal == nil || ftHVal.intVal != 2 {
-		t.Errorf("ft_h = %v, want 2", ftHVal)
-	}
-
-	ftAVal := result.Get("ft_a")
-	if ftAVal == nil || ftAVal.intVal != 1 {
-		t.Errorf("ft_a = %v, want 1", ftAVal)
-	}
-}
-
-func TestParsePatchListIndex(t *testing.T) {
-	input := `@patch @target=m:123
-= items[0] "first"
-= items[2] "third"
-@end`
-
-	patch, err := ParsePatch(input, nil)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
-	}
-
-	if len(patch.Ops) != 2 {
-		t.Fatalf("len(Ops) = %d, want 2", len(patch.Ops))
-	}
-
-	// Check path segments
-	if patch.Ops[0].Path[0].Field != "items" {
-		t.Errorf("Path[0].Field = %q, want items", patch.Ops[0].Path[0].Field)
-	}
-	if patch.Ops[0].Path[1].Kind != PathSegListIdx {
-		t.Errorf("Path[1].Kind = %v, want PathSegListIdx", patch.Ops[0].Path[1].Kind)
-	}
-	if patch.Ops[0].Path[1].ListIdx != 0 {
-		t.Errorf("Path[1].ListIdx = %d, want 0", patch.Ops[0].Path[1].ListIdx)
-	}
-}
-
-func TestParsePatchMapKey(t *testing.T) {
-	input := `@patch @target=m:123
-= config["timeout"] 30000
-= config["name"] "test"
-@end`
-
-	patch, err := ParsePatch(input, nil)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
-	}
-
-	if len(patch.Ops) != 2 {
-		t.Fatalf("len(Ops) = %d, want 2", len(patch.Ops))
-	}
-
-	if patch.Ops[0].Path[1].Kind != PathSegMapKey {
-		t.Errorf("Path[1].Kind = %v, want PathSegMapKey", patch.Ops[0].Path[1].Kind)
-	}
-	if patch.Ops[0].Path[1].MapKey != "timeout" {
-		t.Errorf("Path[1].MapKey = %q, want timeout", patch.Ops[0].Path[1].MapKey)
-	}
-}
-
-func TestParsePatchNegativeDelta(t *testing.T) {
-	input := `@patch @target=m:123
-~ score -5
-~ rating -0.25
-@end`
-
-	patch, err := ParsePatch(input, nil)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
-	}
-
-	if len(patch.Ops) != 2 {
-		t.Fatalf("len(Ops) = %d, want 2", len(patch.Ops))
-	}
-
-	// Check delta values - ParseFloat handles -5 as float
-	val0, ok0 := patch.Ops[0].Value.Number()
-	if !ok0 || val0 != -5 {
-		t.Errorf("Op[0].Value = %v, want -5", val0)
-	}
-	val1, ok1 := patch.Ops[1].Value.Number()
-	if !ok1 || val1 != -0.25 {
-		t.Errorf("Op[1].Value = %v, want -0.25", val1)
-	}
-}
-
-func TestParsePatchInsertAtIndex(t *testing.T) {
-	input := `@patch @target=m:123
-+ events "Inserted" @idx=2
-@end`
-
-	patch, err := ParsePatch(input, nil)
-	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
-	}
-
-	if len(patch.Ops) != 1 {
-		t.Fatalf("len(Ops) = %d, want 1", len(patch.Ops))
-	}
-
-	if patch.Ops[0].Op != OpAppend {
-		t.Errorf("Op = %v, want OpAppend", patch.Ops[0].Op)
-	}
-	if patch.Ops[0].Index != 2 {
-		t.Errorf("Index = %d, want 2", patch.Ops[0].Index)
-	}
-}
-
-func TestParsePatchErrors(t *testing.T) {
-	cases := []struct {
-		name  string
-		input string
-	}{
-		{"missing header", "= foo 1\n@end"},
-		{"unknown op", "@patch @target=m:1\n? foo 1\n@end"},
-		{"missing path", "@patch @target=m:1\n= \n@end"},
-		{"invalid delta", "@patch @target=m:1\n~ foo abc\n@end"},
-	}
-
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := ParsePatch(tc.input, nil)
-			if err == nil {
-				t.Error("expected error, got nil")
-			}
-		})
+		if _, err := ParsePatch(tc.input); err == nil {
+			t.Errorf("%s: expected error for %s", tc.name, tc.input)
+		}
 	}
 }
 
-// TestParsePatchGolden tests against golden patch examples
-func TestParsePatchGolden(t *testing.T) {
-	schema := makeMatchSchema()
-
-	golden := `@patch @schema#` + schema.Hash + ` @keys=wire @target=m:ARS-LIV
-+ events "Kickoff!"
-= minute 0
-= status live
-@end`
-
-	patch, err := ParsePatch(golden, schema)
+// TestParsePatchRoundTripStable: parse(emit(parse(x))) emits the same bytes,
+// and a non-canonical spelling canonicalizes on re-emit.
+func TestParsePatchRoundTripStable(t *testing.T) {
+	loose := `{ "ops": [ {"value": 2.0, "path": ["n"], "op": "~"}, {"op":"=", "path":["a"], "value": {"z":1, "y":[1.0, "x"]}} ], "glyph_patch": 1, "target": "m:1" }`
+	first, err := EmitPatch(mustParsePatch(t, loose))
 	if err != nil {
-		t.Fatalf("ParsePatch error: %v", err)
+		t.Fatalf("EmitPatch: %v", err)
 	}
-
-	// Re-emit
-	reEmitted, err := EmitPatch(patch, schema)
+	want := `{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":{"y":[1,"x"],"z":1}},{"op":"~","path":["n"],"value":2}],"target":"m:1"}`
+	if first != want {
+		t.Errorf("canonicalized\n got: %s\nwant: %s", first, want)
+	}
+	second, err := EmitPatch(mustParsePatch(t, first))
 	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
+		t.Fatalf("EmitPatch: %v", err)
 	}
-
-	// Normalize both for comparison (sort order may differ)
-	if !strings.Contains(reEmitted, "@patch") {
-		t.Error("Re-emitted missing @patch header")
-	}
-	if !strings.Contains(reEmitted, "@end") {
-		t.Error("Re-emitted missing @end")
-	}
-	if !strings.Contains(reEmitted, "+ events") {
-		t.Error("Re-emitted missing + events operation")
+	if second != first {
+		t.Errorf("unstable re-emit\n1: %s\n2: %s", first, second)
 	}
 }
 
-// TestParsePatchEscapedMapKey checks that map-key segments with escape sequences
-// round-trip correctly through EmitPatch -> ParsePatch (GAP 1 regression test).
-func TestParsePatchEscapedMapKey(t *testing.T) {
-	cases := []struct {
-		name string
-		key  string
-	}{
-		{"backslash", `a\b`},
-		{"double-quote", `k"ey`},
-		{"newline", "key\nline"},
-		{"tab", "key\ttab"},
+// TestParsePatchMapKeyAndFieldOneKind: the wire has one string segment kind,
+// so a MapKeySeg emitted by Diff and a FieldSeg spelled by hand parse to the
+// same bytes and both apply to a map.
+func TestParsePatchMapKeyAndFieldOneKind(t *testing.T) {
+	base := Map(MapEntry{Key: "cfg", Value: Map(MapEntry{Key: "odd key", Value: Int(1)})})
+	next := Map(MapEntry{Key: "cfg", Value: Map(MapEntry{Key: "odd key", Value: Int(2)})})
+	diff := mustDiff(base, next, "")
+	diff.BaseFingerprint = "" // compare ops only
+	viaDiff, err := EmitPatch(diff)
+	if err != nil {
+		t.Fatalf("EmitPatch: %v", err)
 	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Hand-build a patch that sets config["<key>"] = 1.
-			patch := NewPatch(RefID{Prefix: "x", Value: "1"}, "")
-			patch.Ops = append(patch.Ops, &PatchOp{
-				Op:    OpSet,
-				Path:  []PathSeg{FieldSeg("config", 0), MapKeySeg(tc.key)},
-				Value: Int(1),
-			})
-
-			emitted, err := EmitPatch(patch, nil)
-			if err != nil {
-				t.Fatalf("EmitPatch error: %v", err)
-			}
-
-			parsed, err := ParsePatch(emitted, nil)
-			if err != nil {
-				t.Fatalf("ParsePatch error: %v (emitted: %q)", err, emitted)
-			}
-
-			if len(parsed.Ops) != 1 {
-				t.Fatalf("expected 1 op, got %d", len(parsed.Ops))
-			}
-			seg := parsed.Ops[0].Path[1]
-			if seg.Kind != PathSegMapKey {
-				t.Fatalf("expected PathSegMapKey, got %v", seg.Kind)
-			}
-			if seg.MapKey != tc.key {
-				t.Errorf("map key round-trip: got %q, want %q (emitted: %q)", seg.MapKey, tc.key, emitted)
-			}
-		})
+	hand := NewPatch(RefID{}, "")
+	hand.Ops = []*PatchOp{{Op: OpSet, Path: []PathSeg{FieldSeg("cfg", 0), FieldSeg("odd key", 0)}, Value: Int(2)}}
+	viaHand, err := EmitPatch(hand)
+	if err != nil {
+		t.Fatalf("EmitPatch: %v", err)
+	}
+	if viaDiff != viaHand {
+		t.Errorf("map key vs field differ on the wire\n diff: %s\n hand: %s", viaDiff, viaHand)
+	}
+	got, err := ApplyPatch(base, mustParsePatch(t, viaDiff))
+	if err != nil {
+		t.Fatalf("ApplyPatch: %v", err)
+	}
+	if !patchEqual(got, next) {
+		t.Errorf("apply: got %s want %s", Emit(got), Emit(next))
 	}
 }
 
-// TestParsePatchBadListIndex checks that a non-integer bracket segment is treated
-// as a field name rather than silently becoming index 0 (GAP 2 regression test).
-func TestParsePatchBadListIndex(t *testing.T) {
-	// parsePathToSegs("items[abc]") should produce a FieldSeg("abc"), not ListIdxSeg(0).
-	segs := parsePathToSegs("items[abc]")
-	if len(segs) != 2 {
-		t.Fatalf("expected 2 segs, got %d: %v", len(segs), segs)
-	}
-	if segs[1].Kind == PathSegListIdx {
-		t.Errorf("bad index [abc] produced ListIdxSeg(%d), want FieldSeg fallback", segs[1].ListIdx)
-	}
-	if segs[1].Kind != PathSegField || segs[1].Field != "abc" {
-		t.Errorf("expected FieldSeg(abc), got kind=%v field=%q", segs[1].Kind, segs[1].Field)
+func TestParsePatchErrorMentionsOpIndex(t *testing.T) {
+	_, err := ParsePatch(`{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":1},{"op":"-","path":["b"],"value":1}]}`)
+	if err == nil || !strings.Contains(err.Error(), "ops[1]") {
+		t.Errorf("expected ops[1] in error, got %v", err)
 	}
 }

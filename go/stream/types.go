@@ -8,7 +8,8 @@
 //   - Patch safety via optional state hash (base)
 //
 // GS1 headers are NOT part of GLYPH canonicalization.
-// The payload is standard GLYPH text passed to existing parsers unchanged.
+// Doc and patch payloads are canonical JSON (SPEC-CANON.md §5, §7); other
+// kinds carry GLYPH text or opaque bytes passed to existing parsers unchanged.
 package stream
 
 import (
@@ -22,8 +23,8 @@ const Version uint8 = 1
 type FrameKind uint8
 
 const (
-	KindDoc   FrameKind = 0 // Snapshot or general GLYPH document
-	KindPatch FrameKind = 1 // GLYPH patch doc (@patch ... @end)
+	KindDoc   FrameKind = 0 // Snapshot: canonical JSON of the value (SPEC-CANON.md §5)
+	KindPatch FrameKind = 1 // Patch wire form, canonical JSON (SPEC-CANON.md §7)
 	KindRow   FrameKind = 2 // Single row value (streaming tabular)
 	KindUI    FrameKind = 3 // UI event (progress/log/artifact)
 	KindAck   FrameKind = 4 // Acknowledgement

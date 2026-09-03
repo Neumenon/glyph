@@ -1,5 +1,7 @@
 """Comprehensive tests for glyph.patch module."""
 
+import json
+
 import pytest
 
 from glyph.patch import (
@@ -15,449 +17,178 @@ from glyph.patch import (
     verify_patch_base,
     compute_base_fingerprint,
     PatchBaseMismatch,
-    _parse_op,
-    _parse_path,
-    _parse_value,
-    _parse_inline_map,
-    _parse_inline_list,
-    _split_path_value,
-    _split_next_value,
     _apply_op,
     _apply_to_parent,
     _get_field,
     _set_field,
     _delete_field,
 )
-from glyph import from_json_loose
-from glyph.types import GType, GValue, MapEntry, StructValue
+from glyph import from_json_loose, is_canonical
+from glyph.types import GType, GValue, MapEntry
+
+
+def _wire(*ops, **hdr) -> str:
+    """Patch wire string from (op, path[, value]) tuples; hdr = base/target/schema/type."""
+    doc = {"glyph_patch": 1, "ops": [dict(op=o, path=p, **({"value": v[0]} if v else {}))
+                                     for o, p, *v in ops]}
+    doc.update({k: v for k, v in hdr.items() if v})
+    return json.dumps(doc)
 
 
 # ============================================================
-# parse_patch — header parsing
+# parse_patch — JSON wire form (SPEC-CANON.md §7)
 # ============================================================
 
 
 class TestParsePatchHeader:
     def test_minimal_patch(self):
-        p = parse_patch("@patch\n@end")
+        p = parse_patch('{"glyph_patch":1,"ops":[]}')
         assert isinstance(p, Patch)
+        assert (p.ops, p.schema_id, p.target, p.base_fingerprint, p.target_type) == ([], "", "", "", "")
+
+    def test_header_fields(self):
+        p = parse_patch(_wire(schema="Foo", target="bar", base="ab" * 32, type="T"))
+        assert (p.schema_id, p.target, p.base_fingerprint, p.target_type) == ("Foo", "bar", "ab" * 32, "T")
+
+    def test_bytes_input_and_any_spelling(self):
+        # Parsing is lenient about spelling; canonical bytes are the GS1 cursor's job (§5).
+        p = parse_patch(b'{ "ops" : [ ] ,\n "glyph_patch" : 1 }')
         assert p.ops == []
-        assert p.schema_id == ""
-        assert p.target == ""
 
-    def test_patch_with_schema(self):
-        p = parse_patch("@patch @schema#MyType\n@end")
-        assert p.schema_id == "MyType"
-
-    def test_patch_with_target(self):
-        p = parse_patch("@patch @target=obj123\n@end")
-        assert p.target == "obj123"
-
-    def test_patch_with_schema_and_target(self):
-        p = parse_patch("@patch @schema#Foo @target=bar\n@end")
-        assert p.schema_id == "Foo"
-        assert p.target == "bar"
-
-    def test_missing_header_raises(self):
-        with pytest.raises(ValueError, match="must start with @patch"):
-            parse_patch("not a patch")
-
-    def test_empty_lines_and_comments_skipped(self):
-        text = "@patch\n\n# comment\n= .x 1\n\n@end"
-        p = parse_patch(text)
-        assert len(p.ops) == 1
-
-    def test_no_end_marker(self):
-        """Lines after ops but no @end — parser just stops at EOF."""
-        p = parse_patch("@patch\n= .x 1")
-        assert len(p.ops) == 1
-
-
-# ============================================================
-# parse_patch — operations
-# ============================================================
+    @pytest.mark.parametrize("bad, msg", [
+        ("not json", "not JSON"),
+        ("[]", "must be a JSON object"),
+        ('{"ops":[]}', "glyph_patch"),
+        ('{"glyph_patch":2,"ops":[]}', "glyph_patch"),
+        ('{"glyph_patch":true,"ops":[]}', "glyph_patch"),
+        ('{"glyph_patch":1}', "ops must be a list"),
+        ('{"glyph_patch":1,"ops":[],"extra":1}', "unknown patch key"),
+        ('{"glyph_patch":1,"ops":[],"base":7}', "base must be a string"),
+    ])
+    def test_rejects(self, bad, msg):
+        with pytest.raises(ValueError, match=msg):
+            parse_patch(bad)
 
 
 class TestParsePatchOps:
     def test_set_op(self):
-        p = parse_patch("@patch\n= .step 2\n@end")
-        assert len(p.ops) == 1
-        op = p.ops[0]
+        op = parse_patch(_wire(("=", ["step"], 2))).ops[0]
         assert op.op == PatchOpKind.SET
-        assert op.value.type == GType.INT
-        assert op.value.as_int() == 2
+        assert op.value.type == GType.INT and op.value.as_int() == 2
 
     def test_append_op(self):
-        p = parse_patch('@patch\n+ .items "hello"\n@end')
-        op = p.ops[0]
+        op = parse_patch(_wire(("+", ["items"], "hello"))).ops[0]
         assert op.op == PatchOpKind.APPEND
         assert op.value.as_str() == "hello"
+        assert op.index == -1
+
+    def test_append_with_index(self):
+        op = parse_patch('{"glyph_patch":1,"ops":[{"op":"+","path":["items"],"value":1,"index":0}]}').ops[0]
+        assert op.index == 0
 
     def test_delete_op(self):
-        p = parse_patch("@patch\n- .removed_field\n@end")
-        op = p.ops[0]
+        op = parse_patch(_wire(("-", ["removed_field"]))).ops[0]
         assert op.op == PatchOpKind.DELETE
         assert op.value is None
 
-    def test_delta_op(self):
-        p = parse_patch("@patch\n~ .counter +5\n@end")
-        op = p.ops[0]
+    @pytest.mark.parametrize("v, want", [(5, 5.0), (-3, -3.0), (1.5, 1.5)])
+    def test_delta_op(self, v, want):
+        op = parse_patch(_wire(("~", ["counter"], v))).ops[0]
         assert op.op == PatchOpKind.DELTA
-        assert op.delta == 5.0
+        assert op.delta == want
 
-    def test_delta_negative(self):
-        p = parse_patch("@patch\n~ .counter -3\n@end")
-        assert p.ops[0].delta == -3.0
-
-    def test_delta_float(self):
-        p = parse_patch("@patch\n~ .score +1.5\n@end")
-        assert p.ops[0].delta == 1.5
-
-    def test_delta_no_value(self):
-        """Delta with path only, no value — delta stays 0."""
-        p = parse_patch("@patch\n~ .counter\n@end")
-        assert p.ops[0].delta == 0.0
-
-    def test_multiple_ops(self):
-        text = "@patch\n= .a 1\n+ .b 2\n- .c\n~ .d +10\n@end"
-        p = parse_patch(text)
-        assert len(p.ops) == 4
+    def test_multiple_ops_keep_wire_order(self):
+        p = parse_patch(_wire(("=", ["a"], 1), ("+", ["b"], 2), ("-", ["c"]), ("~", ["d"], 10)))
         assert [o.op for o in p.ops] == [
-            PatchOpKind.SET,
-            PatchOpKind.APPEND,
-            PatchOpKind.DELETE,
-            PatchOpKind.DELTA,
-        ]
+            PatchOpKind.SET, PatchOpKind.APPEND, PatchOpKind.DELETE, PatchOpKind.DELTA]
 
-    def test_delete_ignores_value(self):
-        """DELETE op doesn't capture value even if present (value_str goes unused)."""
-        p = parse_patch("@patch\n- .field something\n@end")
-        assert p.ops[0].value is None
+    def test_typed_scalars_ride_as_reserved_objects(self):
+        # SPEC-CANON §3: a single-key {"$bytes"|"$time"|"$id"} value is a typed scalar, not a map.
+        p = parse_patch(_wire(("=", ["b"], {"$bytes": "AP8="}), ("=", ["i"], {"$id": ["m", "1"]})))
+        assert p.ops[0].value.type == GType.BYTES and p.ops[0].value.as_bytes() == b"\x00\xff"
+        assert p.ops[1].value.type == GType.ID
 
-
-# ============================================================
-# _parse_op — error cases
-# ============================================================
-
-
-class TestParseOpErrors:
-    def test_unknown_op_char(self):
-        with pytest.raises(ValueError, match="unknown operation"):
-            _parse_op("? .path", 1)
-
-    def test_missing_path(self):
-        with pytest.raises(ValueError, match="missing path"):
-            _parse_op("=", 1)
-
-    def test_missing_path_spaces_only(self):
-        with pytest.raises(ValueError, match="missing path"):
-            _parse_op("=   ", 1)
-
-    def test_invalid_delta_value(self):
-        with pytest.raises(ValueError, match="invalid delta"):
-            _parse_op("~ .counter notanumber", 1)
+    @pytest.mark.parametrize("op, msg", [
+        ({"op": "?", "path": ["x"], "value": 1}, "unknown operation"),
+        ({"op": "=", "value": 1}, "path must be a list"),
+        ({"op": "=", "path": "x", "value": 1}, "path must be a list"),
+        ({"op": "=", "path": ["x"]}, "requires a value"),
+        ({"op": "-", "path": ["x"], "value": 1}, "takes no value"),
+        ({"op": "~", "path": ["x"], "value": "notanumber"}, "invalid delta"),
+        ({"op": "~", "path": ["x"], "value": True}, "invalid delta"),
+        ({"op": "=", "path": ["x"], "value": 1, "index": 0}, "only allowed on"),
+        ({"op": "+", "path": ["x"], "value": 1, "index": -1}, "non-negative"),
+        ({"op": "=", "path": ["x"], "value": 1, "extra": 1}, "unknown key"),
+        ("notanobject", "must be an object"),
+    ])
+    def test_op_errors(self, op, msg):
+        with pytest.raises(ValueError, match=msg):
+            parse_patch(json.dumps({"glyph_patch": 1, "ops": [op]}))
 
 
-# ============================================================
-# _parse_path
-# ============================================================
+class TestWirePaths:
+    def test_strings_are_fields_ints_are_list_indices(self):
+        segs = parse_patch(_wire(("=", ["data", "items", 2, "name", "a b", "c.d"], 1))).ops[0].path
+        assert [(s.kind, s.field or s.list_idx) for s in segs] == [
+            (PathSegKind.FIELD, "data"), (PathSegKind.FIELD, "items"), (PathSegKind.LIST_IDX, 2),
+            (PathSegKind.FIELD, "name"), (PathSegKind.FIELD, "a b"), (PathSegKind.FIELD, "c.d")]
 
+    def test_empty_path_is_root(self):
+        assert parse_patch(_wire(("=", [], 1))).ops[0].path == []
 
-class TestParsePath:
-    def test_single_field(self):
-        segs = _parse_path(".step")
-        assert len(segs) == 1
-        assert segs[0].kind == PathSegKind.FIELD
-        assert segs[0].field == "step"
+    @pytest.mark.parametrize("seg", [-1, 1.5, True, None, ["x"]])
+    def test_bad_segment_rejected(self, seg):
+        with pytest.raises(ValueError, match="path segment"):
+            parse_patch(_wire(("=", [seg], 1)))
 
-    def test_nested_fields(self):
-        segs = _parse_path(".a.b.c")
-        assert len(segs) == 3
-        assert [s.field for s in segs] == ["a", "b", "c"]
-
-    def test_list_index(self):
-        segs = _parse_path(".items[0]")
-        assert len(segs) == 2
-        assert segs[0].kind == PathSegKind.FIELD
-        assert segs[0].field == "items"
-        assert segs[1].kind == PathSegKind.LIST_IDX
-        assert segs[1].list_idx == 0
-
-    def test_list_index_only(self):
-        """Path like .[3] — no field name before bracket."""
-        segs = _parse_path(".[3]")
-        assert len(segs) == 1
-        assert segs[0].kind == PathSegKind.LIST_IDX
-        assert segs[0].list_idx == 3
-
-    def test_nested_with_index(self):
-        segs = _parse_path(".data.items[2].name")
-        assert len(segs) == 4
-        assert segs[0].field == "data"
-        assert segs[1].field == "items"
-        assert segs[2].kind == PathSegKind.LIST_IDX
-        assert segs[2].list_idx == 2
-        assert segs[3].field == "name"
-
-    def test_bare_path_parses_like_go_js(self):
-        """Bare (non-dotted) paths parse identically to the leading-dot form, so
-        a Python receiver can read patches emitted by Go/JS (which use bare paths
-        like 'home.score'). This is the cross-impl patch contract, not a regression
-        of the old dot-required rule."""
-        assert _parse_path("noprefix") == _parse_path(".noprefix")
-        bare = _parse_path("home.score")
-        assert [s.field for s in bare] == ["home", "score"]
-        assert _parse_path("items[2].name") == _parse_path(".items[2].name")
-
-    def test_invalid_list_index(self):
-        with pytest.raises(ValueError, match="invalid list index"):
-            _parse_path(".items[abc]")
-
-    def test_root_path(self):
-        """Just a dot — results in empty segments (empty part skipped)."""
-        segs = _parse_path(".")
-        assert segs == []
+    def test_map_key_and_field_are_one_kind_on_the_wire(self):
+        # diff() emits MAP_KEY for maps; the wire has one string kind and it re-parses as FIELD,
+        # which apply navigates on both maps and structs.
+        p = diff(from_json_loose({"k v": 1}), from_json_loose({"k v": 2}))
+        assert p.ops[0].path[0].kind == PathSegKind.MAP_KEY
+        assert parse_patch(emit_patch(p)).ops[0].path[0] == PathSeg(PathSegKind.FIELD, field="k v")
 
 
 # ============================================================
-# _parse_value — inline value parsing
+# emit_patch — canonical bytes, sorted ops
 # ============================================================
 
 
-class TestParseValue:
-    def test_null_underscore(self):
-        v = _parse_value("_")
-        assert v.type == GType.NULL
+class TestEmitPatch:
+    def test_emits_canonical_bytes_with_sorted_ops(self):
+        p = Patch(
+            ops=[
+                PatchOp(PatchOpKind.SET, [PathSeg(PathSegKind.FIELD, field="z")], GValue.int_(1)),
+                PatchOp(PatchOpKind.DELETE, [PathSeg(PathSegKind.MAP_KEY, map_key="a")]),
+                PatchOp(PatchOpKind.SET, [PathSeg(PathSegKind.FIELD, field="a")], GValue.null()),
+            ],
+            target="m:1",
+            base_fingerprint="ab" * 32,
+        )
+        s = emit_patch(p)
+        assert is_canonical(s)
+        assert s == (
+            '{"base":"' + "ab" * 32 + '","glyph_patch":1,"ops":['
+            '{"op":"-","path":["a"]},{"op":"=","path":["a"],"value":null},'
+            '{"op":"=","path":["z"],"value":1}],"target":"m:1"}'
+        )
 
-    def test_null_word(self):
-        v = _parse_value("null")
-        assert v.type == GType.NULL
+    def test_delta_and_index(self):
+        p = Patch(ops=[
+            PatchOp(PatchOpKind.DELTA, [PathSeg(PathSegKind.FIELD, field="n")], delta=2.5),
+            PatchOp(PatchOpKind.APPEND, [PathSeg(PathSegKind.FIELD, field="l")], GValue.int_(1), index=0),
+        ])
+        assert emit_patch(p) == (
+            '{"glyph_patch":1,"ops":[{"index":0,"op":"+","path":["l"],"value":1},'
+            '{"op":"~","path":["n"],"value":2.5}]}'
+        )
 
-    def test_null_empty_set(self):
-        v = _parse_value("\u2205")
-        assert v.type == GType.NULL
-
-    def test_empty_string_becomes_null(self):
-        v = _parse_value("")
-        assert v.type == GType.NULL
-
-    def test_whitespace_only_becomes_null(self):
-        v = _parse_value("   ")
-        assert v.type == GType.NULL
-
-    def test_bool_true_short(self):
-        assert _parse_value("t").as_bool() is True
-
-    def test_bool_true_long(self):
-        assert _parse_value("true").as_bool() is True
-
-    def test_bool_false_short(self):
-        assert _parse_value("f").as_bool() is False
-
-    def test_bool_false_long(self):
-        assert _parse_value("false").as_bool() is False
-
-    def test_quoted_string(self):
-        v = _parse_value('"hello world"')
-        assert v.as_str() == "hello world"
-
-    def test_quoted_string_with_escaped_quote(self):
-        v = _parse_value('"say \\"hi\\""')
-        assert v.as_str() == 'say "hi"'
-
-    def test_quoted_string_with_escaped_backslash(self):
-        v = _parse_value('"path\\\\to"')
-        assert v.as_str() == "path\\to"
-
-    def test_integer(self):
-        v = _parse_value("42")
-        assert v.type == GType.INT
-        assert v.as_int() == 42
-
-    def test_negative_integer(self):
-        v = _parse_value("-7")
-        assert v.type == GType.INT
-        assert v.as_int() == -7
-
-    def test_float_with_dot(self):
-        v = _parse_value("3.14")
-        assert v.type == GType.FLOAT
-        assert abs(v.as_float() - 3.14) < 1e-10
-
-    def test_float_with_exponent(self):
-        v = _parse_value("1e10")
-        assert v.type == GType.FLOAT
-        assert v.as_float() == 1e10
-
-    def test_float_with_uppercase_exponent(self):
-        v = _parse_value("2.5E3")
-        assert v.type == GType.FLOAT
-        assert v.as_float() == 2500.0
-
-    def test_bare_string(self):
-        v = _parse_value("hello")
-        assert v.type == GType.STR
-        assert v.as_str() == "hello"
-
-    def test_bare_string_not_matching_number(self):
-        """Something that looks like it could be numeric but isn't."""
-        v = _parse_value("12abc")
-        assert v.type == GType.STR
-        assert v.as_str() == "12abc"
-
-    def test_inline_map(self):
-        v = _parse_value('{id=1 name="item_1"}')
-        assert v.type == GType.MAP
-        entries = v.as_map()
-        assert len(entries) == 2
-        assert entries[0].key == "id"
-        assert entries[0].value.as_int() == 1
-        assert entries[1].key == "name"
-        assert entries[1].value.as_str() == "item_1"
-
-    def test_inline_list(self):
-        v = _parse_value("[1 2 3]")
-        assert v.type == GType.LIST
-        items = v.as_list()
-        assert len(items) == 3
-        assert [i.as_int() for i in items] == [1, 2, 3]
-
-    def test_empty_map(self):
-        v = _parse_value("{}")
-        assert v.type == GType.MAP
-        assert len(v.as_map()) == 0
-
-    def test_empty_list(self):
-        v = _parse_value("[]")
-        assert v.type == GType.LIST
-        assert len(v.as_list()) == 0
-
-    def test_inline_list_with_strings(self):
-        v = _parse_value('[a "b c" d]')
-        items = v.as_list()
-        assert len(items) == 3
-        assert items[0].as_str() == "a"
-        assert items[1].as_str() == "b c"
-        assert items[2].as_str() == "d"
-
-
-# ============================================================
-# _split_path_value
-# ============================================================
-
-
-class TestSplitPathValue:
-    def test_path_and_value(self):
-        assert _split_path_value(".step 2") == (".step", "2")
-
-    def test_path_only(self):
-        assert _split_path_value(".field") == (".field", "")
-
-    def test_path_with_complex_value(self):
-        p, v = _split_path_value('.items {id=1 name="x"}')
-        assert p == ".items"
-        assert v == '{id=1 name="x"}'
-
-
-# ============================================================
-# _split_next_value
-# ============================================================
-
-
-class TestSplitNextValue:
-    def test_empty(self):
-        assert _split_next_value("") == ("", "")
-
-    def test_bare_token(self):
-        assert _split_next_value("abc def") == ("abc", " def")
-
-    def test_bare_token_no_rest(self):
-        assert _split_next_value("abc") == ("abc", "")
-
-    def test_quoted_string(self):
-        val, rest = _split_next_value('"hello" world')
-        assert val == '"hello"'
-        assert rest == " world"
-
-    def test_quoted_string_with_escape(self):
-        val, rest = _split_next_value('"a\\"b" c')
-        assert val == '"a\\"b"'
-        assert rest == " c"
-
-    def test_unclosed_quote(self):
-        val, rest = _split_next_value('"unclosed')
-        assert val == '"unclosed'
-        assert rest == ""
-
-    def test_nested_braces(self):
-        val, rest = _split_next_value("{a={b=1}} more")
-        assert val == "{a={b=1}}"
-        assert rest == " more"
-
-    def test_nested_brackets(self):
-        val, rest = _split_next_value("[1 [2 3]] more")
-        assert val == "[1 [2 3]]"
-        assert rest == " more"
-
-    def test_unclosed_brace(self):
-        val, rest = _split_next_value("{unclosed")
-        assert val == "{unclosed"
-        assert rest == ""
-
-    def test_unclosed_bracket(self):
-        val, rest = _split_next_value("[unclosed")
-        assert val == "[unclosed"
-        assert rest == ""
-
-
-# ============================================================
-# _parse_inline_map
-# ============================================================
-
-
-class TestParseInlineMap:
-    def test_single_entry(self):
-        v = _parse_inline_map("{x=1}")
-        entries = v.as_map()
-        assert len(entries) == 1
-        assert entries[0].key == "x"
-        assert entries[0].value.as_int() == 1
-
-    def test_multiple_entries(self):
-        v = _parse_inline_map('{a=1 b="two"}')
-        entries = v.as_map()
-        assert len(entries) == 2
-
-    def test_empty_map(self):
-        v = _parse_inline_map("{}")
-        assert len(v.as_map()) == 0
-
-    def test_no_equals_breaks(self):
-        """If inner has no '=' sign, loop breaks gracefully."""
-        v = _parse_inline_map("{noequals}")
-        assert len(v.as_map()) == 0
-
-
-# ============================================================
-# _parse_inline_list
-# ============================================================
-
-
-class TestParseInlineList:
-    def test_ints(self):
-        v = _parse_inline_list("[1 2 3]")
-        assert len(v.as_list()) == 3
-
-    def test_mixed(self):
-        v = _parse_inline_list('[1 "two" true]')
-        items = v.as_list()
-        assert items[0].as_int() == 1
-        assert items[1].as_str() == "two"
-        assert items[2].as_bool() is True
-
-    def test_empty(self):
-        v = _parse_inline_list("[]")
-        assert len(v.as_list()) == 0
+    def test_round_trip_is_stable(self):
+        s = emit_patch(parse_patch(_wire(
+            ("=", ["a", 0, "b"], {"x": [1, 2.5, None, True], "t": {"$time": "2025-01-13T12:34:56Z"}}),
+            ("~", ["c"], -1), ("+", ["l"], "v"), ("-", ["d"]), base="cd" * 32, schema="S", type="T")))
+        assert is_canonical(s)
+        assert emit_patch(parse_patch(s)) == s
 
 
 # ============================================================
@@ -481,25 +212,25 @@ class TestApplySet:
 
     def test_set_existing_field_on_map(self):
         doc = self._make_map(step=1, name="test")
-        patch = parse_patch("@patch\n= .step 2\n@end")
+        patch = parse_patch(_wire(('=', ['step'], 2)))
         result = apply_patch(doc, patch)
         assert result.get("step").as_int() == 2
 
     def test_set_new_field_on_map(self):
         doc = self._make_map(step=1)
-        patch = parse_patch("@patch\n= .newfield 99\n@end")
+        patch = parse_patch(_wire(('=', ['newfield'], 99)))
         result = apply_patch(doc, patch)
         assert result.get("newfield").as_int() == 99
 
     def test_set_on_struct(self):
         doc = GValue.struct("MyType", MapEntry("x", GValue.int_(1)))
-        patch = parse_patch("@patch\n= .x 42\n@end")
+        patch = parse_patch(_wire(('=', ['x'], 42)))
         result = apply_patch(doc, patch)
         assert result.get("x").as_int() == 42
 
     def test_set_new_field_on_struct(self):
         doc = GValue.struct("MyType", MapEntry("x", GValue.int_(1)))
-        patch = parse_patch("@patch\n= .y 99\n@end")
+        patch = parse_patch(_wire(('=', ['y'], 99)))
         result = apply_patch(doc, patch)
         assert result.get("y").as_int() == 99
 
@@ -514,7 +245,7 @@ class TestApplySet:
     def test_set_nested_field(self):
         inner = GValue.map_(MapEntry("val", GValue.int_(1)))
         doc = GValue.map_(MapEntry("inner", inner))
-        patch = parse_patch("@patch\n= .inner.val 99\n@end")
+        patch = parse_patch(_wire(('=', ['inner', 'val'], 99)))
         result = apply_patch(doc, patch)
         assert result.get("inner").get("val").as_int() == 99
 
@@ -528,7 +259,7 @@ class TestApplyAppend:
     def test_append_to_existing_list(self):
         lst = GValue.list_(GValue.int_(1), GValue.int_(2))
         doc = GValue.map_(MapEntry("items", lst))
-        patch = parse_patch("@patch\n+ .items 3\n@end")
+        patch = parse_patch(_wire(('+', ['items'], 3)))
         result = apply_patch(doc, patch)
         items = result.get("items").as_list()
         assert len(items) == 3
@@ -536,22 +267,28 @@ class TestApplyAppend:
 
     def test_append_creates_new_list(self):
         doc = GValue.map_(MapEntry("x", GValue.int_(1)))
-        patch = parse_patch("@patch\n+ .newlist 42\n@end")
+        patch = parse_patch(_wire(('+', ['newlist'], 42)))
         result = apply_patch(doc, patch)
         lst = result.get("newlist")
         assert lst.type == GType.LIST
         assert lst.as_list()[0].as_int() == 42
 
+    def test_append_with_index_inserts(self):
+        doc = GValue.map_(MapEntry("items", GValue.list_(GValue.int_(1), GValue.int_(3))))
+        op = PatchOp(PatchOpKind.APPEND, [PathSeg(PathSegKind.FIELD, field="items")], GValue.int_(2), index=1)
+        result = apply_patch(doc, Patch(ops=[op]))
+        assert [v.as_int() for v in result.get("items").as_list()] == [1, 2, 3]
+
     def test_append_to_non_list_raises(self):
         doc = GValue.map_(MapEntry("x", GValue.int_(1)))
-        patch = parse_patch("@patch\n+ .x 5\n@end")
+        patch = parse_patch(_wire(('+', ['x'], 5)))
         with pytest.raises(ValueError, match="cannot append"):
             apply_patch(doc, patch)
 
     def test_append_map_value(self):
         lst = GValue.list_()
         doc = GValue.map_(MapEntry("items", lst))
-        patch = parse_patch('@patch\n+ .items {id=1 name="item_1"}\n@end')
+        patch = parse_patch(_wire(('+', ['items'], {'id': 1, 'name': 'item_1'})))
         result = apply_patch(doc, patch)
         items = result.get("items").as_list()
         assert len(items) == 1
@@ -568,7 +305,7 @@ class TestApplyDelete:
         doc = GValue.map_(
             MapEntry("a", GValue.int_(1)), MapEntry("b", GValue.int_(2))
         )
-        patch = parse_patch("@patch\n- .a\n@end")
+        patch = parse_patch(_wire(('-', ['a'])))
         result = apply_patch(doc, patch)
         assert result.get("a") is None
         assert result.get("b").as_int() == 2
@@ -577,7 +314,7 @@ class TestApplyDelete:
         doc = GValue.struct(
             "T", MapEntry("a", GValue.int_(1)), MapEntry("b", GValue.int_(2))
         )
-        patch = parse_patch("@patch\n- .a\n@end")
+        patch = parse_patch(_wire(('-', ['a'])))
         result = apply_patch(doc, patch)
         assert result.get("a") is None
 
@@ -599,31 +336,31 @@ class TestApplyDelete:
 class TestApplyDelta:
     def test_delta_on_int(self):
         doc = GValue.map_(MapEntry("counter", GValue.int_(10)))
-        patch = parse_patch("@patch\n~ .counter +5\n@end")
+        patch = parse_patch(_wire(('~', ['counter'], 5)))
         result = apply_patch(doc, patch)
         assert result.get("counter").as_int() == 15
 
     def test_delta_on_float(self):
         doc = GValue.map_(MapEntry("score", GValue.float_(1.0)))
-        patch = parse_patch("@patch\n~ .score +0.5\n@end")
+        patch = parse_patch(_wire(('~', ['score'], 0.5)))
         result = apply_patch(doc, patch)
         assert abs(result.get("score").as_float() - 1.5) < 1e-10
 
     def test_delta_creates_field_if_missing(self):
         doc = GValue.map_(MapEntry("x", GValue.int_(1)))
-        patch = parse_patch("@patch\n~ .newcounter +10\n@end")
+        patch = parse_patch(_wire(('~', ['newcounter'], 10)))
         result = apply_patch(doc, patch)
         assert result.get("newcounter").as_float() == 10.0
 
     def test_delta_on_non_numeric_raises(self):
         doc = GValue.map_(MapEntry("name", GValue.str_("hello")))
-        patch = parse_patch("@patch\n~ .name +1\n@end")
+        patch = parse_patch(_wire(('~', ['name'], 1)))
         with pytest.raises(ValueError, match="cannot apply delta"):
             apply_patch(doc, patch)
 
     def test_delta_negative(self):
         doc = GValue.map_(MapEntry("counter", GValue.int_(10)))
-        patch = parse_patch("@patch\n~ .counter -3\n@end")
+        patch = parse_patch(_wire(('~', ['counter'], -3)))
         result = apply_patch(doc, patch)
         assert result.get("counter").as_int() == 7
 
@@ -637,14 +374,14 @@ class TestApplyNested:
     def test_nested_map_set(self):
         inner = GValue.map_(MapEntry("val", GValue.int_(1)))
         doc = GValue.map_(MapEntry("outer", inner))
-        patch = parse_patch("@patch\n= .outer.val 42\n@end")
+        patch = parse_patch(_wire(('=', ['outer', 'val'], 42)))
         result = apply_patch(doc, patch)
         assert result.get("outer").get("val").as_int() == 42
 
     def test_nested_struct_set(self):
         inner = GValue.struct("Inner", MapEntry("val", GValue.int_(1)))
         doc = GValue.struct("Outer", MapEntry("nested", inner))
-        patch = parse_patch("@patch\n= .nested.val 42\n@end")
+        patch = parse_patch(_wire(('=', ['nested', 'val'], 42)))
         result = apply_patch(doc, patch)
         assert result.get("nested").get("val").as_int() == 42
 
@@ -654,7 +391,7 @@ class TestApplyNested:
             GValue.map_(MapEntry("name", GValue.str_("b"))),
         )
         doc = GValue.map_(MapEntry("items", items))
-        patch = parse_patch('@patch\n= .items[1].name "updated"\n@end')
+        patch = parse_patch(_wire(('=', ['items', 1, 'name'], 'updated')))
         result = apply_patch(doc, patch)
         assert result.get("items").as_list()[1].get("name").as_str() == "updated"
 
@@ -663,26 +400,26 @@ class TestApplyNested:
         b = GValue.map_(MapEntry("c", c))
         a = GValue.map_(MapEntry("b", b))
         doc = GValue.map_(MapEntry("a", a))
-        patch = parse_patch("@patch\n= .a.b.c.val 999\n@end")
+        patch = parse_patch(_wire(('=', ['a', 'b', 'c', 'val'], 999)))
         result = apply_patch(doc, patch)
         assert result.get("a").get("b").get("c").get("val").as_int() == 999
 
     def test_navigate_missing_field_in_map_raises(self):
         doc = GValue.map_(MapEntry("x", GValue.int_(1)))
-        patch = parse_patch("@patch\n= .missing.val 1\n@end")
+        patch = parse_patch(_wire(('=', ['missing', 'val'], 1)))
         with pytest.raises(ValueError, match="key not found"):
             apply_patch(doc, patch)
 
     def test_navigate_missing_field_in_struct_raises(self):
         doc = GValue.struct("T", MapEntry("x", GValue.int_(1)))
-        patch = parse_patch("@patch\n= .missing.val 1\n@end")
+        patch = parse_patch(_wire(('=', ['missing', 'val'], 1)))
         with pytest.raises(ValueError, match="field not found"):
             apply_patch(doc, patch)
 
     def test_list_index_out_of_bounds_raises(self):
         items = GValue.list_(GValue.int_(1))
         doc = GValue.map_(MapEntry("items", items))
-        patch = parse_patch("@patch\n= .items[5].val 1\n@end")
+        patch = parse_patch(_wire(('=', ['items', 5, 'val'], 1)))
         with pytest.raises(ValueError, match="index out of bounds"):
             apply_patch(doc, patch)
 
@@ -795,7 +532,7 @@ class TestFieldHelpers:
 class TestDeepCopy:
     def test_apply_patch_does_not_mutate_original(self):
         doc = GValue.map_(MapEntry("x", GValue.int_(1)))
-        patch = parse_patch("@patch\n= .x 99\n@end")
+        patch = parse_patch(_wire(('=', ['x'], 99)))
         result = apply_patch(doc, patch)
         assert result.get("x").as_int() == 99
         assert doc.get("x").as_int() == 1
@@ -814,12 +551,8 @@ class TestIntegration:
             MapEntry("to_remove", GValue.str_("bye")),
             MapEntry("counter", GValue.int_(10)),
         )
-        text = """@patch @schema#GameState @target=obj1
-= .step 2
-+ .items "b"
-- .to_remove
-~ .counter +5
-@end"""
+        text = _wire(("=", ["step"], 2), ("+", ["items"], "b"), ("-", ["to_remove"]),
+                     ("~", ["counter"], 5), schema="GameState", target="obj1")
         patch = parse_patch(text)
         assert patch.schema_id == "GameState"
         assert patch.target == "obj1"
@@ -839,7 +572,7 @@ class TestIntegration:
 
     def test_set_with_map_value(self):
         doc = GValue.map_(MapEntry("config", GValue.map_()))
-        patch = parse_patch('@patch\n= .config {a=1 b="two"}\n@end')
+        patch = parse_patch(_wire(('=', ['config'], {'a': 1, 'b': 'two'})))
         result = apply_patch(doc, patch)
         cfg = result.get("config")
         assert cfg.get("a").as_int() == 1
@@ -847,13 +580,13 @@ class TestIntegration:
 
     def test_set_with_list_value(self):
         doc = GValue.map_(MapEntry("data", GValue.list_()))
-        patch = parse_patch("@patch\n= .data [1 2 3]\n@end")
+        patch = parse_patch(_wire(('=', ['data'], [1, 2, 3])))
         result = apply_patch(doc, patch)
         items = result.get("data").as_list()
         assert len(items) == 3
 
     def test_nested_map_in_list_value(self):
-        v = _parse_value("[{a=1} {b=2}]")
+        v = parse_patch(_wire(("=", ["x"], [{"a": 1}, {"b": 2}]))).ops[0].value
         assert v.type == GType.LIST
         items = v.as_list()
         assert len(items) == 2
@@ -867,49 +600,46 @@ class TestIntegration:
 
 
 class TestPatchBaseFingerprint:
-    """The @base= fingerprint is the cross-impl patch-base contract: the first 16
-    hex of sha256(canonicalize_loose(base)), byte-identical to Go WithBaseValue
-    and JS withBaseValue. These golden values are produced by the Go/JS impls and
-    pinned here, so the test fails loudly if Python's contract ever drifts."""
+    """The "base" fingerprint is the cross-impl patch-base contract: the one
+    digest, sha256(canon_json(base)) as 64 hex (SPEC-CANON.md §5), byte-identical
+    to Go WithBaseValue and JS withBaseValue. These golden values are shared with
+    the Go/JS suites and pinned here, so the test fails loudly if Python drifts."""
 
-    # Golden 16-hex fingerprints (verified equal to Go/JS output).
+    # Golden fingerprints (verified equal to Go/JS output).
     GOLDEN = {
         # {a=1 b=2} — same canonical form in every impl.
-        ("a", 1, "b", 2): "f35719430d98a2fe",
+        ("a", 1, "b", 2): "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777",
     }
 
     def test_compute_matches_go_js_golden_simple(self):
         base = from_json_loose({"a": 1, "b": 2})
-        assert compute_base_fingerprint(base) == "f35719430d98a2fe"
-        assert len(compute_base_fingerprint(base)) == 16
+        assert compute_base_fingerprint(base) == "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+        assert len(compute_base_fingerprint(base)) == 64
 
     def test_compute_matches_go_js_golden_nested(self):
         # {away={score=0} home={score=1} rating=1} — integer-valued float 1.0
         # collapses to 1 under the unified number rule, exactly as Go/JS.
         base = from_json_loose({"home": {"score": 1}, "away": {"score": 0}, "rating": 1.0})
-        assert compute_base_fingerprint(base) == "8cdae5d35aa1f4ae"
+        assert compute_base_fingerprint(base) == "25a671159ff4f11cb1e7b2c722d3604cb44a4f67fcdbbd83373be1108fe57c85"
 
     def test_parse_base_token(self):
-        patch = parse_patch(
-            "@patch @schema#abc @keys=wire @target=m:1 @base=deadbeef12345678\n"
-            "= home.score 2\n@end"
-        )
+        patch = parse_patch(_wire(("=", ["home", "score"], 2), schema="abc", target="m:1", base="deadbeef12345678"))
         assert patch.base_fingerprint == "deadbeef12345678"
 
     def test_verify_matching_base_passes(self):
         base = from_json_loose({"a": 1, "b": 2})
-        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        patch = parse_patch(_wire(('=', ['a'], 9), target='m:1', base=compute_base_fingerprint(base)))
         verify_patch_base(base, patch)  # must not raise
 
     def test_verify_wrong_base_raises(self):
         base = from_json_loose({"a": 1, "b": 2})
-        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        patch = parse_patch(_wire(('=', ['a'], 9), target='m:1', base=compute_base_fingerprint(base)))
         with pytest.raises(PatchBaseMismatch):
             verify_patch_base(from_json_loose({"a": 9}), patch)
 
     def test_verify_no_base_is_noop(self):
         base = from_json_loose({"a": 1, "b": 2})
-        patch = parse_patch("@patch @target=m:1\n= a 9\n@end")
+        patch = parse_patch(_wire(('=', ['a'], 9), target='m:1'))
         assert patch.base_fingerprint == ""
         verify_patch_base(base, patch)  # no base recorded -> no-op, must not raise
 
@@ -927,13 +657,13 @@ class TestApplyPatchBaseEnforcement:
 
     def test_apply_matching_base_applies(self):
         base = from_json_loose({"a": 1, "b": 2})
-        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        patch = parse_patch(_wire(('=', ['a'], 9), target='m:1', base=compute_base_fingerprint(base)))
         result = apply_patch(base, patch)
         assert result.get("a").as_int() == 9
 
     def test_apply_stale_base_raises_without_explicit_verify_call(self):
         base = from_json_loose({"a": 1, "b": 2})
-        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        patch = parse_patch(_wire(('=', ['a'], 9), target='m:1', base=compute_base_fingerprint(base)))
         stale = from_json_loose({"a": 1, "b": 999})
 
         with pytest.raises(PatchBaseMismatch) as exc_info:
@@ -946,13 +676,13 @@ class TestApplyPatchBaseEnforcement:
         assert stale.get("b").as_int() == 999
 
     def test_apply_no_base_recorded_applies_unconditionally(self):
-        patch = parse_patch("@patch @target=m:1\n= a 9\n@end")
+        patch = parse_patch(_wire(('=', ['a'], 9), target='m:1'))
         result = apply_patch(from_json_loose({"a": 1}), patch)
         assert result.get("a").as_int() == 9
 
     def test_apply_verify_base_false_is_explicit_opt_out(self):
         base = from_json_loose({"a": 1, "b": 2})
-        patch = parse_patch(f"@patch @target=m:1 @base={compute_base_fingerprint(base)}\n= a 9\n@end")
+        patch = parse_patch(_wire(('=', ['a'], 9), target='m:1', base=compute_base_fingerprint(base)))
         stale = from_json_loose({"a": 1, "b": 999})
 
         # Sanity: the default (checked) path rejects this combination.
@@ -1118,22 +848,14 @@ class TestDiffApplyRoundTrip:
 # ============================================================
 # diff() + emit_patch() — cross-language identical text
 #
-# The exact bytes emitted for this from/to pair are pinned from the Go
-# reference implementation (go/glyph/patch_roundtrip_test.go
-# TestDiffEmitCrossLanguageGolden) and must be byte-identical to the JS port
-# (js/src/glyph.test.ts) — the whole point of a shared wire format.
+# The exact bytes emitted for this from/to pair are pinned here and in the Go
+# (go/glyph/patch_roundtrip_test.go TestDiffEmitCrossLanguageGolden) and JS
+# (js/src/glyph.test.ts) suites — the whole point of a shared wire format.
 # ============================================================
 
 
 class TestDiffEmitCrossLanguageGolden:
-    GOLDEN = (
-        "@patch @keys=wire @target=m:123 @base=4f9708ac7bbe01e1\n"
-        "- active\n"
-        "= count 42\n"
-        "= extra added\n"
-        "= label new\n"
-        "@end"
-    )
+    GOLDEN = '{"base":"202baf1ae34e2dce839197f13e2fb5866a33f3dd552632154dc359763c60ab57","glyph_patch":1,"ops":[{"op":"-","path":["active"]},{"op":"=","path":["count"],"value":42},{"op":"=","path":["extra"],"value":"added"},{"op":"=","path":["label"],"value":"new"}],"target":"m:123","type":"M"}'
 
     def test_matches_go_and_js(self):
         frm = GValue.struct(
@@ -1153,3 +875,52 @@ class TestDiffEmitCrossLanguageGolden:
         patch = diff(frm, to, "M")
         patch.target = "m:123"
         assert emit_patch(patch) == self.GOLDEN
+
+
+# ============================================================
+# Regression (2026-08-21): MAP_KEY navigation
+#
+# Found by harness/state_identity S1 sanity check: diff() emits MAP_KEY
+# segments, but _apply_op only navigated FIELD segments on maps (depth>=2
+# failed). Go/JS were unaffected. Kept on the JSON wire: hostile keys need
+# no quoting grammar now, but they still have to round-trip.
+# See harness/state_identity/findings/2026-08-21-py-nested-map-key-remove.md
+# ============================================================
+
+
+class TestNestedMapKeyRegression:
+    def _apply(self, base, tgt):
+        patch = diff(from_json_loose(base), from_json_loose(tgt))
+        result = apply_patch(from_json_loose(base), patch, verify_base=True)
+        import glyph as _g
+
+        return _g.to_json_loose(result)
+
+    def test_nested_remove(self):
+        assert self._apply({"x": {"a": 1, "b": 2}}, {"x": {"a": 1}}) == {"x": {"a": 1}}
+
+    def test_subtree_emptied(self):
+        assert self._apply({"x": {"a": 1}}, {"x": {}}) == {"x": {}}
+
+    def test_nested_set(self):
+        assert self._apply({"x": {"a": 1, "b": 2}}, {"x": {"a": 9, "b": 2}}) == {
+            "x": {"a": 9, "b": 2}
+        }
+
+    def test_deep_mixed_containers(self):
+        base = {"a": {"b": {"c": [1, 2]}}}
+        tgt = {"a": {"b": {"c": [1, 3], "d": True}}}
+        assert self._apply(base, tgt) == tgt
+
+    def test_emit_parse_apply_roundtrip_hostile_keys(self):
+        import glyph as _g
+
+        base = {"weIRD key.with dots": {'inner "q"': 1, "sp ace": [1, 2]}, "plain": 5}
+        tgt = {
+            "weIRD key.with dots": {"inner \"q\"": 2, "sp ace": [1, 2, 3], "new": True},
+            "plain": 5,
+        }
+        wire = emit_patch(diff(from_json_loose(base), from_json_loose(tgt)))
+        parsed = parse_patch(wire)
+        result = apply_patch(from_json_loose(base), parsed, verify_base=True)
+        assert _g.to_json_loose(result) == tgt

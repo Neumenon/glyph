@@ -12,6 +12,26 @@ on the Go module proxy).
 This is the first entry in this file — earlier history is in `git log`
 (pre-1.1.0 work landed under tag `v1.0.0` and 35 commits since).
 
+## [Unreleased]
+
+### Breaking changes
+
+- **Identity substrate is now a canonical JSON profile** (`SPEC-CANON.md`).
+  `fingerprint(v) = sha256(canon_json(v))` is the one digest: value
+  fingerprint, patch base, and GS1 state hash are all this 64-hex value.
+  The 16-hex with-tabular patch base is gone. Glyph text is a renderer of
+  the value model and is never hashed.
+- **Patch wire form is JSON** (`SPEC-CANON.md §7`):
+  `{"glyph_patch":1,"ops":[{"op":"=","path":["a",0],"value":1},…],"base":…}`.
+  The text `@patch … @end` emitter/parser, key modes, and FID path syntax
+  are deleted in Go, Python, and JS. Op semantics are unchanged.
+- **GS1 cursor rejects non-canonical `doc`/`patch` payloads** in strict and
+  lenient modes (`SPEC-CANON.md §5`), so `sha256(doc payload)` is the state
+  hash of the doc's value.
+- JSON bridges decode the reserved single-key objects `{"$bytes":…}`,
+  `{"$time":…}`, `{"$id":[prefix,value]}` to typed scalars; malformed
+  payloads are errors, never maps.
+
 ## [1.1.0] - 2026-07-02
 
 ### Breaking changes

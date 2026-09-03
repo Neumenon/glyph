@@ -1,0 +1,23 @@
+{
+  "_comment": "Template: passive cc-trace capture hooks. Claude Code reads settings from the PROJECT ROOT, not from this subdirectory, so copy/merge these `hooks` into the repo-root .claude/settings.json (already done in this repo) or ~/.claude/settings.json. The hook is observability-only: it never blocks and always exits 0.",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/harness/cc-trace/.claude/hooks/trace_event.py\"" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/harness/cc-trace/.claude/hooks/trace_event.py\"" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/harness/cc-trace/.claude/hooks/trace_event.py\"" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/harness/cc-trace/.claude/hooks/trace_event.py\"" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/harness/cc-trace/.claude/hooks/trace_event.py\"" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/harness/cc-trace/.claude/hooks/trace_event.py\"" } ] }
+    ]
+  }
+}

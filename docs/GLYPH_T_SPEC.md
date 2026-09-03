@@ -415,133 +415,12 @@ null optionals are treated as absent and omitted from the payload.
 
 ## 4. Patch Grammar
 
-### 4.1 Document-level structure
-
-A patch document is a self-contained text block with a `@patch` header,
-zero or more operation lines, and an `@end` footer.
-
-```ebnf
-patch-doc   ::= patch-header newline op-line* '@end'
-op-line     ::= (op-set | op-append | op-delete | op-delta) newline
-              | comment-line | blank-line
-comment-line ::= '#' (any char)* newline
-blank-line   ::= newline
-```
-
-Example (from emit_patch.go comment block):
-
-```
-@patch @schema#abc123 @keys=wire @target=M-123
-= home.ft_h 2
-= away.ft_a 1
-+ events 90' Goal{scorer=^p:smith assist=∅}
-- odds
-~ home.rating +0.15
-@end
-```
-
-### 4.2 Patch header
-
-```ebnf
-patch-header ::= '@patch' patch-attr*
-
-patch-attr   ::= '@schema#' schema-hash
-               | '@keys=' key-mode
-               | '@target=' ref-target
-               | '@base=' fingerprint
-
-schema-hash  ::= hex-string           (* SHA-256 prefix of schema canonical form *)
-key-mode     ::= 'wire' | 'name' | 'fid'
-ref-target   ::= ref-bare             (* without leading ^ *)
-fingerprint  ::= hex-string           (* first 16 chars of SHA-256 of base state *)
-hex-string   ::= (hex-digit)+
-```
-
-Implemented in `parsePatchHeader` (parse_patch.go:85-132) and `EmitPatchWithOptions`
-(emit_patch.go:291-351).
-
-**Key mode semantics:**
-- `wire` (default): field names use wire keys when available; falls back to name.
-- `name`: always full canonical field names.
-- `fid`: path segments use `#N` instead of field names.
-
-**Note on `@target` parsing.** `parseRefIDFromTarget` (parse_header.go:141-147)
-splits on the first `:` without escaping. A target value containing `:` that is
-not a prefix separator will be mis-parsed. This is the same unescaped-ref bug
-described in §2.3 (D7). Fix in W6.
-
-### 4.3 Operation lines
-
-```ebnf
-op-set    ::= '=' ' ' path ' ' value
-op-append ::= '+' ' ' path ' ' value (' @idx=' int-lit)?
-op-delete ::= '-' ' ' path
-op-delta  ::= '~' ' ' path ' ' delta-value
-
-delta-value ::= ('+' | '-') number    (* explicit sign required *)
-```
-
-Operation characters are literal `=`, `+`, `-`, `~`. The parser dispatches
-on `line[0]` (parse_patch.go:148-163).
-
-`@idx=N` on an append operation inserts at position N instead of appending to
-the end (parse_patch.go:192-204).
-
-The value on `=` / `+` lines is parsed by `parseInlineValue` (parse_patch.go:260-281),
-which delegates to the main Typed parser (`ParseWithOptions`) for normal values
-or to `ParsePacked` for packed-format inline structs.
-
-### 4.4 Path grammar
-
-A path is a sequence of segments separated by `.` for struct fields, `[N]` for
-list indices, and `["key"]` for map keys.
-
-```ebnf
-path         ::= path-seg ('.' path-seg | index-seg)*
-             |   (* empty path = root operation *)
-
-path-seg     ::= field-seg | fid-seg
-field-seg    ::= bare-field-name | '"' string-body '"'
-fid-seg      ::= '#' digit+          (* FID reference; key-mode=fid only *)
-
-index-seg    ::= '[' int-lit ']'     (* list index *)
-               | '["' map-key-body '"]'  (* map key *)
-
-bare-field-name ::= ident-start (ident-start | digit | '_' | '-')+
-```
-
-Implemented in `parsePathToSegs` (emit_patch.go:188-265) and
-`emitPathSegs` (emit_patch.go:419-458).
-
-**FID path segments.** When `@keys=fid` is used, field segments are emitted
-as `#N` (FID) rather than by name. The FID-resolution pre-pass is
-`ResolveFIDs` / `ResolvePathFIDs` (emit_patch.go:533-597). FID segments are
-represented internally as `PathSeg{Kind: PathSegField, FID: N, Field: ""}`;
-the pre-pass populates `Field` from the schema before `ApplyPatch` navigates.
-
-**Known weak spots (W6 scope — do not fix here, flag only):**
-
-1. **List-index conversion errors silently ignored.**
-   `parsePathToSegs` (emit_patch.go:219): `idx, _ := strconv.Atoi(inner)` —
-   a non-integer inside `[...]` is silently converted to 0, which then
-   silently patches the wrong list position. Normative intent: a non-integer
-   inside `[...]` (when not prefixed with `"`) MUST be a parse error.
-
-2. **Map-key quoting in `parsePathToSegs`.**
-   `emit_patch.go:213-216`: the map-key body is extracted by
-   `strings.Trim(inner, "\"")`, which only trims outer quotes but does not
-   unescape the body. A map key containing `\"` inside `["\"key\""]` will
-   be incorrectly unescaped. Normative intent: map key bodies inside path
-   segments follow the same string escape model as §2.1 and must be properly
-   unescaped with the `unquoteString` utility.
-
-3. **Unresolved FID in navigation.**
-   When `ApplyPatch` (not `ApplyPatchWithSchema`) is called on a FID-mode
-   patch, navigation fails with an explicit error message
-   (`"unresolved FID #N in path; apply with ApplyPatchWithSchema"` —
-   emit_patch.go:697). This is a deliberate safety guard, not a bug.
-
----
+Retired. Patches are not GLYPH-T text: the wire form is a canonical JSON value,
+`{"glyph_patch":1,"ops":[{"op":"="|"+"|"-"|"~","path":[seg,…],"value":…}],"base":…}`,
+specified in [SPEC-CANON.md §7](../SPEC-CANON.md). Path segments are JSON strings
+(struct field or map key) or non-negative integers (list index); there is no key
+mode and no `#fid` path syntax. Operation semantics (`=`, `+`, `-`, `~`) and the
+base fingerprint precondition are unchanged.
 
 ## 5. Document Header
 
@@ -554,10 +433,9 @@ header-attr  ::= '@schema#' schema-hash
                | '@mode=' mode-name
                | '@keys=' key-mode
                | '@tab'
-               | '@patch'
 
 version      ::= ident-token      (* e.g. 'v2' *)
-mode-name    ::= 'auto' | 'struct' | 'packed' | 'tabular' | 'tab' | 'patch'
+mode-name    ::= 'auto' | 'struct' | 'packed' | 'tabular' | 'tab'
 ```
 
 Implemented in `ParseHeader` (parse_header.go:34-108) and

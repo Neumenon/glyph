@@ -522,15 +522,12 @@ const output = canonicalizeLooseWithSchema(value, opts);
 
 Optional base state fingerprinting for patch validation:
 
-```
-@patch @schema#abc123 @keys=wire @target=m:123 @base=1a2b3c4d5e6f7890
-= score 5
-+ events "Goal!"
-@end
+```json
+{"glyph_patch":1,"ops":[{"op":"=","path":["score"],"value":5},{"op":"+","path":["events"],"value":"Goal!"}],"base":"<64 hex>","schema":"abc123","target":"m:123"}
 ```
 
-The `@base=` attribute contains the first 16 characters of the SHA-256 hash
-of the canonical loose form of the base state. This enables:
+The `base` field is `fingerprint(base state)` = `sha256(canon_json(base state))`, 64 hex
+([SPEC-CANON.md §5, §7](../SPEC-CANON.md)). This enables:
 
 - **Optimistic concurrency**: Reject patches applied to stale state
 - **Streaming validation**: Verify state consistency without full doc transfer
@@ -540,13 +537,13 @@ of the canonical loose form of the base state. This enables:
 ```go
 // Create patch with base fingerprint from state
 patch := glyph.NewPatchBuilder(target).
-    WithBaseValue(baseState).  // Computes SHA-256, uses first 16 hex chars
+    WithBaseValue(baseState).  // sha256(canon_json(baseState)), 64 hex
     Set("score", glyph.Int(5)).
     Build()
 
 // Or with explicit fingerprint
 patch := glyph.NewPatchBuilder(target).
-    WithBaseFingerprint("1a2b3c4d5e6f7890").
+    WithBaseFingerprint("<64 hex>").
     Set("score", glyph.Int(5)).
     Build()
 ```

@@ -1,9 +1,17 @@
 package stream
 
 import (
+	"crypto/sha256"
 	"testing"
 
 	"github.com/Neumenon/glyph/go/glyph"
+)
+
+// Doc and patch payloads must be canonical JSON (SPEC-CANON.md §5, §7).
+var (
+	emptyPatch = []byte(`{"glyph_patch":1,"ops":[]}`)
+	setX2      = []byte(`{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":2}]}`)
+	setX3      = []byte(`{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":3}]}`)
 )
 
 func TestStreamCursor_Basic(t *testing.T) {
@@ -61,7 +69,7 @@ func TestStreamCursor_ProcessFrame(t *testing.T) {
 	}
 
 	// Sequential frame
-	err = cursor.ProcessFrame(&Frame{SID: 1, Seq: 2, Kind: KindPatch})
+	err = cursor.ProcessFrame(&Frame{SID: 1, Seq: 2, Kind: KindPatch, Payload: emptyPatch})
 	if err != nil {
 		t.Fatalf("ProcessFrame failed: %v", err)
 	}
@@ -70,13 +78,13 @@ func TestStreamCursor_ProcessFrame(t *testing.T) {
 	}
 
 	// Gap should fail
-	err = cursor.ProcessFrame(&Frame{SID: 1, Seq: 5, Kind: KindPatch})
+	err = cursor.ProcessFrame(&Frame{SID: 1, Seq: 5, Kind: KindPatch, Payload: emptyPatch})
 	if err == nil {
 		t.Error("expected error for sequence gap")
 	}
 
 	// Duplicate should fail
-	err = cursor.ProcessFrame(&Frame{SID: 1, Seq: 2, Kind: KindPatch})
+	err = cursor.ProcessFrame(&Frame{SID: 1, Seq: 2, Kind: KindPatch, Payload: emptyPatch})
 	if err == nil {
 		t.Error("expected error for duplicate sequence")
 	}
@@ -102,7 +110,7 @@ func TestStreamCursor_PatchVerification(t *testing.T) {
 		SID:     1,
 		Seq:     1,
 		Kind:    KindPatch,
-		Payload: []byte("@patch\nset .x 2\n@end"),
+		Payload: setX2,
 		Base:    &correctBase,
 	})
 	if err != nil {
@@ -121,7 +129,7 @@ func TestStreamCursor_PatchVerification(t *testing.T) {
 		SID:     1,
 		Seq:     2,
 		Kind:    KindPatch,
-		Payload: []byte("@patch\nset .x 3\n@end"),
+		Payload: setX3,
 		Base:    &wrongBase,
 	})
 	if err == nil {
@@ -169,7 +177,7 @@ func TestStreamCursor_Final(t *testing.T) {
 		SID:     1,
 		Seq:     1,
 		Kind:    KindDoc,
-		Payload: []byte("done"),
+		Payload: []byte(`"done"`),
 		Final:   true,
 	})
 
@@ -200,12 +208,12 @@ func TestFrameHandler_Basic(t *testing.T) {
 	}
 
 	// Send frames
-	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`{x=1}`)})
-	handler.Handle(&Frame{SID: 1, Seq: 2, Kind: KindPatch, Payload: []byte(`set .x 2`)})
+	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`{"x":1}`)})
+	handler.Handle(&Frame{SID: 1, Seq: 2, Kind: KindPatch, Payload: setX2})
 	handler.Handle(&Frame{SID: 1, Seq: 3, Kind: KindUI, Payload: []byte(`progress 50%`)})
-	handler.Handle(&Frame{SID: 1, Seq: 4, Kind: KindPatch, Payload: []byte(`set .x 3`)})
+	handler.Handle(&Frame{SID: 1, Seq: 4, Kind: KindPatch, Payload: setX3})
 
-	if len(docs) != 1 || docs[0] != "{x=1}" {
+	if len(docs) != 1 || docs[0] != `{"x":1}` {
 		t.Errorf("docs = %v", docs)
 	}
 	if len(patches) != 2 {
@@ -225,8 +233,8 @@ func TestFrameHandler_GapCallback(t *testing.T) {
 		return nil // Allow gap
 	}
 
-	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("a")})
-	handler.Handle(&Frame{SID: 1, Seq: 5, Kind: KindDoc, Payload: []byte("b")}) // Gap!
+	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`"a"`)})
+	handler.Handle(&Frame{SID: 1, Seq: 5, Kind: KindDoc, Payload: []byte(`"b"`)}) // Gap!
 
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
@@ -251,8 +259,8 @@ func TestFrameHandler_FinalCallback(t *testing.T) {
 		return nil
 	}
 
-	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("a")})
-	handler.Handle(&Frame{SID: 1, Seq: 2, Kind: KindDoc, Payload: []byte("done"), Final: true})
+	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`"a"`)})
+	handler.Handle(&Frame{SID: 1, Seq: 2, Kind: KindDoc, Payload: []byte(`"done"`), Final: true})
 
 	if len(finalSIDs) != 1 || finalSIDs[0] != 1 {
 		t.Errorf("finalSIDs = %v", finalSIDs)
@@ -268,9 +276,9 @@ func TestFrameHandler_DuplicateSkipped(t *testing.T) {
 		return nil
 	}
 
-	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("a")})
-	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("b")}) // Duplicate
-	handler.Handle(&Frame{SID: 1, Seq: 2, Kind: KindDoc, Payload: []byte("c")})
+	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`"a"`)})
+	handler.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`"b"`)}) // Duplicate
+	handler.Handle(&Frame{SID: 1, Seq: 2, Kind: KindDoc, Payload: []byte(`"c"`)})
 
 	if count != 2 {
 		t.Errorf("count = %d, want 2 (duplicate should be skipped)", count)
@@ -298,5 +306,81 @@ func TestErrorCodeRegistry(t *testing.T) {
 		if c.constant != c.expected {
 			t.Errorf("ErrorCode constant value = %q, want %q", c.constant, c.expected)
 		}
+	}
+}
+
+// TestCursor_RejectsNonCanonicalPayload: SPEC-CANON.md §5 makes the cursor a
+// trust boundary — a doc or patch frame whose bytes are not canonical JSON is
+// refused before it can advance the sequence or reach a callback, in both the
+// strict and lenient paths. Other kinds stay opaque.
+func TestCursor_RejectsNonCanonicalPayload(t *testing.T) {
+	bad := []string{`{"b":1,"a":2}`, `{"a": 1}`, `{"a":1.0}`, `x`, ``, "{\"a\":1}\n", `[1,2,]`}
+	for _, kind := range []FrameKind{KindDoc, KindPatch} {
+		for _, payload := range bad {
+			frame := &Frame{SID: 1, Seq: 1, Kind: kind, Payload: []byte(payload)}
+
+			strict := NewStreamCursor()
+			if err := strict.ProcessFrame(frame); err == nil {
+				t.Errorf("strict: %s %q accepted", kind, payload)
+			}
+			if strict.Get(1).LastSeq != 0 {
+				t.Errorf("strict: %s %q advanced LastSeq", kind, payload)
+			}
+
+			lenient := NewFrameHandler()
+			dispatched := false
+			lenient.OnDoc = func(uint64, uint64, []byte, *SIDState) error { dispatched = true; return nil }
+			lenient.OnPatch = func(uint64, uint64, []byte, *SIDState) error { dispatched = true; return nil }
+			if err := lenient.Handle(frame); err == nil {
+				t.Errorf("lenient: %s %q accepted", kind, payload)
+			}
+			if dispatched || lenient.Cursor.Get(1).LastSeq != 0 {
+				t.Errorf("lenient: %s %q dispatched=%v LastSeq=%d", kind, payload, dispatched, lenient.Cursor.Get(1).LastSeq)
+			}
+		}
+	}
+
+	// Canonical doc and patch payloads pass; non-doc/patch kinds are opaque.
+	good := []*Frame{
+		{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`{"a":1,"b":[1,2.5,"x",null]}`)},
+		{SID: 1, Seq: 2, Kind: KindPatch, Payload: setX2},
+		{SID: 1, Seq: 3, Kind: KindRow, Payload: []byte(`Row@(id 1)`)},
+		{SID: 1, Seq: 4, Kind: KindUI, Payload: []byte(`progress 50%`)},
+		{SID: 1, Seq: 5, Kind: KindErr, Payload: []byte(`{"b":1,"a":2}`)},
+	}
+	strict := NewStreamCursor()
+	lenient := NewFrameHandler()
+	for _, f := range good {
+		if err := strict.ProcessFrame(f); err != nil {
+			t.Errorf("strict: %s %q rejected: %v", f.Kind, f.Payload, err)
+		}
+		if err := lenient.Handle(f); err != nil {
+			t.Errorf("lenient: %s %q rejected: %v", f.Kind, f.Payload, err)
+		}
+	}
+}
+
+// TestDocPayloadHashIsStateHash: because doc payloads are canonical, a
+// receiver can hash the bytes it received and get the state hash of the
+// value without re-encoding (SPEC-CANON.md §5).
+func TestDocPayloadHashIsStateHash(t *testing.T) {
+	doc := glyph.Map(
+		glyph.MapEntry{Key: "score", Value: glyph.Float(2)},
+		glyph.MapEntry{Key: "id", Value: glyph.ID("m", "1")},
+		glyph.MapEntry{Key: "tags", Value: glyph.List(glyph.Str("a"), glyph.Str("b"))},
+	)
+	payload, err := glyph.CanonJSON(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor := NewStreamCursor()
+	if err := cursor.ProcessFrame(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: payload}); err != nil {
+		t.Fatalf("ProcessFrame: %v", err)
+	}
+	if err := cursor.SetState(1, doc); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := sha256.Sum256(payload), cursor.Get(1).StateHash; got != want {
+		t.Errorf("sha256(payload) = %x, state hash = %x", got, want)
 	}
 }

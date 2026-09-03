@@ -6,7 +6,7 @@ import (
 )
 
 // ============================================================
-// Patch Encoding Tests
+// Patch Encoding Tests (SPEC-CANON.md §7 wire form)
 // ============================================================
 
 func makeMatchForPatch() *GValue {
@@ -26,117 +26,144 @@ func makeMatchForPatch() *GValue {
 	)
 }
 
-func TestPatchBasic(t *testing.T) {
-	schema := NewSchemaBuilder().Build()
+func mustEmitPatch(t *testing.T, p *Patch) string {
+	t.Helper()
+	got, err := EmitPatch(p)
+	if err != nil {
+		t.Fatalf("EmitPatch error: %v", err)
+	}
+	return got
+}
 
+func TestPatchBasic(t *testing.T) {
 	patch := NewPatch(RefID{Prefix: "m", Value: "ARS-LIV"}, "abc123").
 		Set("home.ft_h", Int(2)).
 		Set("away.ft_a", Int(1))
 
-	got, err := EmitPatch(patch, schema)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
+	got := mustEmitPatch(t, patch)
+	want := `{"glyph_patch":1,"ops":[{"op":"=","path":["away","ft_a"],"value":1},{"op":"=","path":["home","ft_h"],"value":2}],"schema":"abc123","target":"m:ARS-LIV"}`
+	if got != want {
+		t.Errorf("EmitPatch\n got: %s\nwant: %s", got, want)
 	}
+}
 
-	// Verify header
-	if !strings.HasPrefix(got, "@patch") {
-		t.Errorf("Expected @patch header, got: %s", got[:min(50, len(got))])
+// TestPatchEmitCanonicalAndSorted pins the two wire guarantees: the bytes are
+// canonical JSON (IsCanonical) and ops are ordered by (canon_json(path), op),
+// independent of insertion order. Both are what make a patch diffed in any
+// language hash the same.
+func TestPatchEmitCanonicalAndSorted(t *testing.T) {
+	patch := NewPatch(RefID{Prefix: "m", Value: "1"}, "")
+	patch.Ops = []*PatchOp{
+		{Op: OpSet, Path: []PathSeg{FieldSeg("z", 0)}, Value: Int(1)},
+		{Op: OpSet, Path: []PathSeg{FieldSeg("a", 0)}, Value: Null()},
+		{Op: OpDelete, Path: []PathSeg{FieldSeg("a", 0)}},
+		{Op: OpSet, Path: []PathSeg{FieldSeg("a", 0), ListIdxSeg(2)}, Value: Int(3)},
+		{Op: OpSet, Path: []PathSeg{FieldSeg("a", 0), ListIdxSeg(10)}, Value: Int(4)},
 	}
-	if !strings.Contains(got, "@schema#abc123") {
-		t.Errorf("Expected schema hash, got: %s", got)
+	got := mustEmitPatch(t, patch)
+	// The key is the canonical path bytes, not a structural compare: ["a",10]
+	// sorts before ["a",2] (digit order) and both before ["a"] because "," <
+	// "]"; on the same path "-" (0x2d) sorts before "=" (0x3d).
+	want := `{"glyph_patch":1,"ops":[` +
+		`{"op":"=","path":["a",10],"value":4},` +
+		`{"op":"=","path":["a",2],"value":3},` +
+		`{"op":"-","path":["a"]},` +
+		`{"op":"=","path":["a"],"value":null},` +
+		`{"op":"=","path":["z"],"value":1}],"target":"m:1"}`
+	if got != want {
+		t.Errorf("EmitPatch\n got: %s\nwant: %s", got, want)
 	}
-	if !strings.Contains(got, "@target=m:ARS-LIV") {
-		t.Errorf("Expected target, got: %s", got)
+	if !IsCanonical([]byte(got)) {
+		t.Errorf("EmitPatch output is not canonical JSON: %s", got)
 	}
-
-	// Verify operations
-	if !strings.Contains(got, "= away.ft_a 1") {
-		t.Errorf("Expected set operation for away.ft_a, got: %s", got)
-	}
-	if !strings.Contains(got, "= home.ft_h 2") {
-		t.Errorf("Expected set operation for home.ft_h, got: %s", got)
-	}
-
-	// Verify footer
-	if !strings.HasSuffix(got, "@end") {
-		t.Errorf("Expected @end footer, got: %s", got)
-	}
-
-	t.Logf("Patch output:\n%s", got)
 }
 
 func TestPatchAllOperations(t *testing.T) {
-	schema := NewSchemaBuilder().Build()
-
 	patch := NewPatch(RefID{Prefix: "m", Value: "123"}, "").
 		Set("score", Int(5)).
 		Append("events", Str("Goal!")).
 		Delete("odds").
 		Delta("home.rating", 0.15)
 
-	got, err := EmitPatch(patch, schema)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
+	got := mustEmitPatch(t, patch)
+	want := `{"glyph_patch":1,"ops":[` +
+		`{"op":"+","path":["events"],"value":"Goal!"},` +
+		`{"op":"~","path":["home","rating"],"value":0.15},` +
+		`{"op":"-","path":["odds"]},` +
+		`{"op":"=","path":["score"],"value":5}],"target":"m:123"}`
+	if got != want {
+		t.Errorf("EmitPatch\n got: %s\nwant: %s", got, want)
 	}
-
-	// Verify all operation types
-	if !strings.Contains(got, "= score 5") {
-		t.Errorf("Missing set operation, got: %s", got)
-	}
-	if !strings.Contains(got, `+ events "Goal!"`) {
-		t.Errorf("Missing append operation, got: %s", got)
-	}
-	if !strings.Contains(got, "- odds") {
-		t.Errorf("Missing delete operation, got: %s", got)
-	}
-	if !strings.Contains(got, "~ home.rating +0.15") {
-		t.Errorf("Missing delta operation, got: %s", got)
-	}
-
-	t.Logf("All operations:\n%s", got)
 }
 
-func TestPatchNegativeDelta(t *testing.T) {
-	schema := NewSchemaBuilder().Build()
+func TestPatchDeltaAndIndex(t *testing.T) {
+	patch := NewPatch(RefID{}, "").
+		Delta("score", -3).
+		InsertAt("l", 0, Int(1)).
+		Delta("n", 2.5)
 
-	patch := NewPatch(RefID{Prefix: "m", Value: "123"}, "").
-		Delta("score", -3)
-
-	got, err := EmitPatch(patch, schema)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
+	got := mustEmitPatch(t, patch)
+	// Integral float deltas collapse to integer digits (SPEC-CANON.md §2);
+	// index rides only on "+".
+	want := `{"glyph_patch":1,"ops":[{"index":0,"op":"+","path":["l"],"value":1},{"op":"~","path":["n"],"value":2.5},{"op":"~","path":["score"],"value":-3}]}`
+	if got != want {
+		t.Errorf("EmitPatch\n got: %s\nwant: %s", got, want)
 	}
-
-	if !strings.Contains(got, "~ score -3") {
-		t.Errorf("Expected negative delta, got: %s", got)
-	}
-
-	t.Logf("Negative delta:\n%s", got)
 }
 
-func TestPatchComplexValue(t *testing.T) {
-	schema := NewSchemaBuilder().Build()
+// TestPatchReservedValues: typed scalars inside a patch value ride as §3
+// objects and come back typed, so a patch cannot silently downgrade an id or
+// bytes to a string.
+func TestPatchReservedValues(t *testing.T) {
+	patch := NewPatch(RefID{}, "").
+		Set("player", ID("p", "smith")).
+		Set("blob", Bytes([]byte{0, 1, 2})).
+		Append("events", Struct("Event",
+			FieldVal("minute", Int(90)),
+			FieldVal("who", ID("", "anon")),
+		))
 
-	event := Struct("Event",
-		FieldVal("minute", Int(90)),
-		FieldVal("type", Str("Goal")),
-		FieldVal("player", ID("p", "smith")),
-	)
+	got := mustEmitPatch(t, patch)
+	want := `{"glyph_patch":1,"ops":[` +
+		`{"op":"=","path":["blob"],"value":{"$bytes":"AAEC"}},` +
+		`{"op":"+","path":["events"],"value":{"minute":90,"who":{"$id":["","anon"]}}},` +
+		`{"op":"=","path":["player"],"value":{"$id":["p","smith"]}}]}`
+	if got != want {
+		t.Errorf("EmitPatch\n got: %s\nwant: %s", got, want)
+	}
 
-	patch := NewPatch(RefID{Prefix: "m", Value: "123"}, "").
-		Append("events", event)
-
-	got, err := EmitPatch(patch, schema)
+	parsed, err := ParsePatch(got)
 	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
+		t.Fatalf("ParsePatch: %v", err)
 	}
-
-	// Verify nested struct in patch
-	if !strings.Contains(got, "Event{") {
-		t.Errorf("Expected struct value in append, got: %s", got)
+	if v := parsed.Ops[0].Value; v.Type() != TypeBytes || string(v.bytesVal) != "\x00\x01\x02" {
+		t.Errorf("blob: want bytes 000102, got %v", v)
 	}
+	if v := parsed.Ops[1].Value.Get("who"); v == nil || v.Type() != TypeID || v.idVal != (RefID{Value: "anon"}) {
+		t.Errorf("events.who: want id ^anon, got %v", v)
+	}
+	if v := parsed.Ops[2].Value; v.Type() != TypeID || v.idVal != (RefID{Prefix: "p", Value: "smith"}) {
+		t.Errorf("player: want id ^p:smith, got %v", v)
+	}
+	if again := mustEmitPatch(t, parsed); again != got {
+		t.Errorf("re-emit drifted\n got: %s\nwant: %s", again, got)
+	}
+}
 
-	t.Logf("Complex value patch:\n%s", got)
+func TestPatchEmitErrors(t *testing.T) {
+	if _, err := EmitPatch(nil); err == nil {
+		t.Error("nil patch: expected error")
+	}
+	bad := NewPatch(RefID{}, "")
+	bad.Ops = []*PatchOp{{Op: OpDelta, Path: []PathSeg{FieldSeg("n", 0)}, Value: Str("x")}}
+	if _, err := EmitPatch(bad); err == nil {
+		t.Error("non-numeric delta: expected error")
+	}
+	fid := NewPatch(RefID{}, "")
+	fid.Ops = []*PatchOp{{Op: OpSet, Path: []PathSeg{{Kind: PathSegField, FID: 3}}, Value: Int(1)}}
+	if _, err := EmitPatch(fid); err == nil || !strings.Contains(err.Error(), "unresolved FID") {
+		t.Errorf("unresolved FID: expected error, got %v", err)
+	}
 }
 
 func TestPatchBuilder(t *testing.T) {
@@ -255,6 +282,26 @@ func TestPatchApplyDelta(t *testing.T) {
 	}
 }
 
+// TestPatchApplyFieldSegIntoMap: wire paths are plain strings, so a parsed
+// patch navigates maps with FieldSeg (Diff emits MapKeySeg for the same
+// value). Both must reach the nested map entry.
+func TestPatchApplyFieldSegIntoMap(t *testing.T) {
+	doc := Map(MapEntry{Key: "cfg", Value: Map(MapEntry{Key: "inner", Value: Map(MapEntry{Key: "n", Value: Int(1)})})})
+	patch := NewPatch(RefID{}, "")
+	patch.Ops = []*PatchOp{
+		{Op: OpSet, Path: []PathSeg{FieldSeg("cfg", 0), FieldSeg("inner", 0), FieldSeg("n", 0)}, Value: Int(2)},
+		{Op: OpSet, Path: []PathSeg{FieldSeg("cfg", 0), MapKeySeg("inner"), FieldSeg("m", 0)}, Value: Int(3)},
+	}
+	result, err := ApplyPatch(doc, patch)
+	if err != nil {
+		t.Fatalf("ApplyPatch error: %v", err)
+	}
+	inner := result.Get("cfg").Get("inner")
+	if mustAsInt(t, inner.Get("n")) != 2 || mustAsInt(t, inner.Get("m")) != 3 {
+		t.Errorf("expected inner {n=2 m=3}, got %s", Emit(inner))
+	}
+}
+
 func TestDiff(t *testing.T) {
 	from := Struct("Match",
 		FieldVal("id", ID("m", "123")),
@@ -269,7 +316,7 @@ func TestDiff(t *testing.T) {
 		FieldVal("winner", Str("home")),
 	)
 
-	patch := Diff(from, to, "Match")
+	patch := mustDiff(from, to, "Match")
 
 	// Should have: score change, status change, winner added
 	if len(patch.Ops) < 3 {
@@ -319,7 +366,7 @@ func TestDiffWithDeletion(t *testing.T) {
 		// odds and pred removed
 	)
 
-	patch := Diff(from, to, "Match")
+	patch := mustDiff(from, to, "Match")
 
 	// Should have deletions for odds and pred
 	deleteCount := 0
@@ -331,46 +378,6 @@ func TestDiffWithDeletion(t *testing.T) {
 
 	if deleteCount != 2 {
 		t.Errorf("Expected 2 deletions, got: %d", deleteCount)
-	}
-}
-
-func TestPatchSorting(t *testing.T) {
-	patch := NewPatch(RefID{Prefix: "m", Value: "123"}, "").
-		Set("z.field", Int(1)).
-		Set("a.field", Int(2)).
-		Set("m.field", Int(3))
-
-	schema := NewSchemaBuilder().Build()
-	opts := DefaultPatchOptions(schema)
-	opts.SortOps = true
-
-	got, err := EmitPatchWithOptions(patch, opts)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
-	}
-
-	lines := strings.Split(got, "\n")
-
-	// Find operation lines (skip header and footer)
-	var opLines []string
-	for _, line := range lines {
-		if strings.HasPrefix(line, "=") {
-			opLines = append(opLines, line)
-		}
-	}
-
-	// Should be sorted: a.field, m.field, z.field
-	if len(opLines) != 3 {
-		t.Fatalf("Expected 3 op lines, got: %d", len(opLines))
-	}
-	if !strings.Contains(opLines[0], "a.field") {
-		t.Errorf("First op should be a.field, got: %s", opLines[0])
-	}
-	if !strings.Contains(opLines[1], "m.field") {
-		t.Errorf("Second op should be m.field, got: %s", opLines[1])
-	}
-	if !strings.Contains(opLines[2], "z.field") {
-		t.Errorf("Third op should be z.field, got: %s", opLines[2])
 	}
 }
 
@@ -462,48 +469,34 @@ func TestDeepCopy(t *testing.T) {
 }
 
 // ============================================================
-// v2.4.0: Base Fingerprint Tests
+// Base Fingerprint Tests (SPEC-CANON.md §5)
 // ============================================================
 
 func TestPatchWithBaseFingerprint(t *testing.T) {
-	schema := NewSchemaBuilder().Build()
-
-	// Create a base state
 	baseState := Map(
 		MapEntry{Key: "score", Value: Int(0)},
 		MapEntry{Key: "status", Value: Str("pending")},
 	)
 
-	// Create patch with base fingerprint
 	patch := NewPatchBuilder(RefID{Prefix: "m", Value: "123"}).
 		WithBaseValue(baseState).
 		Set("score", Int(5)).
 		Build()
 
-	got, err := EmitPatch(patch, schema)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
-	}
+	got := mustEmitPatch(t, patch)
 
-	// Verify base fingerprint is in header
-	if !strings.Contains(got, "@base=") {
-		t.Errorf("Expected @base= in header, got: %s", got)
+	if patch.BaseFingerprint == "" || len(patch.BaseFingerprint) != 64 {
+		t.Errorf("Expected 64-char fingerprint, got: %q", patch.BaseFingerprint)
 	}
-
-	// Fingerprint should be 16 hex chars
-	if patch.BaseFingerprint == "" || len(patch.BaseFingerprint) != 16 {
-		t.Errorf("Expected 16-char fingerprint, got: %q", patch.BaseFingerprint)
+	if !strings.HasPrefix(got, `{"base":"`+patch.BaseFingerprint+`",`) {
+		t.Errorf("Expected base in wire form, got: %s", got)
 	}
-
-	t.Logf("Patch with base fingerprint:\n%s", got)
 }
 
 func TestPatchBaseFingerprint_Parse(t *testing.T) {
-	input := `@patch @schema#abc123 @keys=wire @target=m:123 @base=1234567890abcdef
-= score 5
-@end`
+	input := `{"glyph_patch":1,"ops":[{"op":"=","path":["score"],"value":5}],"schema":"abc123","target":"m:123","base":"1234567890abcdef"}`
 
-	patch, err := ParsePatch(input, nil)
+	patch, err := ParsePatch(input)
 	if err != nil {
 		t.Fatalf("ParsePatch error: %v", err)
 	}
@@ -511,36 +504,31 @@ func TestPatchBaseFingerprint_Parse(t *testing.T) {
 	if patch.BaseFingerprint != "1234567890abcdef" {
 		t.Errorf("Expected base fingerprint '1234567890abcdef', got: %q", patch.BaseFingerprint)
 	}
+	if patch.SchemaID != "abc123" {
+		t.Errorf("Expected schema abc123, got %q", patch.SchemaID)
+	}
+	if patch.Target != (RefID{Prefix: "m", Value: "123"}) {
+		t.Errorf("Expected target m:123, got %v", patch.Target)
+	}
 }
 
 func TestPatchBaseFingerprint_Roundtrip(t *testing.T) {
-	schema := NewSchemaBuilder().Build()
-
-	// Create a base state
 	baseState := Map(
 		MapEntry{Key: "x", Value: Int(10)},
 		MapEntry{Key: "y", Value: Int(20)},
 	)
 
-	// Create patch with base fingerprint
 	originalPatch := NewPatchBuilder(RefID{Prefix: "m", Value: "test"}).
 		WithBaseValue(baseState).
 		Set("x", Int(100)).
 		Build()
 
-	// Emit
-	patchText, err := EmitPatch(originalPatch, schema)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
-	}
-
-	// Parse back
-	parsedPatch, err := ParsePatch(patchText, schema)
+	patchText := mustEmitPatch(t, originalPatch)
+	parsedPatch, err := ParsePatch(patchText)
 	if err != nil {
 		t.Fatalf("ParsePatch error: %v", err)
 	}
 
-	// Verify fingerprints match
 	if originalPatch.BaseFingerprint != parsedPatch.BaseFingerprint {
 		t.Errorf("Fingerprint mismatch:\nOriginal: %s\nParsed: %s",
 			originalPatch.BaseFingerprint, parsedPatch.BaseFingerprint)
@@ -548,20 +536,13 @@ func TestPatchBaseFingerprint_Roundtrip(t *testing.T) {
 }
 
 func TestPatchWithExplicitFingerprint(t *testing.T) {
-	schema := NewSchemaBuilder().Build()
-
-	// Create patch with explicit fingerprint
 	patch := NewPatchBuilder(RefID{Prefix: "m", Value: "123"}).
 		WithBaseFingerprint("abcdef0123456789").
 		Set("value", Int(42)).
 		Build()
 
-	got, err := EmitPatch(patch, schema)
-	if err != nil {
-		t.Fatalf("EmitPatch error: %v", err)
-	}
-
-	if !strings.Contains(got, "@base=abcdef0123456789") {
+	got := mustEmitPatch(t, patch)
+	if !strings.Contains(got, `"base":"abcdef0123456789"`) {
 		t.Errorf("Expected explicit base fingerprint, got: %s", got)
 	}
 }

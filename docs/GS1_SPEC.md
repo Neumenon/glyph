@@ -45,8 +45,8 @@
 
 | Value | Name | Meaning |
 |------:|------|---------|
-| 0 | `doc` | Snapshot or general GLYPH document/value |
-| 1 | `patch` | GLYPH patch doc (`@patch ... @end`) |
+| 0 | `doc` | State snapshot: canonical JSON of the value ([SPEC-CANON.md §5](../SPEC-CANON.md)) |
+| 1 | `patch` | Patch: canonical JSON wire form ([SPEC-CANON.md §7](../SPEC-CANON.md)) |
 | 2 | `row` | Single row value (streaming tabular data) |
 | 3 | `ui` | UI event value (progress/log/artifact refs) |
 | 4 | `ack` | Acknowledgement (usually no payload) |
@@ -109,10 +109,8 @@ Receiver **MUST NOT** parse payload boundaries using delimiters.
 ### 3.5 Example
 
 ```
-@frame{v=1 sid=1 seq=12 kind=patch len=32 crc=89abcdef base=sha256:0123456789abcdef...}
-@patch
-= .foo 42
-@end
+@frame{v=1 sid=1 seq=12 kind=patch len=62 crc=89abcdef base=sha256:0123456789abcdef...}
+{"glyph_patch":1,"ops":[{"op":"=","path":["foo"],"value":42}]}
 
 ```
 
@@ -160,14 +158,18 @@ Receiver **MUST** verify CRC if present and reject frame on mismatch.
 When `base` is present:
 
 - Algorithm: **SHA-256**
-- Input: `CanonicalizeStrict(stateDoc)` or `CanonicalizeLoose(stateDoc)`
+- Input: `canon_json(stateDoc)` ([SPEC-CANON.md §5](../SPEC-CANON.md))
 - Format in GS1-T: `base=sha256:<64 lowercase hex digits>`
 
 ### 6.1 State Hash Definition
 
 ```
-base = sha256( Canonicalize(stateDoc) )
+base = sha256( canon_json(stateDoc) )
 ```
+
+This is the same digest as the value fingerprint and the patch base fingerprint.
+Because `doc` and `patch` payloads are rejected unless they are canonical JSON,
+`sha256(payload)` of a `doc` frame equals the state hash of the value it carries.
 
 The default canonicalization mode is `loose` (`CanonicalizeLoose`).
 Senders using strict mode MUST include `hashmode=strict` in the frame header.
@@ -176,7 +178,7 @@ Receivers that do not implement strict mode MUST reject frames bearing
 
 If `hashmode` is absent, `loose` is assumed. In Go, the source-of-truth
 helper for loose mode is `stream.StateHashLoose`, which hashes
-`glyph.CanonicalizeLoose(stateDoc)`.
+`glyph.CanonJSON(stateDoc)`.
 
 > **Implementation note:** `stream.StateHashEmit` (which hashes `Emit()` output)
 > is not part of this specification and MUST NOT be used to compute the `base`
@@ -259,11 +261,8 @@ Payload is a single GLYPH value (struct/list) representing one row.
 
 ### 8.4 Patch Event
 
-```glyph
-@patch
-= .items[0].qty 5
-+ .items Item{id=2 name="widget"}
-@end
+```json
+{"glyph_patch":1,"ops":[{"op":"=","path":["items",0,"qty"],"value":5},{"op":"+","path":["items"],"value":{"id":2,"name":"widget"}}]}
 ```
 
 ### 8.5 Error Code Registry
@@ -342,8 +341,8 @@ Full frame:
 
 ### 11.2 Patch with CRC
 
-Header: `@frame{v=1 sid=1 seq=5 kind=patch len=24 crc=a1b2c3d4}`
-Payload: `@patch\n= .x 1\n@end`
+Header: `@frame{v=1 sid=1 seq=5 kind=patch len=59 crc=a1b2c3d4}`
+Payload: `{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":1}]}`
 
 ### 11.3 UI Event
 

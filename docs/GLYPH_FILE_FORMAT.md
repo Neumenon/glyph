@@ -33,13 +33,8 @@ A `.glyph` file contains GLYPH-Loose canonical text, as produced by `Canonicaliz
    @end
    ```
 
-3. **Patch**: A `@patch ... @end` block (for delta files)
-   ```
-   @patch
-   = .step 2
-   + .items {id=1 name="item_1"}
-   @end
-   ```
+3. **Patch**: not a `.glyph` document. Patches travel as canonical JSON
+   (`{"glyph_patch":1,"ops":[...]}`, see [SPEC-CANON.md §7](../SPEC-CANON.md)).
 
 ### Directives
 
@@ -47,7 +42,6 @@ A `.glyph` file contains GLYPH-Loose canonical text, as produced by `Canonicaliz
 |-----------|---------|
 | `@schema#<id>` | Schema reference or inline definition |
 | `@tab _ rows=N cols=N [col1 col2 ...]` | Tabular (column-oriented) encoding |
-| `@patch ... @end` | Semantic delta encoding |
 
 ## Detection
 

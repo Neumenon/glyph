@@ -9,7 +9,7 @@ import {
   fromJson, toJson, parseJson, stringifyJson, normalizeJson,
   emit, emitPacked, emitTabular, emitV2, emitHeader,
   parsePacked, parseTabular, parseHeader,
-  PatchBuilder, emitPatch, parsePatch, applyPatch,
+  PatchBuilder, emitPatch, parsePatch, applyPatch, diff, computeBaseFingerprint, Patch,
   parsePathToSegs, fieldSeg, listIdxSeg, mapKeySeg,
   canonicalizeLoose, canonicalizeLooseNoTabular,
   canonicalizeLooseWithOpts, canonicalizeLooseWithSchema,
@@ -1368,114 +1368,164 @@ describe('Patch coverage', () => {
     expect(patch.ops[0].path[0].field).toBe('x');
   });
 
-  test('emitPatch with insertAt index', () => {
+  // Wire form (SPEC-CANON.md §7)
+  test('emitPatch: canonical bytes, ops sorted by (path, op), empty header omitted', () => {
+    const patch: Patch = {
+      target: { prefix: 'm', value: '1' },
+      baseFingerprint: 'ab'.repeat(32),
+      ops: [
+        { op: '=', path: [fieldSeg('z')], value: g.int(1) },
+        { op: '=', path: [fieldSeg('a')], value: g.null() },
+        { op: '-', path: [fieldSeg('a')] },
+      ],
+    };
+    // Same literal as py/tests/test_patch.py.
+    expect(emitPatch(patch)).toBe(
+      '{"base":"' + 'ab'.repeat(32) + '","glyph_patch":1,"ops":[{"op":"-","path":["a"]},{"op":"=","path":["a"],"value":null},{"op":"=","path":["z"],"value":1}],"target":"m:1"}'
+    );
+  });
+
+  test('emitPatch: delta is a JSON number, index only on + and only when >= 0', () => {
+    const patch: Patch = {
+      target: { prefix: '', value: '' },
+      ops: [
+        { op: '~', path: [fieldSeg('n')], value: g.float(2.5) },
+        { op: '+', path: [fieldSeg('l')], value: g.int(1), index: 0 },
+      ],
+    };
+    expect(emitPatch(patch)).toBe(
+      '{"glyph_patch":1,"ops":[{"index":0,"op":"+","path":["l"],"value":1},{"op":"~","path":["n"],"value":2.5}]}'
+    );
+    const appended = new PatchBuilder({ prefix: 'm', value: '1' }).append('l', g.int(1)).build();
+    expect(appended.ops[0].index).toBe(-1);
+    expect(emitPatch(appended)).toBe('{"glyph_patch":1,"ops":[{"op":"+","path":["l"],"value":1}],"target":"m:1"}');
+  });
+
+  test('emitPatch: ops sort by code point (UTF-8 order), not UTF-16 unit', () => {
+    const patch: Patch = {
+      target: { prefix: '', value: '' },
+      ops: [
+        { op: '=', path: [fieldSeg('\u{1F600}')], value: g.int(1) },
+        { op: '=', path: [fieldSeg('\uFFFF')], value: g.int(2) },
+      ],
+    };
+    const ops = JSON.parse(emitPatch(patch)).ops as { path: string[] }[];
+    expect(ops.map(o => o.path[0])).toEqual(['\uFFFF', '\u{1F600}']);
+  });
+
+  test('emitPatch / parsePatch round-trip is stable', () => {
     const patch = new PatchBuilder({ prefix: 'm', value: 'TEST' })
+      .withSchemaId('s1')
+      .withTargetType('Match')
+      .withBaseFingerprint('ab'.repeat(32))
+      // already in wire order (path, op) so the parsed patch compares equal
       .insertAt('events', 2, g.str('middle'))
-      .build();
-    const emitted = emitPatch(patch);
-    expect(emitted).toContain('@idx=2');
-  });
-
-  test('emitPatch with fid key mode', () => {
-    const patch = new PatchBuilder({ prefix: 'm', value: 'TEST' })
-      .setWithSegs([{ kind: 'field', field: 'score', fid: 1 }], g.int(42))
-      .build();
-    const emitted = emitPatch(patch, { keyMode: 'fid' });
-    expect(emitted).toContain('#1');
-  });
-
-  test('emitPatch with sortOps=false', () => {
-    const patch = new PatchBuilder({ prefix: 'm', value: 'TEST' })
-      .set('z', g.int(1))
-      .set('a', g.int(2))
-      .build();
-    const emitted = emitPatch(patch, { sortOps: false });
-    const lines = emitted.split('\n');
-    // z should come before a since we disabled sorting
-    const zIdx = lines.findIndex(l => l.includes(' z '));
-    const aIdx = lines.findIndex(l => l.includes(' a '));
-    expect(zIdx).toBeLessThan(aIdx);
-  });
-
-  test('emitPatch with baseFingerprint', () => {
-    const patch = new PatchBuilder({ prefix: 'm', value: 'TEST' })
-      .withBaseFingerprint('abcdef1234567890')
+      .append('events', g.str('last'))
+      .delete('old')
+      .delta('rating', 0.5)
       .set('score', g.int(42))
       .build();
-    const emitted = emitPatch(patch);
-    expect(emitted).toContain('@base=abcdef1234567890');
+    const wire = emitPatch(patch);
+    const parsed = parsePatch(wire);
+    expect(parsed).toEqual(patch);
+    expect(emitPatch(parsed)).toBe(wire);
   });
 
-  test('parsePatch with @base', () => {
-    const input = `@patch @keys=wire @target=m:TEST @base=abcdef1234567890
-= score 42
-@end`;
-    const patch = parsePatch(input);
-    expect(patch.baseFingerprint).toBe('abcdef1234567890');
+  test('parsePatch: header fields', () => {
+    const p = parsePatch('{"glyph_patch":1,"ops":[],"base":"abc","schema":"s","target":"m:a:b","type":"T"}');
+    expect(p.baseFingerprint).toBe('abc');
+    expect(p.schemaId).toBe('s');
+    expect(p.target).toEqual({ prefix: 'm', value: 'a:b' }); // split at first colon
+    expect(p.targetType).toBe('T');
+    expect(p.ops).toEqual([]);
+    expect(parsePatch('{"glyph_patch":1,"ops":[],"target":"x"}').target).toEqual({ prefix: '', value: 'x' });
+    const none = parsePatch('{"glyph_patch":1,"ops":[]}');
+    expect(none.target).toEqual({ prefix: '', value: '' });
+    expect(none.baseFingerprint).toBeUndefined();
+    expect(none.schemaId).toBeUndefined();
+    expect(none.targetType).toBeUndefined();
   });
 
-  test('parsePatch with list value', () => {
-    const input = `@patch @keys=wire @target=m:TEST
-= items [1 2 3]
-@end`;
-    const patch = parsePatch(input);
-    expect(patch.ops[0].value?.type).toBe('list');
-    expect(patch.ops[0].value?.len()).toBe(3);
+  test('parsePatch: accepts any JSON spelling and Uint8Array input', () => {
+    const wire = '{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":1}],"target":"m:1"}';
+    const loose = ' { "target" : "m:1" , "ops" : [ { "value" : 1 , "path" : [ "a" ] , "op" : "=" } ] , "glyph_patch" : 1 } ';
+    expect(emitPatch(parsePatch(loose))).toBe(wire);
+    expect(emitPatch(parsePatch(new TextEncoder().encode(loose)))).toBe(wire);
   });
 
-  test('parsePatch with struct value', () => {
-    const input = `@patch @keys=wire @target=m:TEST
-= data Info{x=1}
-@end`;
-    const patch = parsePatch(input);
-    expect(patch.ops[0].value?.type).toBe('struct');
-    expect(patch.ops[0].value?.asStruct().typeName).toBe('Info');
+  test('parsePatch: header errors', () => {
+    const bad: [string, string][] = [
+      ['', 'not JSON'],
+      ['nope', 'not JSON'],
+      ['[]', 'must be a JSON object'],
+      ['"x"', 'must be a JSON object'],
+      ['null', 'must be a JSON object'],
+      ['{"ops":[]}', 'glyph_patch'],
+      ['{"glyph_patch":2,"ops":[]}', 'glyph_patch'],
+      ['{"glyph_patch":"1","ops":[]}', 'glyph_patch'],
+      ['{"glyph_patch":1}', 'ops must be a list'],
+      ['{"glyph_patch":1,"ops":{}}', 'ops must be a list'],
+      ['{"glyph_patch":1,"ops":[],"extra":1}', 'unknown patch key'],
+      ['{"glyph_patch":1,"ops":[],"base":1}', 'base must be a string'],
+      ['{"glyph_patch":1,"ops":[],"schema":null}', 'schema must be a string'],
+      ['{"glyph_patch":1,"ops":[],"target":[]}', 'target must be a string'],
+      ['{"glyph_patch":1,"ops":[],"type":{}}', 'type must be a string'],
+    ];
+    for (const [input, msg] of bad) {
+      expect(() => parsePatch(input)).toThrow(msg);
+    }
   });
 
-  test('parsePatch with ref value', () => {
-    const input = `@patch @keys=wire @target=m:TEST
-= ref ^user:123
-@end`;
-    const patch = parsePatch(input);
-    expect(patch.ops[0].value?.type).toBe('id');
+  test('parsePatch: op errors', () => {
+    const bad: [string, string][] = [
+      ['"notanobject"', 'must be an object'],
+      ['[]', 'must be an object'],
+      ['null', 'must be an object'],
+      ['{"op":"=","path":[],"value":1,"extra":1}', 'unknown key'],
+      ['{"op":"x","path":[],"value":1}', 'unknown operation'],
+      ['{"path":[],"value":1}', 'unknown operation'],
+      ['{"op":"=","path":"a","value":1}', 'path must be a list'],
+      ['{"op":"=","value":1}', 'path must be a list'],
+      ['{"op":"-","path":["a"],"value":1}', "'-' takes no value"],
+      ['{"op":"-","path":["a"],"value":null}', "'-' takes no value"],
+      ['{"op":"=","path":["a"]}', "'=' requires a value"],
+      ['{"op":"+","path":["a"]}', "'+' requires a value"],
+      ['{"op":"~","path":["a"]}', "'~' requires a value"],
+      ['{"op":"~","path":["a"],"value":"1"}', 'invalid delta'],
+      ['{"op":"~","path":["a"],"value":null}', 'invalid delta'],
+      ['{"op":"=","path":["a"],"value":1,"index":0}', "index is only allowed on '+'"],
+      ['{"op":"-","path":["a"],"index":0}', "index is only allowed on '+'"],
+      ['{"op":"+","path":["a"],"value":1,"index":-1}', 'non-negative integer'],
+      ['{"op":"+","path":["a"],"value":1,"index":1.5}', 'non-negative integer'],
+      ['{"op":"+","path":["a"],"value":1,"index":"0"}', 'non-negative integer'],
+      ['{"op":"+","path":["a"],"value":1,"index":null}', 'non-negative integer'],
+    ];
+    for (const [op, msg] of bad) {
+      expect(() => parsePatch(`{"glyph_patch":1,"ops":[${op}]}`)).toThrow(msg);
+    }
   });
 
-  test('parsePatch with bool values', () => {
-    const input = `@patch @keys=wire @target=m:TEST
-= active t
-= hidden f
-@end`;
-    const patch = parsePatch(input);
-    expect(patch.ops[0].value?.asBool()).toBe(true);
-    expect(patch.ops[1].value?.asBool()).toBe(false);
+  test('parsePatch: path segments are strings (field) or non-negative ints (list index)', () => {
+    const p = parsePatch('{"glyph_patch":1,"ops":[{"op":"=","path":["a",0,"b"],"value":1}]}');
+    expect(p.ops[0].path).toEqual([fieldSeg('a'), listIdxSeg(0), fieldSeg('b')]);
+    for (const seg of ['-1', '1.5', 'true', 'null', '["x"]', '{}']) {
+      expect(() => parsePatch(`{"glyph_patch":1,"ops":[{"op":"=","path":[${seg}],"value":1}]}`))
+        .toThrow('path segment must be a string or non-negative integer');
+    }
   });
 
-  test('parsePatch with null value', () => {
-    const input = `@patch @keys=wire @target=m:TEST
-= val ∅
-@end`;
-    const patch = parsePatch(input);
-    expect(patch.ops[0].value?.isNull()).toBe(true);
+  test('parsePatch: + defaults index to -1, ~ stores a numeric delta', () => {
+    const p = parsePatch('{"glyph_patch":1,"ops":[{"op":"+","path":["l"],"value":1},{"op":"+","path":["l"],"value":2,"index":3},{"op":"~","path":["n"],"value":2}]}');
+    expect(p.ops[0].index).toBe(-1);
+    expect(p.ops[1].index).toBe(3);
+    expect(p.ops[2].index).toBeUndefined();
+    expect(p.ops[2].value?.type).toBe('float');
+    expect(p.ops[2].value?.asNumber()).toBe(2);
   });
 
-  test('parsePatch error: empty input', () => {
-    expect(() => parsePatch('')).toThrow();
-  });
-
-  test('parsePatch error: not starting with @patch', () => {
-    expect(() => parsePatch('invalid')).toThrow('patch must start with @patch');
-  });
-
-  test('parsePatch error: delta without value', () => {
-    expect(() => parsePatch(`@patch @keys=wire @target=m:TEST
-~ score
-@end`)).toThrow('delta operation requires a value');
-  });
-
-  test('parsePatch error: unknown op', () => {
-    expect(() => parsePatch(`@patch @keys=wire @target=m:TEST
-X score 1
-@end`)).toThrow('unknown operation');
+  test('parsePatch: null value on = is a real null, not "no value"', () => {
+    const p = parsePatch('{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":null}]}');
+    expect(p.ops[0].value?.isNull()).toBe(true);
   });
 
   // Apply coverage
@@ -1573,36 +1623,77 @@ X score 1
     expect(result.get('items')?.index(1).get('val')?.asInt()).toBe(99);
   });
 
-  test('emitPatch with map key path segment', () => {
-    const patch = new PatchBuilder({ prefix: 'm', value: 'TEST' })
-      .setWithSegs([fieldSeg('data'), mapKeySeg('key1')], g.int(42))
-      .build();
-    const emitted = emitPatch(patch);
-    expect(emitted).toContain('data["key1"]');
+  test('wire has one string segment kind: field and mapKey emit alike, field navigates maps', () => {
+    const wire = '{"glyph_patch":1,"ops":[{"op":"=","path":["data","k"],"value":1}]}';
+    const viaField: Patch = { target: { prefix: '', value: '' }, ops: [{ op: '=', path: [fieldSeg('data'), fieldSeg('k')], value: g.int(1) }] };
+    const viaMap: Patch = { target: { prefix: '', value: '' }, ops: [{ op: '=', path: [fieldSeg('data'), mapKeySeg('k')], value: g.int(1) }] };
+    expect(emitPatch(viaField)).toBe(wire);
+    expect(emitPatch(viaMap)).toBe(wire);
+
+    const state = g.map(field('data', g.map(field('k', g.int(0)))));
+    expect(applyPatch(state, parsePatch(wire)).get('data')?.get('k')?.asInt()).toBe(1);
+    expect(applyPatch(state, viaMap).get('data')?.get('k')?.asInt()).toBe(1);
+    const deep = parsePatch('{"glyph_patch":1,"ops":[{"op":"=","path":["data","k","z"],"value":1}]}');
+    expect(() => applyPatch(g.map(field('data', g.int(0))), deep)).toThrow('cannot navigate into int with field');
+    expect(() => applyPatch(g.map(field('data', g.map())), deep)).toThrow('key not found: k');
   });
 
-  test('emitPatch with list index path segment', () => {
-    const patch = new PatchBuilder({ prefix: 'm', value: 'TEST' })
-      .setWithSegs([fieldSeg('items'), listIdxSeg(0)], g.int(42))
-      .build();
-    const emitted = emitPatch(patch);
-    expect(emitted).toContain('items[0]');
+  test('diff of nested maps round-trips through the wire and applies', () => {
+    const from = g.map(field('data', g.map(field('k', g.int(0)), field('gone', g.int(1)))));
+    const to = g.map(field('data', g.map(field('k', g.int(1)))));
+    const wire = emitPatch(diff(from, to));
+    expect(wire).toBe(
+      '{"base":"' + computeBaseFingerprint(from) + '","glyph_patch":1,"ops":[{"op":"-","path":["data","gone"]},{"op":"=","path":["data","k"],"value":1}]}'
+    );
+    expect(equalLoose(applyPatch(from, parsePatch(wire)), to)).toBe(true);
   });
 
-  test('emit and parse patch value types', () => {
-    const patch = new PatchBuilder({ prefix: 'm', value: 'TEST' })
-      .set('time', g.time(new Date('2025-12-19T10:30:00Z')))
-      .set('null_val', g.null())
-      .set('map_val', g.map(field('x', g.int(1))))
-      .set('sum_val', g.sum('Ok', g.int(1)))
-      .set('sum_empty', g.sum('None', null))
+  test('patch values carry SPEC-CANON.md §3 reserved objects', () => {
+    const patch = new PatchBuilder({ prefix: 'm', value: '1' })
+      .set('blob', g.bytes(new Uint8Array([1, 2, 3])))
+      .set('ref', g.id('user', '42'))
+      .set('when', g.time(new Date('2025-12-19T10:30:00Z')))
       .build();
-    const emitted = emitPatch(patch);
-    expect(emitted).toContain('2025-12-19');
-    expect(emitted).toContain('∅');
-    expect(emitted).toContain('{x:1}');
-    expect(emitted).toContain('Ok(1)');
-    expect(emitted).toContain('None()');
+    const wire = emitPatch(patch);
+    expect(wire).toBe(
+      '{"glyph_patch":1,"ops":[{"op":"=","path":["blob"],"value":{"$bytes":"AQID"}},{"op":"=","path":["ref"],"value":{"$id":["user","42"]}},{"op":"=","path":["when"],"value":{"$time":"2025-12-19T10:30:00Z"}}],"target":"m:1"}'
+    );
+    const parsed = parsePatch(wire);
+    expect(parsed.ops[0].value?.type).toBe('bytes');
+    expect(Array.from(parsed.ops[0].value!.asBytes())).toEqual([1, 2, 3]);
+    expect(parsed.ops[1].value?.asId()).toEqual({ prefix: 'user', value: '42' });
+    expect(parsed.ops[2].value?.type).toBe('time');
+    expect(parsed.ops[2].value?.asTime().toISOString()).toBe('2025-12-19T10:30:00.000Z');
+    expect(emitPatch(parsed)).toBe(wire);
+  });
+
+  test('parsePatch: nested value kinds', () => {
+    const p = parsePatch('{"glyph_patch":1,"ops":[{"op":"=","path":["a"],"value":{"x":[1,2.5,"s",true,null]}}]}');
+    const v = p.ops[0].value!;
+    expect(v.type).toBe('map');
+    expect(v.get('x')?.len()).toBe(5);
+    expect(v.get('x')?.index(1).asFloat()).toBe(2.5);
+    expect(v.get('x')?.index(4).isNull()).toBe(true);
+  });
+
+  test('fromJsonLoose: §3 reserved single-key objects', () => {
+    expect(fromJsonLoose({ $bytes: 'AQID' }).type).toBe('bytes');
+    expect(Array.from(fromJsonLoose({ $bytes: '' }).asBytes())).toEqual([]);
+    expect(fromJsonLoose({ $id: ['a', 'b'] }).asId()).toEqual({ prefix: 'a', value: 'b' });
+    expect(fromJsonLoose({ $time: '2025-12-19T10:30:00Z' }).asTime().getTime()).toBe(Date.UTC(2025, 11, 19, 10, 30));
+    expect(fromJsonLoose({ $time: '2025-12-19T10:30:00.5+01:00' }).asTime().getTime()).toBe(Date.UTC(2025, 11, 19, 9, 30, 0, 500));
+    // A malformed payload is an error, never a map.
+    const malformed = [
+      { $bytes: '!!' }, { $bytes: 'AQI' }, { $bytes: 1 }, { $bytes: null },
+      { $id: ['a'] }, { $id: 'a:b' }, { $id: ['a', 1] }, { $id: null },
+      { $time: 'yesterday' }, { $time: 1 }, { $time: '' },
+    ];
+    for (const bad of malformed) {
+      expect(() => fromJsonLoose(bad)).toThrow(/\$(bytes|id|time) payload/);
+    }
+    // Only single-key objects are reserved; anything else is a map.
+    expect(fromJsonLoose({ $bytes: 'AQID', x: 1 }).type).toBe('map');
+    expect(fromJsonLoose({}).type).toBe('map');
   });
 });
 

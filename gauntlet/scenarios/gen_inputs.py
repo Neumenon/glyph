@@ -97,12 +97,25 @@ INPUTS = {
     },
 
     # S5 — Patch apply correctness (set / append / delete / numeric-delta).
+    # JSON wire (SPEC-CANON.md §7). Includes depth>=2 map paths and a key
+    # containing spaces — regression coverage for the 2026-08-21 Python
+    # applier fix (harness/state_identity finding); Go/JS unaffected.
     "S5_patch_apply": {
         "base": {"id": "match:001", "minute": 0, "score_home": 0, "score_away": 0,
-                 "events": ["kickoff"], "status": "live", "var_check": True},
-        "patch_text": "@patch @target=match:001\n= status finished\n~ minute +90\n+ events Goal\n- var_check\n@end",
+                 "events": ["kickoff"], "status": "live", "var_check": True,
+                 "meta": {"refs": {"home": 1, "away": 0}, "odd key": 1}},
+        "patch_text": json.dumps({"glyph_patch": 1, "target": "match:001", "ops": [
+            {"op": "=", "path": ["status"], "value": "finished"},
+            {"op": "~", "path": ["minute"], "value": 90},
+            {"op": "+", "path": ["events"], "value": "Goal"},
+            {"op": "-", "path": ["var_check"]},
+            {"op": "-", "path": ["meta", "odd key"]},
+            {"op": "=", "path": ["meta", "refs", "away"], "value": 2},
+            {"op": "+", "path": ["meta", "refs", "extra"], "value": 3},
+        ]}, separators=(",", ":"), sort_keys=True),
         "expected": {"id": "match:001", "minute": 90, "score_home": 0, "score_away": 0,
-                     "events": ["kickoff", "Goal"], "status": "finished"},
+                     "events": ["kickoff", "Goal"], "status": "finished",
+                     "meta": {"refs": {"home": 1, "away": 2, "extra": [3]}}},
     },
 
     # S6 — Standalone patch base verification / fail-closed.
@@ -111,29 +124,30 @@ INPUTS = {
     "S6_patch_base": {
         "state": {"id": "match:001", "minute": 45, "score_home": 1,
                   "score_away": 0, "last_goal": None},
-        "patch_op_lines": ["= minute 90"],
+        "patch_ops": [{"op": "=", "path": ["minute"], "value": 90}],
         "target": "match:001",
         "stale_base": "deadbeefdeadbeef",
     },
 
     # S7 — GS1 stream framing: wire parity + decode round-trip + base-enforced cursor.
-    # Fixed opaque payloads so byte-for-byte Go==JS comparison isolates the framing
-    # layer (canonical-text parity is S2/S4's job).
+    # Fixed payloads so byte-for-byte Go==JS comparison isolates the framing layer
+    # (canonical parity is S2/S4's job). doc/patch payloads are canonical JSON
+    # because the cursor rejects anything else (SPEC-CANON.md §5).
     "S7_gs1_stream": {
         "sid": 42,
         "frames": [
-            {"kind": "doc",   "seq": 0, "payload": "{a=1 b=2}"},
+            {"kind": "doc",   "seq": 0, "payload": "{\"a\":1,\"b\":2}"},
             {"kind": "row",   "seq": 1, "payload": "Row@(id 1 name foo)"},
-            {"kind": "patch", "seq": 2, "payload": "@patch\n= a 9\n@end"},
+            {"kind": "patch", "seq": 2, "payload": "{\"glyph_patch\":1,\"ops\":[{\"op\":\"=\",\"path\":[\"a\"],\"value\":9}]}"},
             {"kind": "ui",    "seq": 3, "payload": "Progress@(pct=0.5)"},
             {"kind": "ack",   "seq": 4, "payload": ""},
             {"kind": "err",   "seq": 5, "payload": "Err@(code FAIL)"},
             {"kind": "ping",  "seq": 6, "payload": ""},
             {"kind": "pong",  "seq": 7, "payload": ""},
-            {"kind": "doc",   "seq": 8, "payload": "done", "final": True},
+            {"kind": "doc",   "seq": 8, "payload": "\"done\"", "final": True},
         ],
         "base_state": {"x": 1, "y": 2},
-        "base_patch_payload": "@patch\n= x 2\n@end",
+        "base_patch_payload": "{\"glyph_patch\":1,\"ops\":[{\"op\":\"=\",\"path\":[\"x\"],\"value\":2}]}",
     },
 
     # S8 — Streaming validator / tool firewall (early rejection) + verdict parity.

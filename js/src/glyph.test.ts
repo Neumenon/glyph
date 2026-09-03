@@ -423,42 +423,43 @@ describe('Patch', () => {
       .set('ft_h', g.int(2))
       .set('ft_a', g.int(1))
       .build();
-    
-    const emitted = emitPatch(patch);
-    
-    expect(emitted).toContain('@patch');
-    expect(emitted).toContain('@schema#abc123');
-    expect(emitted).toContain('@target=m:ARS-LIV');
-    expect(emitted).toContain('= ft_a 1');
-    expect(emitted).toContain('= ft_h 2');
-    expect(emitted).toContain('@end');
+
+    expect(emitPatch(patch)).toBe(
+      '{"glyph_patch":1,"ops":[{"op":"=","path":["ft_a"],"value":1},{"op":"=","path":["ft_h"],"value":2}],"schema":"abc123","target":"m:ARS-LIV"}'
+    );
   });
 
   test('parse patch', () => {
-    const input = `@patch @schema#abc123 @keys=wire @target=m:ARS-LIV
-= ft_h 2
-= ft_a 1
-+ events "Goal!"
-- odds
-~ rating +0.15
-@end`;
-    
+    const input = JSON.stringify({
+      glyph_patch: 1,
+      schema: 'abc123',
+      target: 'm:ARS-LIV',
+      ops: [
+        { op: '=', path: ['ft_h'], value: 2 },
+        { op: '=', path: ['ft_a'], value: 1 },
+        { op: '+', path: ['events'], value: 'Goal!' },
+        { op: '-', path: ['odds'] },
+        { op: '~', path: ['rating'], value: 0.15 },
+      ],
+    });
+
     const patch = parsePatch(input);
-    
+
     expect(patch.target.prefix).toBe('m');
     expect(patch.target.value).toBe('ARS-LIV');
     expect(patch.schemaId).toBe('abc123');
     expect(patch.ops.length).toBe(5);
-    
+
     expect(patch.ops[0].op).toBe('=');
     expect(patch.ops[0].path[0].field).toBe('ft_h');
     expect(patch.ops[0].value?.asInt()).toBe(2);
-    
+
     expect(patch.ops[2].op).toBe('+');
     expect(patch.ops[2].value?.asStr()).toBe('Goal!');
-    
+    expect(patch.ops[2].index).toBe(-1);
+
     expect(patch.ops[3].op).toBe('-');
-    
+
     expect(patch.ops[4].op).toBe('~');
     expect(patch.ops[4].value?.asFloat()).toBe(0.15);
   });
@@ -520,19 +521,15 @@ describe('Patch', () => {
   });
 
   test('reject malformed patch paths', () => {
-    const input = `@patch @keys=wire @target=m:ARS-LIV
-= events[abc] 1
-@end`;
+    const input = '{"glyph_patch":1,"target":"m:ARS-LIV","ops":[{"op":"=","path":["events",1.5],"value":1}]}';
 
-    expect(() => parsePatch(input)).toThrow('invalid list index');
+    expect(() => parsePatch(input)).toThrow('path segment must be a string or non-negative integer');
   });
 
-  test('reject NaN patch indexes', () => {
-    const input = `@patch @keys=wire @target=m:ARS-LIV
-+ events "Goal!" @idx=NaN
-@end`;
+  test('reject negative patch indexes', () => {
+    const input = '{"glyph_patch":1,"target":"m:ARS-LIV","ops":[{"op":"+","path":["events"],"value":"Goal!","index":-1}]}';
 
-    expect(() => parsePatch(input)).toThrow('invalid patch index');
+    expect(() => parsePatch(input)).toThrow('index must be a non-negative integer');
   });
 });
 
@@ -730,7 +727,7 @@ describe('diff + applyPatch round trip', () => {
 });
 
 // ============================================================
-// diff() + emitPatch() — cross-language identical text
+// diff() + emitPatch() — cross-language identical bytes
 //
 // The exact bytes emitted for this from/to pair are pinned from the Go
 // reference implementation (go/glyph/patch_roundtrip_test.go
@@ -740,14 +737,8 @@ describe('diff + applyPatch round trip', () => {
 // ============================================================
 
 describe('diff + emitPatch cross-language golden', () => {
-  const GOLDEN = [
-    '@patch @keys=wire @target=m:123 @base=4f9708ac7bbe01e1',
-    '- active',
-    '= count 42',
-    '= extra added',
-    '= label new',
-    '@end',
-  ].join('\n');
+  const GOLDEN =
+    '{"base":"202baf1ae34e2dce839197f13e2fb5866a33f3dd552632154dc359763c60ab57","glyph_patch":1,"ops":[{"op":"-","path":["active"]},{"op":"=","path":["count"],"value":42},{"op":"=","path":["extra"],"value":"added"},{"op":"=","path":["label"],"value":"new"}],"target":"m:123","type":"M"}';
 
   test('matches Go and Python', () => {
     const from = g.struct('M',

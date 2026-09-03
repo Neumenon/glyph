@@ -70,7 +70,7 @@ func TestWriter_WithBase(t *testing.T) {
 		SID:     1,
 		Seq:     10,
 		Kind:    KindPatch,
-		Payload: []byte("@patch\nset .x 1\n@end"),
+		Payload: []byte(`{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":1}]}`),
 		Base:    &base,
 	})
 	if err != nil {
@@ -204,7 +204,7 @@ func TestReader_WithBase(t *testing.T) {
 
 func TestReader_PayloadWithNewlines(t *testing.T) {
 	// Payload contains newlines - reader must use len, not delimiters
-	payload := "@patch\nset .x 1\nset .y 2\n@end"
+	payload := "{\n\"glyph_patch\": 1,\n\"ops\": []\n}"
 	payloadLen := len(payload)
 
 	input := "@frame{v=1 sid=1 seq=1 kind=patch len=" + itoa(payloadLen) + "}\n" + payload + "\n"
@@ -385,7 +385,7 @@ func TestRoundtrip_AllFrameTypes(t *testing.T) {
 		frame Frame
 	}{
 		{"minimal doc", Frame{Version: 1, SID: 0, Seq: 0, Kind: KindDoc, Payload: []byte("{}")}},
-		{"patch with base", Frame{Version: 1, SID: 1, Seq: 5, Kind: KindPatch, Payload: []byte("@patch\nset .x 1\n@end"), Base: &[32]byte{0x01, 0x02}}},
+		{"patch with base", Frame{Version: 1, SID: 1, Seq: 5, Kind: KindPatch, Payload: []byte(`{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":1}]}`), Base: &[32]byte{0x01, 0x02}}},
 		{"row", Frame{Version: 1, SID: 2, Seq: 100, Kind: KindRow, Payload: []byte("Row@(id 1 name foo)")}},
 		{"ui", Frame{Version: 1, SID: 1, Seq: 50, Kind: KindUI, Payload: []byte(`UIEvent@(type "progress" pct 0.5)`)}},
 		{"ack", Frame{Version: 1, SID: 1, Seq: 10, Kind: KindAck, Payload: nil}},

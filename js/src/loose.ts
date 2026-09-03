@@ -183,7 +183,7 @@ function canonInt(n: number): string {
   return String(Math.floor(n));
 }
 
-function canonFloat(f: number): string {
+export function canonFloat(f: number): string {
   // D3: NaN/Inf hard-error in Loose mode
   if (Number.isNaN(f)) throw new Error('NaN not allowed in GLYPH-Loose');
   if (f === Infinity) throw new Error('Infinity not allowed in GLYPH-Loose');
@@ -264,7 +264,7 @@ function canonRef(prefix: string, value: string): string {
   return `^${quoteString(full)}`;
 }
 
-function canonTime(d: Date): string {
+export function canonTime(d: Date): string {
   // D2: UTC RFC3339, sub-second kept only when non-zero with trailing zeros trimmed
   const ms = d.getUTCMilliseconds();
   if (ms === 0) {
@@ -392,7 +392,7 @@ function quoteString(s: string): string {
 // Base64 Encoding
 // ============================================================
 
-function bytesToBase64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
   if (typeof btoa === 'function') {
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
@@ -1141,35 +1141,9 @@ function canonMapLooseWithOpts(entries: MapEntry[], opts: LooseCanonOpts): strin
 // ============================================================
 
 /**
- * Returns the SHA-256 hex digest of the no-tabular canonical form of v.
- * The output is a 64-character lowercase hex string that is byte-identical
- * across Go, Python, and JS for semantically equal values.
- *
- * Tabular form is excluded from the hash so that fingerprint stability does
- * not depend on cross-language agreement about tabular triggering thresholds
- * or escaping. Use canonicalizeLooseNoTabular for the pre-hash bytes.
- *
- * Disambiguation: this is NOT the same digest as a patch's base fingerprint
- * (verifyPatchBase / PatchBuilder.withBaseValue / the @base= token), which is
- * 16 hex chars of SHA-256 over the WITH-tabular canonical form
- * (canonicalizeLoose). Different length, different pre-hash bytes — do not
- * compare or substitute one for the other. See the fingerprint
- * disambiguation note above verifyPatchBase in patch.ts.
- *
- * Node-only synchronous variant — uses node's crypto module. For browser/
- * async contexts, hash canonicalizeLooseNoTabular(v) with crypto.subtle.
- */
-export function fingerprintLoose(v: GValue): string {
-  const canonical = canonicalizeLooseNoTabular(v);
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { createHash } = require('crypto');
-  return createHash('sha256').update(canonical, 'utf8').digest('hex');
-}
-
-/**
  * Checks if two GValues are semantically equal using loose canonicalization.
  * Compares no-tabular canonical strings so the result aligns with
- * fingerprintLoose equality.
+ * fingerprint equality.
  */
 export function equalLoose(a: GValue, b: GValue): boolean {
   return canonicalizeLooseNoTabular(a) === canonicalizeLooseNoTabular(b);
@@ -1311,6 +1285,64 @@ export interface BridgeOpts {
   extended?: boolean;
 }
 
+/** SPEC-CANON.md §4: dtype name -> bits per element (cowrie SPEC-v1 §2.5 names). */
+export const TENSOR_DTYPE_BITS: Record<string, number> = {
+  float32: 32, float16: 16, bfloat16: 16, int8: 8, int16: 16, int32: 32,
+  int64: 64, uint8: 8, uint16: 16, uint32: 32, uint64: 64, float64: 64,
+  bool: 8, qint4: 4, qint2: 2, qint3: 3, ternary: 2, binary: 1,
+};
+
+/**
+ * {"$tensor":{dtype,shape,sha256}} as a map: there is no tensor GType and the
+ * digest is the same either way. Callers validate first.
+ */
+export function tensorRefValue(dtype: string, shape: number[], sha256: string): GValue {
+  return GValue.map({
+    key: '$tensor',
+    value: GValue.map(
+      { key: 'dtype', value: GValue.str(dtype) },
+      { key: 'shape', value: GValue.list(...shape.map((d) => GValue.int(d))) },
+      { key: 'sha256', value: GValue.str(sha256) },
+    ),
+  });
+}
+
+// SPEC-CANON.md §3-§4: a single-key object with one of these keys is a typed
+// value, not a map. A malformed payload is an error, never a map.
+const RESERVED: Record<string, (v: unknown) => GValue> = {
+  $tensor: (v) => {
+    // Validation is what stops an uppercase or truncated sha256 from minting a
+    // second identity for the same bytes.
+    const o = (typeof v === 'object' && v !== null && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
+    const ok = Object.keys(o).length === 3
+      && typeof o.dtype === 'string' && hasOwn(TENSOR_DTYPE_BITS, o.dtype)
+      && Array.isArray(o.shape) && o.shape.every((d) => Number.isInteger(d) && d >= 0)
+      && typeof o.sha256 === 'string' && /^[0-9a-f]{64}$/.test(o.sha256);
+    if (!ok) {
+      throw new Error('$tensor payload must be {dtype, shape, sha256}: known dtype, non-negative int shape, 64 lowercase hex');
+    }
+    return tensorRefValue(o.dtype as string, o.shape as number[], o.sha256 as string);
+  },
+  $bytes: (v) => {
+    if (typeof v !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(v)) {
+      throw new Error('$bytes payload must be a base64 string');
+    }
+    return GValue.bytes(base64ToBytes(v));
+  },
+  $time: (v) => {
+    const d = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(v)
+      ? new Date(v) : new Date(NaN);
+    if (Number.isNaN(d.getTime())) throw new Error(`$time payload is not RFC 3339: ${JSON.stringify(v)}`);
+    return GValue.time(d);
+  },
+  $id: (v) => {
+    if (!Array.isArray(v) || v.length !== 2 || typeof v[0] !== 'string' || typeof v[1] !== 'string') {
+      throw new Error('$id payload must be [prefix, value]');
+    }
+    return GValue.id(v[0], v[1]);
+  },
+};
+
 /**
  * Convert JSON value to GValue using loose mode.
  * Rejects NaN and Infinity for JSON compatibility.
@@ -1364,8 +1396,12 @@ export function fromJsonLoose(json: unknown, opts: BridgeOpts = {}, _depth: numb
       return fromGlyphMarker(glyphMarker, obj);
     }
 
-    // Regular object/map
     const keys = Object.keys(obj);
+    if (keys.length === 1 && hasOwn(RESERVED, keys[0])) {
+      return RESERVED[keys[0]](obj[keys[0]]);
+    }
+
+    // Regular object/map
     if (keys.length > MAX_COLLECTION_LEN) {
       throw new Error(`map too large (${keys.length} > ${MAX_COLLECTION_LEN})`);
     }

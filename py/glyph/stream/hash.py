@@ -1,18 +1,8 @@
 """
 SHA-256 state hash helpers for GS1.
 
-state_hash_loose(value) computes sha256(CanonicalizeLoose(value)), where
-CanonicalizeLoose uses the *default* opts (auto_tabular=True).  This matches
-Go's stream.StateHashLoose, which calls glyph.CanonicalizeLoose(value) —
-the default-opts variant with auto-tabular enabled.
-
-This is intentionally different from fingerprint_loose (which uses
-no_tabular_loose_canon_opts).  Do NOT use fingerprint_loose for the GS1
-base field; use state_hash_loose.
-
-Wire-format identity guarantee:
-  state_hash_loose(v) == Go stream.StateHashLoose(v)
-  (same CanonicalizeLoose output → same SHA-256 bytes)
+state_hash_loose(value) = sha256(canon_json(value)) — the one digest (SPEC-CANON.md §5),
+as 32 raw bytes. Its hex is glyph.fingerprint(value). Identical in Go and JS.
 """
 
 from __future__ import annotations
@@ -20,21 +10,13 @@ from __future__ import annotations
 import hashlib
 from typing import Optional
 
+from ..canon import canon_json
 from ..types import GValue
-from ..loose import canonicalize_loose, default_loose_canon_opts
 
 
 def state_hash_loose(value: GValue) -> bytes:
-    """
-    Compute the GS1 state hash: sha256(CanonicalizeLoose(value)).
-
-    Uses default loose canon opts (auto_tabular=True), matching Go's
-    stream.StateHashLoose / JS's stateHashLooseSync.
-
-    Returns 32 bytes.
-    """
-    canonical = canonicalize_loose(value, default_loose_canon_opts())
-    return hashlib.sha256(canonical.encode("utf-8")).digest()
+    """GS1 state hash: sha256(canon_json(value)), 32 bytes."""
+    return hashlib.sha256(canon_json(value).encode("utf-8")).digest()
 
 
 def state_hash_bytes(data: bytes) -> bytes:

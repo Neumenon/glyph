@@ -72,12 +72,10 @@ func TestBinaryToMaskRejectsOversizedBitmap(t *testing.T) {
 }
 
 func TestParsePatchRejectsInvalidIndex(t *testing.T) {
-	input := `@patch
-+ items "x" @idx=abc
-@end`
+	input := `{"glyph_patch":1,"ops":[{"op":"+","path":["items"],"value":"x","index":"abc"}]}`
 
-	if _, err := ParsePatch(input, nil); err == nil {
-		t.Fatal("expected invalid @idx error")
+	if _, err := ParsePatch(input); err == nil {
+		t.Fatal("expected invalid index error")
 	}
 }
 

@@ -204,7 +204,7 @@ hash = glyph.fingerprint_loose(glyph.from_json(data))
 **Properties:**
 - Same data → same hash in Go/Python/JS value-identity helpers (including null-containing values)
 - Different data → different hash (collision-resistant)
-- Used for value-identity / content hashing (checkpoint integrity, dedup) — NOT the patch base fingerprint below, and not interchangeable with it: `fingerprint_loose` hashes the NO-tabular canonical form (64 hex chars); the patch's `@base=` fingerprint (`compute_base_fingerprint` / `WithBaseValue` / `apply_patch`'s automatic check) hashes the WITH-tabular canonical form and is truncated to 16 hex chars. See "Patch Safety: BASE Hash" below for the GS1 frame-level base (a third, separately-computed digest).
+- One digest: `fingerprint(v) = sha256(canon_json(v))`, 64 hex ([SPEC-CANON.md §5](../SPEC-CANON.md)). The patch `base` field (`compute_base_fingerprint` / `WithBaseValue` / `apply_patch`'s automatic check) and the GS1 frame-level base ("Patch Safety: BASE Hash" below) are this same value.
 
 > **Float canonicalization is unified and byte-identical across Go, Python, and JS.** All three use the shortest-round-trip rule in [`CANONICAL_FORMS.md` §3 (D4)](./CANONICAL_FORMS.md); the earlier threshold-based rule has been retired. The JSON-domain number typing (safe-integer window) is also unified across implementations.
 
@@ -275,10 +275,8 @@ hash = glyph.fingerprint_loose(glyph.from_json(data))
 ### Example Frame
 
 ```
-@frame{v=1 sid=1 seq=12 kind=patch len=32 crc=89abcdef base=sha256:0123456789abcdef...}
-@patch
-= .foo 42
-@end
+@frame{v=1 sid=1 seq=12 kind=patch len=62 crc=89abcdef base=sha256:0123456789abcdef...}
+{"glyph_patch":1,"ops":[{"op":"=","path":["foo"],"value":42}]}
 
 ```
 

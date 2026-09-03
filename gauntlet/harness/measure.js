@@ -277,7 +277,7 @@ function measureMatchStream() {
   const savingsPctVal = savingsPct(cumSnapshotBytes, cumPatchBytes);
 
   return {
-    measurementNote: 'Patch bytes measured using real emitPatch(PatchBuilder.build()). Each update patches 3 fields: minute, score_home, score_away. snapshotBytes = JSON.stringify(full snapshot). patchBytes = real @patch text bytes.',
+    measurementNote: 'Patch bytes measured using real emitPatch(PatchBuilder.build()). Each update patches 3 fields: minute, score_home, score_away. snapshotBytes = JSON.stringify(full snapshot). patchBytes = the JSON patch wire form (SPEC-CANON.md §7). On a snapshot this small the patch is LARGER than resending it — a patch is a correctness primitive (it carries the base fingerprint it must apply to), not a compression one. Size crosses over as the unchanged part of the state grows.',
     samplePatchText,
     totalUpdates: N_UPDATES,
     cumSnapshotBytes,

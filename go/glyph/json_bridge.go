@@ -131,6 +131,15 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 			}
 		}
 
+		// SPEC-CANON.md §3 reserved single-key objects decode to typed scalars.
+		if len(val) == 1 {
+			for k, elem := range val {
+				if gv, ok, err := fromReservedKey(k, elem); ok {
+					return gv, err
+				}
+			}
+		}
+
 		// Regular object/map
 		entries := make([]MapEntry, 0, len(val))
 		for k, elem := range val {
@@ -145,6 +154,50 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 	default:
 		return nil, fmt.Errorf("unsupported JSON type: %T", v)
 	}
+}
+
+// fromReservedKey decodes {"$bytes":b64}, {"$time":rfc3339} and
+// {"$id":[prefix,value]} (SPEC-CANON.md §3) and {"$tensor":{…}} (§4). ok is
+// false when key is not
+// reserved. A malformed payload is an error, never a map fallback.
+func fromReservedKey(key string, v interface{}) (*GValue, bool, error) {
+	switch key {
+	case "$bytes":
+		s, isStr := v.(string)
+		if !isStr {
+			return nil, true, fmt.Errorf("$bytes: payload must be a base64 string")
+		}
+		b, err := base64.StdEncoding.Strict().DecodeString(s)
+		if err != nil {
+			return nil, true, fmt.Errorf("$bytes: %w", err)
+		}
+		return Bytes(b), true, nil
+	case "$time":
+		s, isStr := v.(string)
+		if !isStr {
+			return nil, true, fmt.Errorf("$time: payload must be an RFC 3339 string")
+		}
+		t, err := time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			return nil, true, fmt.Errorf("$time: %w", err)
+		}
+		return Time(t), true, nil
+	case "$id":
+		parts, isList := v.([]interface{})
+		if !isList || len(parts) != 2 {
+			return nil, true, fmt.Errorf("$id: payload must be a [prefix, value] string pair")
+		}
+		prefix, ok1 := parts[0].(string)
+		value, ok2 := parts[1].(string)
+		if !ok1 || !ok2 {
+			return nil, true, fmt.Errorf("$id: payload must be a [prefix, value] string pair")
+		}
+		return ID(prefix, value), true, nil
+	case "$tensor":
+		gv, err := fromTensorPayload(v)
+		return gv, true, err
+	}
+	return nil, false, nil
 }
 
 func fromGlyphMarker(markerType string, obj map[string]interface{}) (*GValue, error) {

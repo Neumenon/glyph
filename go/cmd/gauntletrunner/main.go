@@ -155,7 +155,7 @@ func main() {
 			if err != nil {
 				return "", err
 			}
-			return glyph.FingerprintLoose(gv), nil
+			return glyph.Fingerprint(gv)
 		}
 		fb, err := fp(d.Base)
 		if err != nil {
@@ -188,6 +188,10 @@ func main() {
 		if err != nil {
 			return nil, fmt.Errorf("parse tabular: %w", err)
 		}
+		fpRecovered, err := glyph.Fingerprint(recovered)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]interface{}{
 			"is_tabular":    bytes.Contains([]byte(tab), []byte("@tab")),
 			"canonical_tab": tab,
@@ -195,7 +199,7 @@ func main() {
 			"bytes_list":    len(lst),
 			"bytes_tab":     len(tab),
 			"roundtrip_ok":  glyph.EqualLoose(gv, recovered),
-			"fp_recovered":  glyph.FingerprintLoose(recovered),
+			"fp_recovered":  fpRecovered,
 		}, nil
 	})
 
@@ -211,7 +215,7 @@ func main() {
 			return nil, err
 		}
 		before, _ := glyph.ToJSONLoose(base)
-		p, err := glyph.ParsePatch(d.PatchText, nil)
+		p, err := glyph.ParsePatch(d.PatchText)
 		if err != nil {
 			return nil, fmt.Errorf("parse patch: %w", err)
 		}
@@ -221,9 +225,13 @@ func main() {
 		}
 		after, _ := glyph.ToJSONLoose(base)
 		unchanged, _ := glyph.JSONEqual(before, after)
+		fpResult, err := glyph.Fingerprint(out)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]interface{}{
 			"result":         toJSONValue(out),
-			"fp_result":      glyph.FingerprintLoose(out),
+			"fp_result":      fpResult,
 			"base_unchanged": unchanged,
 		}, nil
 	})
@@ -231,31 +239,39 @@ func main() {
 	// ── S6 ────────────────────────────────────────────────────────────────
 	scen["S6"] = run(func() (interface{}, error) {
 		var d struct {
-			State        json.RawMessage `json:"state"`
-			PatchOpLines []string        `json:"patch_op_lines"`
-			Target       string          `json:"target"`
-			StaleBase    string          `json:"stale_base"`
+			State     json.RawMessage `json:"state"`
+			PatchOps  json.RawMessage `json:"patch_ops"`
+			Target    string          `json:"target"`
+			StaleBase string          `json:"stale_base"`
 		}
 		json.Unmarshal(root["S6_patch_base"], &d)
 		state, err := glyph.FromJSONLoose(d.State)
 		if err != nil {
 			return nil, err
 		}
-		base16 := glyph.NewPatchBuilder(glyph.RefID{}).WithBaseValue(state).Build().BaseFingerprint
-		ops := ""
-		for _, l := range d.PatchOpLines {
-			ops += l + "\n"
-		}
-		happy, err := glyph.ParsePatch(fmt.Sprintf("@patch @base=%s @target=%s\n%s@end", base16, d.Target, ops), nil)
+		baseFP, err := glyph.Fingerprint(state)
 		if err != nil {
 			return nil, err
 		}
-		stale, err := glyph.ParsePatch(fmt.Sprintf("@patch @base=%s @target=%s\n%s@end", d.StaleBase, d.Target, ops), nil)
+		wire := func(base string) (*glyph.Patch, error) {
+			b, err := json.Marshal(map[string]interface{}{
+				"glyph_patch": glyph.PatchWireVersion, "ops": d.PatchOps, "base": base, "target": d.Target,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return glyph.ParsePatch(string(b))
+		}
+		happy, err := wire(baseFP)
+		if err != nil {
+			return nil, err
+		}
+		stale, err := wire(d.StaleBase)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]interface{}{
-			"base16":        base16,
+			"base16":        baseFP,
 			"verify_accept": glyph.VerifyPatchBase(state, happy) == nil,
 			"verify_reject": glyph.VerifyPatchBase(state, stale) != nil,
 		}, nil
@@ -314,8 +330,13 @@ func main() {
 			return nil, err
 		}
 		sc := stream.NewStreamCursor()
-		sc.SetState(d.SID, st)
-		correct := stream.StateHashLoose(st)
+		if err := sc.SetState(d.SID, st); err != nil {
+			return nil, err
+		}
+		correct, err := stream.StateHashLoose(st)
+		if err != nil {
+			return nil, err
+		}
 		acceptErr := sc.ProcessFrame(&stream.Frame{
 			Version: 1, SID: d.SID, Seq: 1, Kind: stream.KindPatch,
 			Payload: []byte(d.BasePatchPayload), Base: &correct,

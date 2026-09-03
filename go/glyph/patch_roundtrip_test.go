@@ -1,6 +1,7 @@
 package glyph
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -14,12 +15,12 @@ import (
 
 func runRoundTrip(t *testing.T, base, next *GValue, typeName string) *GValue {
 	t.Helper()
-	diff := Diff(base, next, typeName)
-	emitted, err := EmitPatch(diff, nil)
+	diff := mustDiff(base, next, typeName)
+	emitted, err := EmitPatch(diff)
 	if err != nil {
 		t.Fatalf("EmitPatch: %v", err)
 	}
-	parsed, err := ParsePatch(emitted, nil)
+	parsed, err := ParsePatch(emitted)
 	if err != nil {
 		t.Fatalf("ParsePatch: %v\npatch:\n%s", err, emitted)
 	}
@@ -91,10 +92,10 @@ func TestPatchRoundTripProperty(t *testing.T) {
 		// Subcase 4: map key with escape sequences — hand-built patch, not via
 		// Diff, to directly exercise the GAP 1 fix (map key quoting/unquoting).
 		escapedKeys := []string{
-			`a\b`,         // backslash
-			`k"ey`,        // double-quote
-			"nl\nkey",     // newline
-			"tab\tkey",    // tab
+			`a\b`,          // backslash
+			`k"ey`,         // double-quote
+			"nl\nkey",      // newline
+			"tab\tkey",     // tab
 			`normal/slash`, // no escaping needed but explicit check
 		}
 
@@ -110,11 +111,11 @@ func TestPatchRoundTripProperty(t *testing.T) {
 					Path:  []PathSeg{FieldSeg("cfg", 0), MapKeySeg(key)},
 					Value: Int(99),
 				})
-				emitted, err := EmitPatch(patch, nil)
+				emitted, err := EmitPatch(patch)
 				if err != nil {
 					t.Fatalf("EmitPatch: %v", err)
 				}
-				parsed, err := ParsePatch(emitted, nil)
+				parsed, err := ParsePatch(emitted)
 				if err != nil {
 					t.Fatalf("ParsePatch: %v (emitted: %q)", err, emitted)
 				}
@@ -156,11 +157,11 @@ func TestPatchRoundTripProperty(t *testing.T) {
 			&PatchOp{Op: OpSet, Path: []PathSeg{FieldSeg("items", 0), ListIdxSeg(1)}, Value: Str("B")},
 			&PatchOp{Op: OpSet, Path: []PathSeg{FieldSeg("items", 0), ListIdxSeg(3)}, Value: Str("D")},
 		)
-		emitted, err := EmitPatch(patch, nil)
+		emitted, err := EmitPatch(patch)
 		if err != nil {
 			t.Fatalf("EmitPatch: %v", err)
 		}
-		parsed, err := ParsePatch(emitted, nil)
+		parsed, err := ParsePatch(emitted)
 		if err != nil {
 			t.Fatalf("ParsePatch: %v", err)
 		}
@@ -184,11 +185,11 @@ func TestPatchRoundTripProperty(t *testing.T) {
 			Op:   OpDelete,
 			Path: []PathSeg{FieldSeg("items", 0), ListIdxSeg(1)},
 		})
-		emDel, err := EmitPatch(del, nil)
+		emDel, err := EmitPatch(del)
 		if err != nil {
 			t.Fatalf("EmitPatch del: %v", err)
 		}
-		pDel, err := ParsePatch(emDel, nil)
+		pDel, err := ParsePatch(emDel)
 		if err != nil {
 			t.Fatalf("ParsePatch del: %v", err)
 		}
@@ -208,11 +209,11 @@ func TestPatchRoundTripProperty(t *testing.T) {
 			Path:  []PathSeg{FieldSeg("items", 0), ListIdxSeg(1)},
 			Value: Str("B"),
 		})
-		emIns, err := EmitPatch(ins, nil)
+		emIns, err := EmitPatch(ins)
 		if err != nil {
 			t.Fatalf("EmitPatch ins: %v", err)
 		}
-		pIns, err := ParsePatch(emIns, nil)
+		pIns, err := ParsePatch(emIns)
 		if err != nil {
 			t.Fatalf("ParsePatch ins: %v", err)
 		}
@@ -227,7 +228,7 @@ func TestPatchRoundTripProperty(t *testing.T) {
 	})
 
 	t.Run("fid-paths", func(t *testing.T) {
-		// Subcase 8: FID paths require ApplyPatchWithSchema.
+		// Subcase 8: FID paths are resolved to names before they hit the wire.
 		schema := makePatchTestSchema()
 		base := Struct("Match",
 			FieldVal("id", ID("m", "ARS-LIV")),
@@ -245,22 +246,28 @@ func TestPatchRoundTripProperty(t *testing.T) {
 		patch.SetWithSegs([]PathSeg{{Kind: PathSegField, FID: 2}}, Str("live"))
 		patch.SetWithSegs([]PathSeg{{Kind: PathSegField, FID: 3}, {Kind: PathSegField, FID: 3}}, Int(2))
 
-		emitted, err := EmitPatchWithOptions(patch, PatchOptions{Schema: schema, KeyMode: KeyModeFID, SortOps: true})
+		// The wire has no FID segment kind (SPEC-CANON.md §7): emit refuses
+		// unresolved FIDs, ResolveFIDs turns them into names first.
+		if _, err := EmitPatch(patch); err == nil {
+			t.Fatal("expected EmitPatch to refuse unresolved FID path")
+		}
+		if err := patch.ResolveFIDs("Match", schema); err != nil {
+			t.Fatalf("ResolveFIDs: %v", err)
+		}
+		emitted, err := EmitPatch(patch)
 		if err != nil {
 			t.Fatalf("EmitPatch: %v", err)
 		}
-		parsed, err := ParsePatch(emitted, schema)
+		if !strings.Contains(emitted, `"path":["home","score"]`) {
+			t.Errorf("expected resolved names on the wire, got %s", emitted)
+		}
+		parsed, err := ParsePatch(emitted)
 		if err != nil {
 			t.Fatalf("ParsePatch: %v\n%s", err, emitted)
 		}
-		// Plain ApplyPatch must refuse unresolved FIDs.
-		if _, err := ApplyPatch(base, parsed); err == nil {
-			t.Error("expected ApplyPatch to refuse unresolved FID path")
-		}
-		// ApplyPatchWithSchema must succeed.
-		result, err := ApplyPatchWithSchema(base, parsed, schema)
+		result, err := ApplyPatch(base, parsed)
 		if err != nil {
-			t.Fatalf("ApplyPatchWithSchema: %v\n%s", err, emitted)
+			t.Fatalf("ApplyPatch: %v\n%s", err, emitted)
 		}
 		if s := result.Get("status"); s == nil || s.strVal != "live" {
 			t.Errorf("expected status=live, got %v", s)
@@ -280,11 +287,11 @@ func TestPatchRoundTripProperty(t *testing.T) {
 			Path:  []PathSeg{FieldSeg("n", 0)},
 			Value: Int(5),
 		})
-		emitted, err := EmitPatch(patch, nil)
+		emitted, err := EmitPatch(patch)
 		if err != nil {
 			t.Fatalf("EmitPatch: %v", err)
 		}
-		parsed, err := ParsePatch(emitted, nil)
+		parsed, err := ParsePatch(emitted)
 		if err != nil {
 			t.Fatalf("ParsePatch: %v", err)
 		}
@@ -436,22 +443,25 @@ func TestDiffEmitCrossLanguageGolden(t *testing.T) {
 		FieldVal("extra", Str("added")),
 	)
 
-	patch := Diff(from, to, "M")
+	patch := mustDiff(from, to, "M")
 	patch.Target = RefID{Prefix: "m", Value: "123"}
 
-	got, err := EmitPatch(patch, nil)
+	got, err := EmitPatch(patch)
 	if err != nil {
 		t.Fatalf("EmitPatch: %v", err)
 	}
 
-	want := "@patch @keys=wire @target=m:123 @base=4f9708ac7bbe01e1\n" +
-		"- active\n" +
-		"= count 42\n" +
-		"= extra added\n" +
-		"= label new\n" +
-		"@end"
+	want := `{"base":"202baf1ae34e2dce839197f13e2fb5866a33f3dd552632154dc359763c60ab57","glyph_patch":1,"ops":[{"op":"-","path":["active"]},{"op":"=","path":["count"],"value":42},{"op":"=","path":["extra"],"value":"added"},{"op":"=","path":["label"],"value":"new"}],"target":"m:123","type":"M"}`
 
 	if got != want {
 		t.Errorf("cross-language golden mismatch\nwant:\n%s\ngot:\n%s", want, got)
 	}
+}
+
+func mustDiff(from, to *GValue, typeName string) *Patch {
+	p, err := Diff(from, to, typeName)
+	if err != nil {
+		panic(err)
+	}
+	return p
 }

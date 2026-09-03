@@ -1810,34 +1810,23 @@ func TestTripleImpl_PatchParse(t *testing.T) {
 		patch string
 	}{
 		{
-			name: "basic_set",
-			patch: `@patch @keys=wire @target=m:123
-= score 42
-@end`,
+			name:  "basic_set",
+			patch: `{"glyph_patch":1,"ops":[{"op":"=","path":["score"],"value":42}],"target":"m:123"}`,
 		},
 		{
-			name: "with_schema_and_base",
-			patch: `@patch @schema#abc123 @keys=wire @target=m:ARS-LIV @base=deadbeef12345678
-= home.score 2
-= away.score 1
-~ rating +0.15
-@end`,
+			name:  "with_schema_and_base",
+			patch: `{"base":"deadbeef12345678","glyph_patch":1,"ops":[{"op":"=","path":["away","score"],"value":1},{"op":"=","path":["home","score"],"value":2},{"op":"~","path":["rating"],"value":0.15}],"schema":"abc123","target":"m:ARS-LIV"}`,
 		},
 		{
-			name: "mixed_ops",
-			patch: `@patch @keys=wire @target=test:1
-= name "Updated"
-+ items 42
-- obsolete
-~ count +5
-@end`,
+			name:  "mixed_ops",
+			patch: `{"glyph_patch":1,"ops":[{"op":"~","path":["count"],"value":5},{"op":"+","path":["items"],"value":42},{"op":"=","path":["name"],"value":"Updated"},{"op":"-","path":["obsolete"]}],"target":"test:1"}`,
 		},
 	}
 
 	for _, tc := range patches {
 		t.Run(tc.name, func(t *testing.T) {
 			// Go
-			goPatch, err := ParsePatch(tc.patch, nil)
+			goPatch, err := ParsePatch(tc.patch)
 			if err != nil {
 				t.Fatalf("Go ParsePatch failed: %v", err)
 			}

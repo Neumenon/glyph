@@ -347,13 +347,13 @@ func TestFrameHandler_Handle_AllKinds(t *testing.T) {
 	}
 
 	frames := []*Frame{
-		{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("doc")},
-		{SID: 1, Seq: 2, Kind: KindPatch, Payload: []byte("patch")},
+		{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`"doc"`)},
+		{SID: 1, Seq: 2, Kind: KindPatch, Payload: emptyPatch},
 		{SID: 1, Seq: 3, Kind: KindRow, Payload: []byte("row")},
 		{SID: 1, Seq: 4, Kind: KindUI, Payload: []byte("ui")},
 		{SID: 1, Seq: 5, Kind: KindAck},
 		{SID: 1, Seq: 6, Kind: KindErr, Payload: []byte("err")},
-		{SID: 1, Seq: 7, Kind: KindDoc, Payload: []byte("final"), Final: true},
+		{SID: 1, Seq: 7, Kind: KindDoc, Payload: []byte(`"final"`), Final: true},
 	}
 
 	for _, f := range frames {
@@ -394,9 +394,9 @@ func TestFrameHandler_Handle_Duplicate(t *testing.T) {
 	}
 
 	// First frame
-	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("a")})
+	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`"a"`)})
 	// Duplicate
-	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("b")})
+	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte(`"b"`)})
 
 	if called != 1 {
 		t.Errorf("expected OnDoc called once, got %d", called)
@@ -411,8 +411,8 @@ func TestFrameHandler_Handle_SeqGap(t *testing.T) {
 		return nil
 	}
 
-	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc})
-	h.Handle(&Frame{SID: 1, Seq: 5, Kind: KindDoc}) // gap: 2,3,4
+	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("{}")})
+	h.Handle(&Frame{SID: 1, Seq: 5, Kind: KindDoc, Payload: []byte("{}")}) // gap: 2,3,4
 
 	if !gapDetected {
 		t.Error("should detect gap")
@@ -424,11 +424,11 @@ func TestFrameHandler_Handle_BaseMismatch(t *testing.T) {
 
 	// Set initial state
 	h.Cursor.SetState(1, glyph.Map(glyph.MapEntry{Key: "x", Value: glyph.Int(1)}))
-	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc})
+	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("{}")})
 
 	// Send patch with wrong base
 	wrongBase := [32]byte{0xff}
-	err := h.Handle(&Frame{SID: 1, Seq: 2, Kind: KindPatch, Base: &wrongBase})
+	err := h.Handle(&Frame{SID: 1, Seq: 2, Kind: KindPatch, Payload: emptyPatch, Base: &wrongBase})
 	if err == nil {
 		t.Error("expected base mismatch error")
 	}
@@ -443,10 +443,10 @@ func TestFrameHandler_Handle_BaseMismatch_WithCallback(t *testing.T) {
 	}
 
 	h.Cursor.SetState(1, glyph.Map(glyph.MapEntry{Key: "x", Value: glyph.Int(1)}))
-	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc})
+	h.Handle(&Frame{SID: 1, Seq: 1, Kind: KindDoc, Payload: []byte("{}")})
 
 	wrongBase := [32]byte{0xff}
-	h.Handle(&Frame{SID: 1, Seq: 2, Kind: KindPatch, Base: &wrongBase})
+	h.Handle(&Frame{SID: 1, Seq: 2, Kind: KindPatch, Payload: emptyPatch, Base: &wrongBase})
 
 	if !mismatchCalled {
 		t.Error("OnBaseMismatch should have been called")

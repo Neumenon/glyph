@@ -423,7 +423,6 @@ const (
 	ModeStruct              // Type{a=1 b=2}
 	ModePacked              // Type@(v1 v2 v3)
 	ModeTabular             // @tab Type [...] ... @end
-	ModePatch               // @patch ... @end
 )
 
 // String returns the mode name.
@@ -437,8 +436,6 @@ func (m Mode) String() string {
 		return "packed"
 	case ModeTabular:
 		return "tabular"
-	case ModePatch:
-		return "patch"
 	default:
 		return "unknown"
 	}

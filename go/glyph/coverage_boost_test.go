@@ -742,8 +742,6 @@ func TestParseHeader_AllModes(t *testing.T) {
 		{"@lyph v2 @mode=packed", ModePacked},
 		{"@lyph v2 @mode=tabular", ModeTabular},
 		{"@lyph v2 @mode=tab", ModeTabular},
-		{"@lyph v2 @mode=patch", ModePatch},
-		{"@lyph v2 @patch", ModePatch},
 		{"@lyph v2 @tab", ModeTabular},
 		{"@glyph v2", ModeAuto},
 	}
@@ -835,9 +833,6 @@ func TestEmitHeader_FIDKeyMode(t *testing.T) {
 }
 
 func TestDetectMode(t *testing.T) {
-	if DetectMode("@patch\nset .x 1\n@end") != ModePatch {
-		t.Error("should detect patch")
-	}
 	if DetectMode("@tab _ [a b]\n|1|2|") != ModeTabular {
 		t.Error("should detect tabular")
 	}
@@ -1162,11 +1157,11 @@ func TestCanonBytes(t *testing.T) {
 	}
 }
 
-func TestFingerprintLoose(t *testing.T) {
+func TestFingerprint(t *testing.T) {
 	v := Map(MapEntry{Key: "a", Value: Int(1)})
-	fp := FingerprintLoose(v)
-	if fp == "" {
-		t.Error("expected non-empty fingerprint")
+	fp, err := Fingerprint(v)
+	if err != nil || len(fp) != 64 {
+		t.Errorf("Fingerprint = %q, %v", fp, err)
 	}
 }
 

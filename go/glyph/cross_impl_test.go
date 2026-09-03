@@ -352,7 +352,7 @@ func TestCrossImplPatchRoundtrip(t *testing.T) {
 	patch.Delta("rating", 0.15)
 
 	// Emit from Go
-	goPatch, err := EmitPatch(patch, schema)
+	goPatch, err := EmitPatch(patch)
 	if err != nil {
 		t.Fatalf("Go EmitPatch error: %v", err)
 	}
@@ -367,30 +367,18 @@ func TestCrossImplPatchRoundtrip(t *testing.T) {
 
 	t.Logf("JS re-emitted patch:\n%s", result.Result)
 
-	// Compare - both should produce same canonical form
-	// Note: order may differ due to sorting, so we just check key parts
-	if !strings.Contains(result.Result, "@patch") {
-		t.Error("JS result missing @patch header")
-	}
-	if !strings.Contains(result.Result, "@target=m:ARS-LIV") {
-		t.Error("JS result missing @target")
-	}
-	if !strings.Contains(result.Result, "@end") {
-		t.Error("JS result missing @end")
+	// Both sides emit canonical JSON (SPEC-CANON.md §7), so the bytes match.
+	if result.Result != goPatch {
+		t.Errorf("JS re-emit differs\n go: %s\n js: %s", goPatch, result.Result)
 	}
 }
 
 func TestCrossImplPatchParseApply(t *testing.T) {
 	// Create a patch string that both Go and JS should parse
-	patchStr := `@patch @keys=wire @target=m:TEST
-= score 42
-+ items "new"
-~ count +5
-- old
-@end`
+	patchStr := `{"glyph_patch":1,"ops":[{"op":"=","path":["score"],"value":42},{"op":"+","path":["items"],"value":"new"},{"op":"~","path":["count"],"value":5},{"op":"-","path":["old"]}],"target":"m:TEST"}`
 
 	// Go: parse the patch
-	goPatch, err := ParsePatch(patchStr, nil)
+	goPatch, err := ParsePatch(patchStr)
 	if err != nil {
 		t.Fatalf("Go ParsePatch error: %v", err)
 	}

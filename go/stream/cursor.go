@@ -93,6 +93,10 @@ func (sc *StreamCursor) ProcessFrame(frame *Frame) error {
 		return fmt.Errorf("sequence gap: expected %d, got %d", state.LastSeq+1, frame.Seq)
 	}
 
+	if err := checkPayload(frame); err != nil {
+		return err
+	}
+
 	// For patches with base, verify state hash
 	if frame.Kind == KindPatch && frame.Base != nil {
 		if !state.HasState {
@@ -114,13 +118,27 @@ func (sc *StreamCursor) ProcessFrame(frame *Frame) error {
 	return nil
 }
 
+// checkPayload enforces SPEC-CANON.md §5: doc and patch payloads must be
+// canonical JSON bytes. Other kinds are opaque to the cursor.
+func checkPayload(frame *Frame) error {
+	if (frame.Kind == KindDoc || frame.Kind == KindPatch) && !glyph.IsCanonical(frame.Payload) {
+		return fmt.Errorf("sid=%d seq=%d %s payload is not canonical JSON", frame.SID, frame.Seq, frame.Kind)
+	}
+	return nil
+}
+
 // SetState sets the current state and computes its hash.
 // Use this after applying a doc snapshot or patch.
-func (sc *StreamCursor) SetState(sid uint64, value *glyph.GValue) {
+func (sc *StreamCursor) SetState(sid uint64, value *glyph.GValue) error {
+	h, err := StateHashLoose(value)
+	if err != nil {
+		return err
+	}
 	state := sc.Get(sid)
 	state.State = value
-	state.StateHash = StateHashLoose(value)
+	state.StateHash = h
 	state.HasState = true
+	return nil
 }
 
 // SetStateHash sets the state hash directly.
@@ -213,6 +231,10 @@ func (h *FrameHandler) Handle(frame *Frame) error {
 				}
 			}
 		}
+	}
+
+	if err := checkPayload(frame); err != nil {
+		return err
 	}
 
 	// Check base for patches

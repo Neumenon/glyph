@@ -1,24 +1,47 @@
 # GLYPH
 
-**A content-addressed identity and verification layer for structured AI agent state.**
+**One digest for structured agent state: canonical JSON → SHA-256 → a patch that refuses a stale base → a stream cursor that catches drift.**
 
 ```python
 >>> import glyph
->>> glyph.fingerprint_loose(glyph.parse("{a=1 b=2}"))
-'f35719430d98a2fe1336b584d828e31c0e2182c1b4c8464f75a03b38418ec9a7'
+>>> v = glyph.from_json_loose({"b": 2, "a": 1})
+>>> glyph.canon_json(v)
+'{"a":1,"b":2}'
+>>> glyph.fingerprint(v)
+'43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777'
 ```
 
-Run that same line through the Go, Python, and JavaScript/TypeScript implementations and you get that exact 64-character hex string, every time, byte-for-byte. This holds for every value in the shared conformance corpus (`go/glyph/testdata/loose_json`), checked in CI across all three languages. That is the whole point of GLYPH: **same value → same canonical bytes → same SHA-256, independent of which language produced it.**
+The canonical form is ordinary JSON, so anyone can check that digest with a
+stdlib and nothing else — in a language GLYPH has no port for, in a shell, in a
+database:
 
-That property is the load-bearing one. Everything else — patch application that refuses to apply against the wrong base, a stream protocol whose cursor rejects a frame that doesn't match the state it thinks it's patching, tabular packing that happens to save tokens on repeated-shape data — is built on top of it.
+```console
+$ printf '{"a":1,"b":2}' | sha256sum
+43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777  -
+```
+
+`fingerprint(v) = sha256(canon_json(v))` is the **only** digest in the project
+([`SPEC-CANON.md`](./SPEC-CANON.md)). The fingerprint of a value, the base a
+patch is applied against, and the state hash a GS1 cursor tracks are the same
+64 hex characters. Everything else — patch application that refuses a stale
+base, a cursor that rejects a desynced frame, `$tensor` references that name
+multimodal state by content, wshard episode identity — is that one line plus
+plumbing. Go, Python, and JavaScript/TypeScript agree byte-for-byte on every
+value in the shared conformance corpus (`go/glyph/testdata/loose_json`), and
+the identity harness re-checks it across all three on every run.
+
+GLYPH's `{a=1 b=2}` text is a **renderer** of the same value model, for
+LLM-facing surfaces. It is never hashed.
 
 ## What GLYPH is
 
-- a **canonicalization scheme** for JSON-domain values: one deterministic byte sequence per value, per language, forever (frozen for the test corpus — see [`docs/LOOSE_MODE_SPEC.md`](./docs/LOOSE_MODE_SPEC.md))
-- a **content-addressed identity primitive**: `fingerprint_loose` / `FingerprintLoose` / `fingerprintLoose` — SHA-256 of the canonical form, identical across Go, Python, and JS — for state caching, deduplication, and "did this sub-agent actually see the state I think it saw"
+- a **canonical JSON profile** (`glyph-canon-json-1.0.0`, [`SPEC-CANON.md`](./SPEC-CANON.md)): one deterministic byte sequence per value, expressible in stdlib JSON, with the number, key-order, and error rules pinned in two pages
+- a **content-addressed identity primitive**: `fingerprint` / `Fingerprint` / `fingerprint` — SHA-256 of the canonical JSON, identical across Go, Python, and JS — for state caching, deduplication, and "did this sub-agent actually see the state I think it saw"
+- a **strict check**: `is_canonical(bytes)` — exactly one byte sequence per value is accepted, so bytes on a wire cannot disagree with their own digest
+- a **content reference for large blobs**: `{"$tensor":{"dtype","shape","sha256"}}` names a tensor by the SHA-256 of its raw elements, so multimodal state fingerprints without the bytes riding along
 - a **patch/delta substrate with an enforced precondition**: a patch can record the fingerprint of the state it was computed against, and applying it verifies that fingerprint first, raising a typed error on mismatch instead of silently applying a delta to the wrong base
 - a **stream framing protocol (GS1)** — implemented in Go, Python, and JavaScript/TypeScript — whose cursor tracks per-stream state hashes and rejects a patch frame whose declared base doesn't match, so a desynced or replayed frame fails loud instead of corrupting state
-- a **JSON bridge** in both directions, and a **packed/tabular representation** for repeated-shape records, which incidentally reduces token count — see below for honest, shape-dependent numbers
+- a **text renderer** — `{k=v}`, `[a b]`, and tabular packing for repeated-shape records — lossless against the value model, never hashed, which incidentally reduces token count on some shapes; see below for honest, shape-dependent numbers
 - **cross-language conformance**: Go, Python, and JavaScript/TypeScript are the three conformance-tested implementations (Rust and C are parked in `attic/`, emit-only, not part of conformance testing)
 
 ## What GLYPH is not
@@ -62,9 +85,59 @@ Poor fits:
 | Nested chat-message history | Yes | Marginal — see below |
 | Binary service transport | No — use Protobuf | No |
 
-## Token savings: shape-dependent, not a fixed number
+### "Why not just JCS + SHA-256?"
 
-GLYPH's compactness comes from bare keys, `=` instead of `: `, no mandatory quoting, and auto-tabular packing for lists of same-shaped records. That helps a lot on some shapes and almost nothing on others. Measured against minified JSON (`json.dumps(x, separators=(",", ":"))`) with a real tokenizer (`tiktoken`, `cl100k_base`), not a heuristic character-count estimate. Every number below is reproduced by a committed script over fixed, deterministic payloads — run [`bench/token_savings.py`](./bench/token_savings.py) and you get this exact table:
+RFC 8785 canonicalization plus a hash is the right instinct — it is the
+serious incumbent, and on friendly values the two schemes' canonical forms
+even coincide byte-for-byte. Measured head-to-head over an adversarial corpus
+(318 fixtures: float edges, big integers beyond float64, Unicode NFC/NFD,
+duplicate keys, key-order permutations, non-BMP keys, tensor refs; three
+languages each), the difference is *portability under hostility*:
+
+| Cross-language agreement (Py+Go+JS identical hash) | naive | minified | JCS (3 vetted impls) | GLYPH |
+|---|---:|---:|---:|---:|
+| fixtures agreeing | 119/318 | 283/318 | 223/318 | **317/318** |
+
+(2026-09-02 run; the one non-agreeing fixture is a value all three languages
+reject identically. `canon_json` re-parses and re-canonicalizes to identical
+bytes on 951/951 language-fixture pairs.)
+
+JCS's gap is not correctness but *domain*: its reference implementations
+refuse to hash 95/318 values — non-object roots (Go reference impl),
+integers beyond ±2⁵³ (Python raises `IntegerDomainError`), silent big-int
+precision loss at JS parse. A cross-language system built on JCS must define
+behavior for every refusal path itself. GLYPH defines all of them.
+
+Where both can hash a value, the two canonical forms usually *are* the same
+bytes: 307 of the 317 hashable fixtures produce an identical SHA-256. GLYPH
+diverges in exactly three places, all in
+[`SPEC-CANON.md`](./SPEC-CANON.md) §6:
+
+1. **Roots.** Any value may be a root, not only an object or array — agent
+   state is often a bare string or number.
+2. **Key order.** Keys sort by the UTF-8 bytes of the raw key, not UTF-16 code
+   units. The two orders differ for non-BMP keys, where JCS's rule places
+   emoji before U+E000–U+FFFF; UTF-8 byte order is what Go and Python produce
+   natively, and JS is made to match.
+3. **Integers beyond ±2⁵³.** An **error**, not a silent collapse to float64
+   and not a refusal to serialize. Numbers that size travel as strings. This is
+   the one place GLYPH is stricter than every implementation in the table.
+
+Full method, pre-registration, scenarios, and costs:
+[`harness/state_identity/results/REPORT.md`](./harness/state_identity/results/REPORT.md).
+
+
+## The renderer: GLYPH text
+
+The value model has a text form — `{k=v}`, `[a b]`, `@[k1 k2](v1 v2)` — that
+round-trips losslessly (`parse(emit(x)) = x`) and is meant to be read by a
+model or a human. **It is not the identity substrate**: nothing hashes it, no
+patch base is computed from it, no GS1 frame carries it. Use it when a payload
+is going into a prompt; use canonical JSON everywhere a digest is involved.
+
+### Token savings: shape-dependent, not a fixed number
+
+GLYPH text's compactness comes from bare keys, `=` instead of `: `, no mandatory quoting, and auto-tabular packing for lists of same-shaped records. That helps a lot on some shapes and almost nothing on others. Measured against minified JSON (`json.dumps(x, separators=(",", ":"))`) with a real tokenizer (`tiktoken`, `cl100k_base`), not a heuristic character-count estimate. Every number below is reproduced by a committed script over fixed, deterministic payloads — run [`bench/token_savings.py`](./bench/token_savings.py) and you get this exact table:
 
 | Payload shape | Token savings (cl100k) | Bytes | Why |
 |---|---:|---:|---|
@@ -73,7 +146,7 @@ GLYPH's compactness comes from bare keys, `=` instead of `: `, no mandatory quot
 | Nested chat-message state — multi-turn conversation history | **0.4%** (1.6% on o200k) | 11.8% | Dominated by unique free-text content; punctuation savings apply to a small fraction of the payload |
 | Prose-heavy document — long free-text sections | **−2.7%** (GLYPH larger) | 2.1% | Almost nothing repeated for tabular packing to work against |
 
-The gradient is the honest finding: **savings shrink toward zero, and go negative, as payload content shifts from repeated structure toward unique prose.** Don't take "~40%" as a blanket number; measure your own payload shape (`bench/token_savings.py` is easy to point at your data) before committing to GLYPH for a token-cost reason. If your reason is state identity or patch safety, the shape doesn't matter.
+The gradient is the honest finding: **savings shrink toward zero, and go negative, as payload content shifts from repeated structure toward unique prose.** Don't take "~40%" as a blanket number; measure your own payload shape (`bench/token_savings.py` is easy to point at your data) before rendering to GLYPH text for a token-cost reason. If your reason is state identity or patch safety, the shape doesn't matter — and you want the JSON form anyway.
 
 ## Install
 
@@ -113,25 +186,28 @@ assert back == data
 ```python
 import glyph
 
-fp = glyph.fingerprint_loose(glyph.parse("{a=1 b=2}"))
+fp = glyph.fingerprint(glyph.parse("{a=1 b=2}"))
 print(fp)
-# f35719430d98a2fe1336b584d828e31c0e2182c1b4c8464f75a03b38418ec9a7
+# 43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777
 ```
 
-The same call in Go (`glyph.FingerprintLoose(parsed.Value)`) and JavaScript (`fingerprintLoose(parseLoose("{a=1 b=2}"))`) produces the identical 64-character hex string. `fingerprint_loose` always hashes the *no-tabular* canonical form (so the digest doesn't depend on cross-language agreement about auto-tabular thresholds) — see the invariants table below for how this differs from a patch's `@base`.
+The same call in Go (`glyph.Fingerprint(parsed.Value)`) and JavaScript (`fingerprint(parseLoose("{a=1 b=2}"))`) produces the identical 64-character hex string: `sha256(canon_json(value))`, the canonical JSON profile in [`SPEC-CANON.md`](./SPEC-CANON.md). It is the one digest — value identity, patch base, and GS1 state hash are all this value. `fingerprint_loose` remains as an alias.
 
 ### 3. Patch application with an enforced base
 
 A patch can record the fingerprint of the state it expects to be applied to. Applying it verifies that fingerprint *before* touching any operation — this is enforced by default in all three languages, not an opt-in check the caller has to remember.
 
 ```python
+import json
 import glyph
 
 base = glyph.parse("{status=running turn=1}")
-patch = glyph.parse_patch(f"""@patch @base={glyph.compute_base_fingerprint(base)}
-= status done
-~ turn +1
-@end""")
+patch = glyph.parse_patch(json.dumps({
+    "glyph_patch": 1,
+    "base": glyph.fingerprint(base),
+    "ops": [{"op": "=", "path": ["status"], "value": "done"},
+            {"op": "~", "path": ["turn"], "value": 1}],
+}))
 
 result = glyph.apply_patch(base, patch)   # base matches -> applies
 print(glyph.emit(result))
@@ -139,12 +215,12 @@ print(glyph.emit(result))
 
 stale = glyph.parse("{status=done turn=5}")
 glyph.apply_patch(stale, patch)           # base does NOT match -> raises
-# glyph.PatchBaseMismatch: patch base fingerprint mismatch: got '4daa8272b53b2f7e', want '2beeaacd8e079f14'
+# glyph.PatchBaseMismatch: patch base fingerprint mismatch: got '426bfbce2b3c5546b7ac7fda0e5e82f41fc4816cf94ee919aa4ae5234a98d28c', want 'f7a5eb1274c380e4b693fedd20e06f2ae1cc5964a67cce9e944e3a6c57763b3d'
 ```
 
-The same patch text, applied through `glyph.ApplyPatch` in Go and `applyPatch` in JS, produces the identical accepted result and the identical rejected-fingerprint pair above — verified directly while writing this document, not assumed from the Python behavior. `apply_patch(base, patch, verify_base=False)` (Go: `ApplyPatchUnchecked`; JS: `applyPatch(v, p, { verifyBase: false })`) is the explicit opt-out for callers who already verified the base elsewhere. `glyph.diff(from_value, to_value)` computes a `Patch` between two states in all three languages if you'd rather generate one than hand-write it.
+The same patch, applied through `glyph.ApplyPatch` in Go and `applyPatch` in JS, produces the identical accepted result and the identical rejected-fingerprint pair above — verified directly while writing this document, not assumed from the Python behavior. `apply_patch(base, patch, verify_base=False)` (Go: `ApplyPatchUnchecked`; JS: `applyPatch(v, p, { verifyBase: false })`) is the explicit opt-out for callers who already verified the base elsewhere. `glyph.diff(from_value, to_value)` computes a `Patch` between two states in all three languages if you'd rather generate one than hand-write it.
 
-One path-grammar caveat worth knowing before you hand-write a patch: dot-separated path segments (`.field`) are resolved as struct-field access in Go and JS — navigating a *map* (untyped `{...}` data, the common case in loose mode) through more than one dotted/indexed segment raises an error in those two languages, even though Python's applier is more permissive and accepts it. `diff()`-generated patches never hit this, because they only ever emit single-level `["key"]` map-key or whole-value-replace operations for map data. Stick to top-level field ops (as above) or `diff()` output for portable patches against loose/map values; reserve deep dotted paths for schema-typed structs.
+A patch path is a list of segments: a string segment walks a struct field or a map key (one kind on the wire, resolved against whatever the value is), an integer segment indexes a list. Hand-written and `diff()`-generated patches share the JSON wire form in [`SPEC-CANON.md`](./SPEC-CANON.md) §7, and a GS1 cursor rejects any patch or state frame whose bytes are not canonical.
 
 ### 4. GS1 stream — a cursor that rejects a stale patch frame
 
@@ -160,13 +236,13 @@ state = glyph.parse("{turn=1 status=running}")
 
 # Frame 1: snapshot doc, establishes state for sid=1.
 buf = io.BytesIO()
-Writer(buf).write_doc(sid=1, seq=1, payload=glyph.emit(state).encode())
+Writer(buf).write_doc(sid=1, seq=1, payload=glyph.canon_json(state).encode())
 buf.seek(0)
 cursor.process_frame(Reader(buf).next())
 cursor.set_state(1, state)
 
 # Frame 2: patch whose base is the CURRENT state hash -> accepted.
-patch = glyph.emit_patch(glyph.parse_patch("@patch\n= turn 2\n@end"))
+patch = glyph.emit_patch(glyph.parse_patch('{"glyph_patch":1,"ops":[{"op":"=","path":["turn"],"value":2}]}'))
 buf = io.BytesIO()
 Writer(buf).write_patch(sid=1, seq=2, payload=patch.encode(), base=state_hash_loose(state))
 buf.seek(0)
@@ -200,15 +276,7 @@ parse(emit(x))    = x
 emit(parse(s))    = canonical(s)
 ```
 
-`fingerprint_loose(x)` vs a patch's `@base` are two different digests over two different canonical forms — mixing them up is a real bug class, not a stylistic choice:
-
-| | `fingerprint_loose` (value identity) | `@base` / `compute_base_fingerprint` (patch precondition) |
-|---|---|---|
-| Pre-image | canonical form **without** auto-tabular | canonical form **with** auto-tabular (the default `emit`/`canonicalize_loose` form) |
-| Output | full SHA-256, 64 hex chars | first 16 hex chars of SHA-256 |
-| Cross-language identical | yes | yes |
-| Enforced automatically? | no — it's a value you compare yourself | yes — `apply_patch`/`ApplyPatch`/`applyPatch` verify it before applying, by default |
-| Where it lives | value caching, dedup, "is this the same state" | inside a `@patch` header; also the pre-image family used (untruncated, 32 bytes) for GS1's per-stream state hash checked by the cursor |
+`fingerprint(x) = sha256(canon_json(x))` is the only digest ([`SPEC-CANON.md`](./SPEC-CANON.md) §5). A patch's `base` field is this value for the state it expects; `apply_patch`/`ApplyPatch`/`applyPatch` verify it before applying, by default. GS1's per-stream state hash, checked by the cursor, is the same digest as raw 32 bytes, and the cursor rejects `doc`/`patch` frames whose payload is not canonical JSON.
 
 If you find a value where canonicalization, parsing, or these fingerprints disagree across Go/Python/JS, that's a spec-level bug against the corpus in `go/glyph/testdata/loose_json` — please file it.
 
@@ -219,7 +287,8 @@ If you find a value where canonicalization, parsing, or these fingerprints disag
 - [Documentation Index](./docs/README.md)
 
 ### Authoritative specs
-- [Loose Mode Spec](./docs/LOOSE_MODE_SPEC.md)
+- [Canonical JSON Profile](./SPEC-CANON.md) — the identity substrate: canonical form, the one digest, `$tensor`, patch wire form
+- [Loose Mode Spec](./docs/LOOSE_MODE_SPEC.md) — the text renderer
 - [GS1 Spec](./docs/GS1_SPEC.md)
 
 ### API / language docs
@@ -248,7 +317,16 @@ glyph/
 
 ## Why not just JSON?
 
-Use JSON when interoperability is the priority — it's the right default at API boundaries. GLYPH targets a narrower problem: repeated structured state moved through an agent loop, where you need to know two states are identical without a byte-for-byte diff, or that a patch is safe to apply, or that a stream hasn't desynced. JSON has no built-in answer to any of those; GLYPH's canonical form gives you one for free, and the packing/token savings — where they exist — are a secondary benefit, not the reason to reach for it.
+It *is* JSON. The canonical form is a JSON document, and every digest here is
+a SHA-256 over one. What plain JSON does not give you is a *single* byte
+sequence per value — key order, `1` vs `1.0`, and escaping are all free
+choices, so two encoders that agree on the value disagree on the hash. GLYPH
+pins those choices (§1–§2), makes anything outside them an error rather than a
+silent reinterpretation, and builds three things on the resulting digest that
+JSON has no answer for: a patch that refuses to apply to the wrong base, a
+stream cursor that notices drift, and a content reference for tensors. A
+verifier needs stdlib JSON plus a ~150-line canonicalizer, not a bespoke
+parser.
 
 ## Why not Protobuf?
 
@@ -256,4 +334,4 @@ Use Protobuf for typed binary service protocols. GLYPH stays text, stays JSON-br
 
 ## The promise
 
-Same value, same canonical bytes, same hash — across Go, Python, and JavaScript, verified by a shared conformance corpus, not asserted. Patches and streams built on top of that identity fail loud on a mismatch instead of applying silently to the wrong state. Token savings are real on the right shape and close to nothing on the wrong one — GLYPH does not pretend otherwise.
+Same value, same canonical bytes, same hash — across Go, Python, and JavaScript, verified by a shared conformance corpus, not asserted, and checkable by anyone with a JSON parser and a SHA-256. Patches and streams built on that identity fail loud on a mismatch instead of applying silently to the wrong state. The text renderer's token savings are real on the right shape and close to nothing on the wrong one — GLYPH does not pretend otherwise, and never hashes it.

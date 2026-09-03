@@ -1,10 +1,12 @@
 /**
  * SHA-256 state hash helpers for GS1.
- * 
- * Uses the Web Crypto API for SHA-256.
+ *
+ * stateHashLoose(value) = sha256(canonJson(value)) — the one digest
+ * (SPEC-CANON.md §5), as 32 raw bytes. Its hex is fingerprint(value).
+ * Identical in Go and Python.
  */
 
-import { canonicalizeLoose } from '../loose';
+import { canonJson } from '../canon';
 import { GValue } from '../types';
 
 /**
@@ -34,12 +36,9 @@ export function sha256Sync(data: Uint8Array): Uint8Array {
   return new Uint8Array(hash);
 }
 
-/**
- * Compute state hash using CanonicalizeLoose.
- * This is: sha256(CanonicalizeLoose(value))
- */
+/** GS1 state hash: sha256(canonJson(value)), 32 bytes. */
 export async function stateHashLoose(value: GValue): Promise<Uint8Array> {
-  const canonical = canonicalizeLoose(value);
+  const canonical = canonJson(value);
   const encoder = new TextEncoder();
   return sha256(encoder.encode(canonical));
 }
@@ -48,7 +47,7 @@ export async function stateHashLoose(value: GValue): Promise<Uint8Array> {
  * Compute state hash synchronously (Node.js only).
  */
 export function stateHashLooseSync(value: GValue): Uint8Array {
-  const canonical = canonicalizeLoose(value);
+  const canonical = canonJson(value);
   const encoder = new TextEncoder();
   return sha256Sync(encoder.encode(canonical));
 }

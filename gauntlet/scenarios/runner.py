@@ -108,16 +108,17 @@ def s6(inp):
     d = inp["S6_patch_base"]
     state = from_json_loose(d["state"])
     base16 = compute_base_fingerprint(state)
-    ops = "\n".join(d["patch_op_lines"])
+    def wire(base):
+        return json.dumps({"glyph_patch": 1, "ops": d["patch_ops"], "base": base, "target": d["target"]})
 
-    happy = parse_patch(f"@patch @base={base16} @target={d['target']}\n{ops}\n@end")
+    happy = parse_patch(wire(base16))
     try:
         verify_patch_base(state, happy)
         accept = True
     except PatchBaseMismatch:
         accept = False
 
-    stale = parse_patch(f"@patch @base={d['stale_base']} @target={d['target']}\n{ops}\n@end")
+    stale = parse_patch(wire(d["stale_base"]))
     try:
         verify_patch_base(state, stale)
         reject = False

@@ -1,0 +1,9 @@
+# cc-trace harness dependencies.
+#
+# The GLYPH codec itself is used in-tree from ../../py (added to sys.path by
+# agenttrace/__init__.py) — no install needed.
+#
+# tiktoken provides the real BPE token counts (cl100k_base). It is OPTIONAL:
+# without it the bench still runs and reports exact bytes, and the tokens column
+# shows "-". Install it to get token figures.
+tiktoken>=0.7

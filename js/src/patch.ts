@@ -6,9 +6,8 @@
 
 import { GValue, RefID, MapEntry } from './types';
 import { Schema } from './schema';
-import { canonicalizeLoose } from './loose';
-import { stateHashLooseSync, hashToHex } from './stream/hash';
-import { canonInt, canonFloat, canonString } from './codec_primitives';
+import { canonJson, fingerprint, compareCodePoints } from './canon';
+import { fromJsonLoose } from './loose';
 
 // ============================================================
 // Patch Types (Match Go's emit_patch.go)
@@ -64,17 +63,6 @@ function parseNonNegativeSafeInt(raw: string, field: string): number {
   const value = Number(raw);
   if (!Number.isSafeInteger(value)) {
     throw new Error(`${field} out of range: ${raw}`);
-  }
-  return value;
-}
-
-function parseFiniteNumber(raw: string, field: string): number {
-  if (!/^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(raw)) {
-    throw new Error(`invalid ${field}: ${raw}`);
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value)) {
-    throw new Error(`invalid ${field}: ${raw}`);
   }
   return value;
 }
@@ -240,22 +228,15 @@ export class PatchBuilder {
   }
 
   /**
-   * Set the base state fingerprint for validation.
-   * The fingerprint should be the first 16 chars of the SHA-256 hash
-   * of the canonical form of the base state.
+   * Set the base state fingerprint for validation: fingerprint(base),
+   * 64 hex of sha256(canonJson(base)) (SPEC-CANON.md §5).
    */
   withBaseFingerprint(fingerprint: string): this {
     this.patch.baseFingerprint = fingerprint;
     return this;
   }
 
-  /**
-   * Compute and set the base fingerprint from a GValue: the first 16 hex
-   * chars of SHA-256(canonicalizeLoose(base)) — the WITH-tabular canonical
-   * form. This is the patch base fingerprint, NOT fingerprintLoose (64 hex,
-   * NO-tabular form; see the disambiguation note above verifyPatchBase). The
-   * two are not interchangeable.
-   */
+  /** Set the base fingerprint to fingerprint(base) (SPEC-CANON.md §5). */
   withBaseValue(base: GValue): this {
     this.patch.baseFingerprint = computeBaseFingerprint(base);
     return this;
@@ -322,481 +303,155 @@ export class PatchBuilder {
 }
 
 // ============================================================
-// Patch Emit
+// Wire form (SPEC-CANON.md §7)
+//
+// {"glyph_patch":1,"ops":[op,…],"base"?,"schema"?,"target"?,"type"?}
+// op := {"op":"="|"+"|"-"|"~","path":[seg,…],"value"?,"index"?}
+// seg := string (struct field or map key) | non-negative int (list index)
 // ============================================================
 
-export type KeyMode = 'wire' | 'name' | 'fid';
+export const PATCH_WIRE_VERSION = 1;
 
-export interface PatchEmitOptions {
-  schema?: Schema;
-  keyMode?: KeyMode;
-  sortOps?: boolean;
-  indentPrefix?: string;
+const HEADER_KEYS = new Set(['glyph_patch', 'ops', 'base', 'schema', 'target', 'type']);
+const OP_KEYS = new Set(['op', 'path', 'value', 'index']);
+const OP_KINDS: PatchOpKind[] = ['=', '+', '-', '~'];
+
+function pathGv(path: PathSeg[]): GValue {
+  return GValue.list(...path.map(s => {
+    if (s.kind === 'listIdx') return GValue.int(s.listIdx!);
+    const key = s.kind === 'field' ? s.field : s.mapKey;
+    if (key === undefined) throw new Error(`${s.kind} segment has no name`);
+    return GValue.str(key);
+  }));
 }
 
-export function emitPatch(patch: Patch, options: PatchEmitOptions = {}): string {
-  const keyMode = options.keyMode || 'wire';
-  const sortOps = options.sortOps !== false;
-  
-  const lines: string[] = [];
-  
-  // Header
-  let header = '@patch';
-  if (patch.schemaId) {
-    header += ` @schema#${patch.schemaId}`;
+function opGv(op: PatchOp): GValue {
+  const entries: MapEntry[] = [
+    { key: 'op', value: GValue.str(op.op) },
+    { key: 'path', value: pathGv(op.path) },
+  ];
+  if (op.op === '~') {
+    entries.push({ key: 'value', value: GValue.float(op.value ? op.value.asNumber() : 0) });
+  } else if (op.op !== '-') {
+    entries.push({ key: 'value', value: op.value ?? GValue.null() });
   }
-  header += ` @keys=${keyMode}`;
-  header += ` @target=${patch.target.prefix}:${patch.target.value}`;
-  // v2.4.0: Base fingerprint for state validation
-  if (patch.baseFingerprint) {
-    header += ` @base=${patch.baseFingerprint}`;
+  if (op.op === '+' && op.index !== undefined && op.index >= 0) {
+    entries.push({ key: 'index', value: GValue.int(op.index) });
   }
-  lines.push(header);
-  
-  // Operations
-  let ops = patch.ops;
-  if (sortOps) {
-    ops = [...ops].sort((a, b) => {
-      const pa = pathSegsToString(a.path, keyMode);
-      const pb = pathSegsToString(b.path, keyMode);
-      if (pa !== pb) return pa < pb ? -1 : 1;
-      return a.op < b.op ? -1 : a.op > b.op ? 1 : 0;
-    });
-  }
-  
-  const prefix = options.indentPrefix || '';
-  
-  for (const op of ops) {
-    let line = prefix + op.op + ' ';
-    line += emitPathSegs(op.path, keyMode);
-    
-    if (op.op === '=' || op.op === '+') {
-      if (op.value) {
-        line += ' ' + emitValue(op.value, options.schema);
-      }
-      if (op.op === '+' && op.index !== undefined && op.index >= 0) {
-        line += ` @idx=${op.index}`;
-      }
-    } else if (op.op === '~') {
-      if (op.value) {
-        const num = op.value.type === 'float' ? op.value.asFloat() : op.value.asInt();
-        line += ' ' + (num >= 0 ? '+' : '') + canonFloat(num);
-      }
-    }
-    // OpDelete has no value
-    
-    lines.push(line);
-  }
-  
-  lines.push('@end');
-  
-  return lines.join('\n');
+  return GValue.map(...entries);
 }
 
-function pathSegsToString(path: PathSeg[], keyMode: KeyMode): string {
-  let result = '';
-  for (let i = 0; i < path.length; i++) {
-    const seg = path[i];
-    if (seg.kind === 'field') {
-      if (i > 0) result += '.';
-      if (keyMode === 'fid' && seg.fid) {
-        result += '#' + seg.fid;
-      } else {
-        result += seg.field || '';
-      }
-    } else if (seg.kind === 'listIdx') {
-      result += `[${seg.listIdx}]`;
-    } else if (seg.kind === 'mapKey') {
-      result += `["${seg.mapKey}"]`;
-    }
+/**
+ * Canonical JSON wire form — the inverse of parsePatch. Ops are sorted by
+ * (canonJson(path), op) so a patch diffed in any language emits the same
+ * bytes; empty header fields are omitted.
+ */
+export function emitPatch(patch: Patch): string {
+  const ops = patch.ops
+    .map(op => ({ op, key: canonJson(pathGv(op.path)) }))
+    .sort((a, b) => compareCodePoints(a.key, b.key) || compareCodePoints(a.op.op, b.op.op))
+    .map(x => opGv(x.op));
+  const entries: MapEntry[] = [
+    { key: 'glyph_patch', value: GValue.int(PATCH_WIRE_VERSION) },
+    { key: 'ops', value: GValue.list(...ops) },
+  ];
+  const t = patch.target;
+  const header: [string, string | undefined][] = [
+    ['base', patch.baseFingerprint],
+    ['schema', patch.schemaId],
+    ['target', t.prefix ? `${t.prefix}:${t.value}` : t.value],
+    ['type', patch.targetType],
+  ];
+  for (const [key, v] of header) {
+    if (v) entries.push({ key, value: GValue.str(v) });
   }
-  return result;
+  return canonJson(GValue.map(...entries));
 }
 
-function emitPathSegs(path: PathSeg[], keyMode: KeyMode): string {
-  return pathSegsToString(path, keyMode);
+function isInt(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v);
 }
 
-function emitValue(gv: GValue, schema?: Schema): string {
-  switch (gv.type) {
-    case 'null': return '∅';
-    case 'bool': return gv.asBool() ? 't' : 'f';
-    case 'int': return canonInt(gv.asInt());
-    case 'float': return canonFloat(gv.asFloat());
-    case 'str': return canonString(gv.asStr());
-    case 'id': return canonRef(gv.asId());
-    case 'time': return gv.asTime().toISOString().replace('.000Z', 'Z');
-    case 'list': {
-      const items = gv.asList().map(v => emitValue(v, schema));
-      return '[' + items.join(' ') + ']';
-    }
-    case 'map': {
-      const parts: string[] = [];
-      for (const e of gv.asMap()) {
-        parts.push(`${canonString(e.key)}:${emitValue(e.value, schema)}`);
-      }
-      return '{' + parts.join(' ') + '}';
-    }
-    case 'struct': {
-      const sv = gv.asStruct();
-      // For structs, emit in packed form if schema available
-      // Otherwise fall back to struct form
-      const parts: string[] = [];
-      for (const f of sv.fields) {
-        parts.push(`${canonString(f.key)}=${emitValue(f.value, schema)}`);
-      }
-      return `${sv.typeName}{${parts.join(' ')}}`;
-    }
-    case 'sum': {
-      const sum = gv.asSum();
-      if (!sum.value) return `${sum.tag}()`;
-      return `${sum.tag}(${emitValue(sum.value, schema)})`;
-    }
-    default:
-      return '∅';
+/**
+ * Parse the JSON wire form. Accepts any JSON spelling (whitespace, key
+ * order); canonical bytes are the GS1 cursor's job (SPEC-CANON.md §5).
+ * Unknown keys at either level are errors.
+ */
+export function parsePatch(input: string | Uint8Array): Patch {
+  const text = typeof input === 'string' ? input : new TextDecoder('utf-8', { fatal: true }).decode(input);
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`patch is not JSON: ${(e as Error).message}`);
   }
-}
-
-// ============================================================
-// Patch Parse
-// ============================================================
-
-export function parsePatch(input: string, schema?: Schema): Patch {
-  const lines = input.split('\n');
-  if (lines.length === 0) {
-    throw new Error('empty patch input');
+  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
+    throw new Error('patch must be a JSON object');
   }
-  
-  // Parse header
-  const headerLine = lines[0].trim();
-  const header = parsePatchHeader(headerLine);
-  
+  const d = doc as Record<string, unknown>;
+  const unknown = Object.keys(d).filter(k => !HEADER_KEYS.has(k));
+  if (unknown.length) throw new Error(`unknown patch key(s): ${unknown.join(', ')}`);
+  if (d.glyph_patch !== PATCH_WIRE_VERSION) {
+    throw new Error(`patch must carry glyph_patch: ${PATCH_WIRE_VERSION}`);
+  }
+  if (!Array.isArray(d.ops)) throw new Error('patch ops must be a list');
+  for (const key of ['base', 'schema', 'target', 'type']) {
+    if (key in d && typeof d[key] !== 'string') throw new Error(`patch ${key} must be a string`);
+  }
+
+  const target = (d.target as string | undefined) ?? '';
+  const colon = target.indexOf(':');
   const patch: Patch = {
-    target: header.target,
-    schemaId: header.schemaId,
-    baseFingerprint: header.baseFingerprint,
-    ops: [],
+    target: colon < 0 ? { prefix: '', value: target } : { prefix: target.slice(0, colon), value: target.slice(colon + 1) },
+    ops: d.ops.map(parseOp),
   };
-  
-  // Parse operations
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    
-    if (!line || line.startsWith('#')) continue;
-    if (line === '@end') break;
-    
-    const op = parsePatchOp(line, schema);
-    patch.ops.push(op);
-  }
-  
+  if (typeof d.schema === 'string') patch.schemaId = d.schema;
+  if (typeof d.base === 'string') patch.baseFingerprint = d.base;
+  if (typeof d.type === 'string') patch.targetType = d.type;
   return patch;
 }
 
-interface ParsedHeader {
-  target: RefID;
-  schemaId?: string;
-  keyMode: KeyMode;
-  baseFingerprint?: string;  // v2.4.0
-}
+function parseOp(raw: unknown, i: number): PatchOp {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`op ${i}: must be an object`);
+  }
+  const r = raw as Record<string, unknown>;
+  const unknown = Object.keys(r).filter(k => !OP_KEYS.has(k));
+  if (unknown.length) throw new Error(`op ${i}: unknown key(s): ${unknown.join(', ')}`);
+  const kind = r.op as PatchOpKind;
+  if (!OP_KINDS.includes(kind)) throw new Error(`op ${i}: unknown operation: ${JSON.stringify(r.op)}`);
+  if (!Array.isArray(r.path)) throw new Error(`op ${i}: path must be a list`);
+  const op: PatchOp = { op: kind, path: r.path.map(seg => parseSeg(seg, i)) };
 
-function parsePatchHeader(line: string): ParsedHeader {
-  if (!line.startsWith('@patch')) {
-    throw new Error('patch must start with @patch');
+  if (kind === '-') {
+    if ('value' in r) throw new Error(`op ${i}: '-' takes no value`);
+  } else if (!('value' in r)) {
+    throw new Error(`op ${i}: '${kind}' requires a value`);
+  } else if (kind === '~') {
+    if (typeof r.value !== 'number') throw new Error(`op ${i}: invalid delta: ${JSON.stringify(r.value)}`);
+    op.value = GValue.float(r.value);
+  } else {
+    op.value = fromJsonLoose(r.value);
   }
-  
-  const result: ParsedHeader = {
-    target: { prefix: '', value: '' },
-    keyMode: 'wire',
-  };
-  
-  const tokens = tokenizeHeader(line);
-  
-  for (const tok of tokens) {
-    if (tok.startsWith('@schema#')) {
-      result.schemaId = tok.slice(8);
-    } else if (tok.startsWith('@keys=')) {
-      result.keyMode = tok.slice(6) as KeyMode;
-    } else if (tok.startsWith('@target=')) {
-      const ref = tok.slice(8);
-      const colonIdx = ref.indexOf(':');
-      if (colonIdx > 0) {
-        result.target = { prefix: ref.slice(0, colonIdx), value: ref.slice(colonIdx + 1) };
-      } else {
-        result.target = { prefix: '', value: ref };
-      }
-    } else if (tok.startsWith('@base=')) {
-      // v2.4.0: Base fingerprint
-      result.baseFingerprint = tok.slice(6);
-    }
-  }
-  
-  return result;
-}
 
-function tokenizeHeader(input: string): string[] {
-  const tokens: string[] = [];
-  let current = '';
-  let inQuote = false;
-  
-  for (const c of input) {
-    if (c === '"') {
-      inQuote = !inQuote;
-      current += c;
-    } else if (c === ' ' && !inQuote) {
-      if (current) {
-        tokens.push(current);
-        current = '';
-      }
-    } else {
-      current += c;
-    }
+  if ('index' in r) {
+    if (kind !== '+') throw new Error(`op ${i}: index is only allowed on '+'`);
+    if (!isInt(r.index) || r.index < 0) throw new Error(`op ${i}: index must be a non-negative integer`);
+    op.index = r.index;
+  } else if (kind === '+') {
+    op.index = -1;
   }
-  
-  if (current) tokens.push(current);
-  return tokens;
-}
-
-function parsePatchOp(line: string, schema?: Schema): PatchOp {
-  if (!line) {
-    throw new Error('empty operation line');
-  }
-  
-  const opChar = line[0] as PatchOpKind;
-  if (!['=', '+', '-', '~'].includes(opChar)) {
-    throw new Error(`unknown operation: ${opChar}`);
-  }
-  
-  const rest = line.slice(1).trim();
-  if (!rest) {
-    throw new Error('missing path in operation');
-  }
-  
-  // Split into path and value
-  const pathEnd = findPathEnd(rest);
-  const pathStr = rest.slice(0, pathEnd);
-  let valueStr = rest.slice(pathEnd).trim();
-  
-  const path = parsePathToSegs(pathStr);
-  
-  const op: PatchOp = {
-    op: opChar,
-    path,
-    index: -1,
-  };
-  
-  switch (opChar) {
-    case '=':
-    case '+': {
-      if (valueStr) {
-        const tokens = tokenizeValues(valueStr);
-        const lastToken = tokens[tokens.length - 1];
-        if (opChar === '+' && tokens.length > 1 && lastToken?.startsWith('@idx=')) {
-          op.index = parseNonNegativeSafeInt(lastToken.slice(5), 'patch index');
-          tokens.pop();
-          valueStr = tokens.join(' ').trim();
-        }
-        op.value = parseInlineValue(valueStr, schema);
-      }
-      break;
-    }
-    case '~': {
-      if (!valueStr) {
-        throw new Error('delta operation requires a value');
-      }
-      const num = parseFiniteNumber(valueStr, 'delta');
-      op.value = GValue.float(num);
-      break;
-    }
-    case '-':
-      // No value needed
-      break;
-  }
-  
   return op;
 }
 
-function findPathEnd(s: string): number {
-  let inQuote = false;
-  let bracketDepth = 0;
-  
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === '"') {
-      inQuote = !inQuote;
-    } else if (c === '[' && !inQuote) {
-      bracketDepth++;
-    } else if (c === ']' && !inQuote && bracketDepth > 0) {
-      bracketDepth--;
-    } else if ((c === ' ' || c === '\t') && !inQuote && bracketDepth === 0) {
-      return i;
-    }
-  }
-  
-  return s.length;
+function parseSeg(seg: unknown, i: number): PathSeg {
+  if (typeof seg === 'string') return fieldSeg(seg);
+  if (isInt(seg) && seg >= 0) return listIdxSeg(seg);
+  throw new Error(`op ${i}: path segment must be a string or non-negative integer: ${JSON.stringify(seg)}`);
 }
-
-function parseInlineValue(s: string, schema?: Schema): GValue {
-  s = s.trim();
-  if (!s) return GValue.null();
-  
-  // Null
-  if (s === '∅' || s === 'null') return GValue.null();
-  
-  // Bool
-  if (s === 't' || s === 'true') return GValue.bool(true);
-  if (s === 'f' || s === 'false') return GValue.bool(false);
-  
-  // Ref
-  if (s.startsWith('^')) {
-    const ref = s.slice(1);
-    const colonIdx = ref.indexOf(':');
-    if (colonIdx > 0) {
-      return GValue.id(ref.slice(0, colonIdx), ref.slice(colonIdx + 1));
-    }
-    return GValue.id('', ref);
-  }
-  
-  // Quoted string
-  if (s.startsWith('"')) {
-    return parseQuotedString(s);
-  }
-  
-  // Number
-  if (/^-?\d/.test(s)) {
-    const num = parseFiniteNumber(s, 'number');
-    if (s.includes('.') || s.includes('e') || s.includes('E')) {
-      return GValue.float(num);
-    }
-    return GValue.int(parseInt(s, 10));
-  }
-  
-  // List
-  if (s.startsWith('[')) {
-    return parseList(s);
-  }
-  
-  // Struct (Type{...})
-  if (/^[A-Za-z_]\w*\{/.test(s)) {
-    return parseStruct(s);
-  }
-  
-  // Bare string
-  return GValue.str(s);
-}
-
-function parseQuotedString(s: string): GValue {
-  if (s.length < 2 || !s.endsWith('"')) {
-    throw new Error('unterminated string literal');
-  }
-  let result = '';
-  for (let i = 1; i < s.length - 1; i++) {
-    if (s[i] === '\\' && i + 1 < s.length - 1) {
-      i++;
-      switch (s[i]) {
-        case 'n': result += '\n'; break;
-        case 'r': result += '\r'; break;
-        case 't': result += '\t'; break;
-        case '\\': result += '\\'; break;
-        case '"': result += '"'; break;
-        default: result += s[i];
-      }
-    } else {
-      result += s[i];
-    }
-  }
-  return GValue.str(result);
-}
-
-function parseList(s: string): GValue {
-  // Simple tokenized list parsing
-  const inner = s.slice(1, -1).trim();
-  if (!inner) return GValue.list();
-  
-  const items: GValue[] = [];
-  const tokens = tokenizeValues(inner);
-  for (const tok of tokens) {
-    items.push(parseInlineValue(tok));
-  }
-  return GValue.list(...items);
-}
-
-function parseStruct(s: string): GValue {
-  const braceIdx = s.indexOf('{');
-  const typeName = s.slice(0, braceIdx);
-  const inner = s.slice(braceIdx + 1, -1).trim();
-  
-  if (!inner) return GValue.struct(typeName);
-  
-  const entries: { key: string; value: GValue }[] = [];
-  const tokens = tokenizeValues(inner);
-  
-  for (const tok of tokens) {
-    const eqIdx = tok.indexOf('=');
-    if (eqIdx > 0) {
-      const key = tok.slice(0, eqIdx).trim();
-      const valStr = tok.slice(eqIdx + 1).trim();
-      entries.push({ key, value: parseInlineValue(valStr) });
-    }
-  }
-  
-  return GValue.struct(typeName, ...entries);
-}
-
-function tokenizeValues(s: string): string[] {
-  const tokens: string[] = [];
-  let current = '';
-  let inQuote = false;
-  let depth = 0;
-  
-  for (const c of s) {
-    if (c === '"') {
-      inQuote = !inQuote;
-      current += c;
-    } else if (!inQuote) {
-      if (c === '[' || c === '{' || c === '(') {
-        depth++;
-        current += c;
-      } else if (c === ']' || c === '}' || c === ')') {
-        depth--;
-        current += c;
-      } else if (c === ' ' && depth === 0) {
-        if (current) {
-          tokens.push(current);
-          current = '';
-        }
-      } else {
-        current += c;
-      }
-    } else {
-      current += c;
-    }
-  }
-  
-  if (current) tokens.push(current);
-  return tokens;
-}
-
 // ============================================================
 // Base-fingerprint verification
 //
-// Fingerprint disambiguation (read this before using either primitive):
-// GLYPH has two same-shaped-but-different SHA-256 digests over a value's
-// canonical form. They are NOT interchangeable, are computed over different
-// canonicalizations, and are different lengths:
-//
-//   - Patch base fingerprint (verifyPatchBase / withBaseValue / the @base=
-//     token): first 16 hex chars of SHA-256(canonicalizeLoose(v)) — the
-//     WITH-tabular canonical form (auto-tabular list encoding enabled). This
-//     is the cross-language patch-base contract; Go is the source of truth.
-//   - fingerprintLoose (loose.ts): the full 64 hex chars of
-//     SHA-256(canonicalizeLooseNoTabular(v)) — the NO-tabular canonical form.
-//     This is the value-identity digest used for content hashing/dedup.
-//
-// The two coincide only when v contains no auto-tabular-eligible list (so
-// WITH-tabular and NO-tabular canonicalization produce the same bytes) — do
-// not rely on that coincidence. Comparing a 16-hex patch base fingerprint
-// against a 64-hex fingerprintLoose value (or vice versa) is always a bug.
-// ============================================================
 
 /**
  * Raised (thrown) when a patch's recorded base fingerprint does not match
@@ -815,14 +470,9 @@ export class PatchBaseMismatch extends Error {
   }
 }
 
-/**
- * Compute the 16-hex patch base fingerprint of a value: the first 16 hex
- * chars of SHA-256(canonicalizeLoose(v)) — the WITH-tabular canonical form.
- * See the fingerprint disambiguation note above.
- */
+/** Patch base fingerprint: fingerprint(base), the one digest (SPEC-CANON.md §5). */
 export function computeBaseFingerprint(v: GValue): string {
-  const hash = stateHashLooseSync(v);
-  return hashToHex(hash).slice(0, 16);
+  return fingerprint(v);
 }
 
 /**
@@ -902,20 +552,21 @@ function applyAtPath(value: GValue, path: PathSeg[], op: PatchOp): GValue {
   const seg = path[0];
   const rest = path.slice(1);
   
-  if (seg.kind === 'field') {
-    const key = seg.field!;
-    if (value.type !== 'struct') {
-      throw new Error(`cannot navigate into ${value.type} with field`);
+  if (seg.kind === 'field' || seg.kind === 'mapKey') {
+    // Wire paths carry one string kind, so a field seg must walk maps too.
+    const key = seg.kind === 'field' ? seg.field! : seg.mapKey!;
+    const entries = value.type === 'struct' ? value.asStruct().fields
+      : value.type === 'map' ? value.asMap() : null;
+    if (!entries) {
+      throw new Error(`cannot navigate into ${value.type} with ${seg.kind}`);
     }
-    
-    const sv = value.asStruct();
-    for (let i = 0; i < sv.fields.length; i++) {
-      if (sv.fields[i].key === key) {
-        sv.fields[i].value = applyAtPath(sv.fields[i].value, rest, op);
+    for (const e of entries) {
+      if (e.key === key) {
+        e.value = applyAtPath(e.value, rest, op);
         return value;
       }
     }
-    throw new Error(`field not found: ${key}`);
+    throw new Error(`key not found: ${key}`);
   }
   
   if (seg.kind === 'listIdx') {
@@ -929,21 +580,6 @@ function applyAtPath(value: GValue, path: PathSeg[], op: PatchOp): GValue {
     }
     list[idx] = applyAtPath(list[idx], rest, op);
     return value;
-  }
-  
-  if (seg.kind === 'mapKey') {
-    if (value.type !== 'map') {
-      throw new Error(`cannot access map key in ${value.type}`);
-    }
-    const entries = value.asMap();
-    const key = seg.mapKey!;
-    for (let i = 0; i < entries.length; i++) {
-      if (entries[i].key === key) {
-        entries[i].value = applyAtPath(entries[i].value, rest, op);
-        return value;
-      }
-    }
-    throw new Error(`key not found: ${key}`);
   }
   
   throw new Error('unknown path segment kind');
@@ -1008,15 +644,6 @@ function applyToParent(value: GValue, seg: PathSeg, op: PatchOp): GValue {
   }
   
   throw new Error(`unknown operation: ${op.op}`);
-}
-
-// ============================================================
-// Canonical Helpers
-// ============================================================
-
-function canonRef(ref: RefID): string {
-  const full = ref.prefix ? `${ref.prefix}:${ref.value}` : ref.value;
-  return `^${full}`;
 }
 
 // ============================================================

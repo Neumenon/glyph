@@ -14,8 +14,12 @@ Covers:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import pytest
+
+from glyph import canon_json, from_json_loose
+from glyph.stream.hash import state_hash_loose
 
 from glyph.stream import (
     # Frame types
@@ -426,33 +430,62 @@ class TestRoundTrip:
 # StreamCursor — sequence-gap detection and patch base-hash enforcement
 # ---------------------------------------------------------------------------
 
+# doc/patch payloads must be canonical JSON to pass the cursor (SPEC-CANON.md §5).
+_PATCH = b'{"glyph_patch":1,"ops":[{"op":"=","path":["x"],"value":1}]}'
+
+
+class TestCanonicalPayloadIngest:
+    """SPEC-CANON.md §5: doc/patch frames are the trust boundary. One valid
+    encoding means sha256(payload) of a doc frame *is* the state hash, and a
+    re-serialised (reordered, re-spaced) payload cannot slip past the cursor."""
+
+    @pytest.mark.parametrize("kind", [KIND_DOC, KIND_PATCH])
+    @pytest.mark.parametrize("bad", [b'{"b":1,"a":2}', b'{"a": 1}', b'{"a":1.0}', b"x", b""])
+    def test_non_canonical_rejected_strict_and_lenient(self, kind, bad):
+        with pytest.raises(ValueError, match="not canonical"):
+            StreamCursor().process_frame(Frame(1, 1, 1, kind, bad))
+        with pytest.raises(ValueError, match="not canonical"):
+            FrameHandler().handle(Frame(1, 1, 1, kind, bad))
+
+    def test_other_kinds_stay_opaque(self):
+        StreamCursor().process_frame(Frame(1, 1, 1, KIND_ROW, b"Row@(id 1)"))
+
+    def test_doc_payload_digest_is_the_state_hash(self):
+        gv = from_json_loose({"b": [1, 2.0], "a": None})
+        payload = canon_json(gv).encode()
+        cursor = StreamCursor()
+        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, payload))
+        assert hashlib.sha256(payload).digest() == state_hash_loose(gv)
+
+
+
 class TestStreamCursor:
     def test_first_frame_accepted(self):
         cursor = StreamCursor()
-        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b"hello"))
+        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b'"hello"'))
 
     def test_monotonic_sequence_accepted(self):
         cursor = StreamCursor()
         for seq in range(1, 5):
-            cursor.process_frame(Frame(1, 1, seq, KIND_DOC, b"x"))
+            cursor.process_frame(Frame(1, 1, seq, KIND_DOC, b'"x"'))
 
     def test_sequence_gap_raises(self):
         cursor = StreamCursor()
-        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b"x"))
+        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b'"x"'))
         with pytest.raises(ValueError, match="gap"):
-            cursor.process_frame(Frame(1, 1, 3, KIND_DOC, b"x"))
+            cursor.process_frame(Frame(1, 1, 3, KIND_DOC, b'"x"'))
 
     def test_duplicate_seq_raises(self):
         cursor = StreamCursor()
-        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b"x"))
+        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b'"x"'))
         with pytest.raises(ValueError):
-            cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b"x"))
+            cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b'"x"'))
 
     def test_seq_regression_raises(self):
         cursor = StreamCursor()
-        cursor.process_frame(Frame(1, 1, 2, KIND_DOC, b"x"))
+        cursor.process_frame(Frame(1, 1, 2, KIND_DOC, b'"x"'))
         with pytest.raises(ValueError):
-            cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b"x"))
+            cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b'"x"'))
 
     def test_patch_base_accepted_when_matching(self):
         """Patch with base matching current state_hash is accepted."""
@@ -460,9 +493,9 @@ class TestStreamCursor:
         # Establish a known state hash.
         state_hash = state_hash_bytes(b"canonical state")
         cursor.set_state_hash(1, state_hash)
-        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b"x"))  # advance seq
+        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b'"x"'))  # advance seq
 
-        patch = Frame(1, 1, 2, KIND_PATCH, b"@patch\nset .x 1\n@end", base=state_hash)
+        patch = Frame(1, 1, 2, KIND_PATCH, _PATCH, base=state_hash)
         cursor.process_frame(patch)  # must not raise
 
     def test_patch_base_rejected_when_stale(self):
@@ -471,9 +504,9 @@ class TestStreamCursor:
         current_hash = state_hash_bytes(b"current state")
         stale_hash   = state_hash_bytes(b"old state")
         cursor.set_state_hash(1, current_hash)
-        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b"x"))
+        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b'"x"'))
 
-        patch = Frame(1, 1, 2, KIND_PATCH, b"@patch\nset .x 1\n@end", base=stale_hash)
+        patch = Frame(1, 1, 2, KIND_PATCH, _PATCH, base=stale_hash)
         with pytest.raises(BaseMismatchError):
             cursor.process_frame(patch)
 
@@ -481,27 +514,27 @@ class TestStreamCursor:
         """A patch frame with no base field is always accepted (no base check)."""
         cursor = StreamCursor()
         cursor.set_state_hash(1, state_hash_bytes(b"some state"))
-        cursor.process_frame(Frame(1, 1, 1, KIND_PATCH, b"@patch\nset .x 1\n@end"))
+        cursor.process_frame(Frame(1, 1, 1, KIND_PATCH, _PATCH))
 
     def test_patch_base_no_state_raises(self):
         """Patch with base but no prior state raises ValueError."""
         cursor = StreamCursor()
         some_hash = state_hash_bytes(b"something")
-        patch = Frame(1, 1, 1, KIND_PATCH, b"@patch\nset .x 1\n@end", base=some_hash)
+        patch = Frame(1, 1, 1, KIND_PATCH, _PATCH, base=some_hash)
         with pytest.raises(ValueError, match="no state hash"):
             cursor.process_frame(patch)
 
     def test_separate_sids_are_independent(self):
         cursor = StreamCursor()
-        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b"a"))
-        cursor.process_frame(Frame(1, 2, 1, KIND_DOC, b"b"))
-        cursor.process_frame(Frame(1, 1, 2, KIND_DOC, b"c"))
-        cursor.process_frame(Frame(1, 2, 2, KIND_DOC, b"d"))
+        cursor.process_frame(Frame(1, 1, 1, KIND_DOC, b'"a"'))
+        cursor.process_frame(Frame(1, 2, 1, KIND_DOC, b'"b"'))
+        cursor.process_frame(Frame(1, 1, 2, KIND_DOC, b'"c"'))
+        cursor.process_frame(Frame(1, 2, 2, KIND_DOC, b'"d"'))
 
     def test_all_sids_tracked(self):
         cursor = StreamCursor()
-        cursor.process_frame(Frame(1, 10, 1, KIND_DOC, b"x"))
-        cursor.process_frame(Frame(1, 20, 1, KIND_DOC, b"x"))
+        cursor.process_frame(Frame(1, 10, 1, KIND_DOC, b'"x"'))
+        cursor.process_frame(Frame(1, 20, 1, KIND_DOC, b'"x"'))
         sids = cursor.all_sids()
         assert 10 in sids
         assert 20 in sids
@@ -517,8 +550,8 @@ class TestFrameHandler:
         received = []
         handler.on_doc = lambda sid, seq, payload, state: received.append(seq)
 
-        handler.handle(Frame(1, 1, 1, KIND_DOC, b"x"))
-        handler.handle(Frame(1, 1, 1, KIND_DOC, b"x"))  # duplicate
+        handler.handle(Frame(1, 1, 1, KIND_DOC, b'"x"'))
+        handler.handle(Frame(1, 1, 1, KIND_DOC, b'"x"'))  # duplicate
         assert received == [1]
 
     def test_seq_gap_triggers_callback(self):
@@ -526,18 +559,18 @@ class TestFrameHandler:
         handler = FrameHandler()
         handler.on_seq_gap = lambda sid, expected, got: (gaps.append((expected, got)), True)[1]
 
-        handler.handle(Frame(1, 1, 1, KIND_DOC, b"a"))
-        handler.handle(Frame(1, 1, 5, KIND_DOC, b"b"))  # gap: expected 2, got 5
+        handler.handle(Frame(1, 1, 1, KIND_DOC, b'"a"'))
+        handler.handle(Frame(1, 1, 5, KIND_DOC, b'"b"'))  # gap: expected 2, got 5
         assert gaps == [(2, 5)]
 
     def test_base_mismatch_raises_without_callback(self):
         handler = FrameHandler()
         state_hash = state_hash_bytes(b"state v1")
         handler.cursor.set_state_hash(1, state_hash)
-        handler.handle(Frame(1, 1, 1, KIND_DOC, b"x"))
+        handler.handle(Frame(1, 1, 1, KIND_DOC, b'"x"'))
 
         stale = state_hash_bytes(b"old version")
-        patch = Frame(1, 1, 2, KIND_PATCH, b"@patch\nset .x 1\n@end", base=stale)
+        patch = Frame(1, 1, 2, KIND_PATCH, _PATCH, base=stale)
         with pytest.raises(BaseMismatchError):
             handler.handle(patch)
 
@@ -548,10 +581,10 @@ class TestFrameHandler:
 
         state_hash = state_hash_bytes(b"state v1")
         handler.cursor.set_state_hash(1, state_hash)
-        handler.handle(Frame(1, 1, 1, KIND_DOC, b"x"))
+        handler.handle(Frame(1, 1, 1, KIND_DOC, b'"x"'))
 
         stale = state_hash_bytes(b"old")
-        handler.handle(Frame(1, 1, 2, KIND_PATCH, b"@patch\nset .x 1\n@end", base=stale))
+        handler.handle(Frame(1, 1, 2, KIND_PATCH, _PATCH, base=stale))
         assert allowed == [1]
 
     def test_per_kind_callbacks_dispatched(self):
@@ -564,8 +597,8 @@ class TestFrameHandler:
         handler.on_err   = lambda sid, seq, payload, st: received_kinds.append("err")
         handler.on_ack   = lambda sid, seq, st:          received_kinds.append("ack")
 
-        handler.handle(Frame(1, 1, 1, KIND_DOC,   b"x"))
-        handler.handle(Frame(1, 1, 2, KIND_PATCH, b"@patch\nset .x 1\n@end"))
+        handler.handle(Frame(1, 1, 1, KIND_DOC,   b'"x"'))
+        handler.handle(Frame(1, 1, 2, KIND_PATCH, _PATCH))
         handler.handle(Frame(1, 1, 3, KIND_ROW,   b"Row@(id 1)"))
         handler.handle(Frame(1, 1, 4, KIND_UI,    b"Progress@(pct 0.5 msg ok)"))
         handler.handle(Frame(1, 1, 5, KIND_ERR,   b"Error@(code FAIL)"))

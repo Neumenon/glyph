@@ -66,10 +66,13 @@
 //   - Typed (schema-bound): Emit / EmitWithOptions (and the schema-driven
 //     EmitPacked / EmitTabular it composes). Round-trips through Parse.
 //
+// Identity (Fingerprint, patch base, GS1 state hash) is SHA-256 of CanonJSON;
+// patches travel as canonical JSON via EmitPatch / ParsePatch (SPEC-CANON.md §7).
+//
 // Not part of the two supported layers (see PARITY_ROADMAP.md P4):
 //   - EmitTokenAware  — deprecated/experimental, zero production callers.
 //   - CanonicalHash   — deprecated/experimental; use FingerprintLoose instead.
-//   - EmitV2/EmitV2Patch, EncodeDictFrame, Decimal128 — experimental/emit-only,
+//   - EmitV2, EncodeDictFrame, Decimal128 — experimental/emit-only,
 //     not round-trip-integrated; may change or be removed.
 //
 // # Error Tolerance

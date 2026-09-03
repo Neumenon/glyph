@@ -22,10 +22,12 @@ import threading
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from ..canon import is_canonical
 from ..types import GValue
 from .types import (
     Frame,
     FrameKind,
+    KIND_DOC,
     KIND_PATCH,
     BaseMismatchError,
 )
@@ -46,6 +48,14 @@ class SIDState:
     has_state: bool = False
     state: Optional[GValue] = None
     final: bool = False
+
+
+def _check_payload(frame: Frame) -> None:
+    """doc/patch payloads must be canonical JSON (SPEC-CANON.md §5)."""
+    if frame.kind in (KIND_DOC, KIND_PATCH) and not is_canonical(frame.payload):
+        raise ValueError(
+            f"{'doc' if frame.kind == KIND_DOC else 'patch'} payload is not canonical JSON"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +109,8 @@ class StreamCursor:
         Validate and update cursor state for *frame*.
 
         Raises:
-            ValueError — seq not monotonic (gap or duplicate).
+            ValueError — seq not monotonic (gap or duplicate), or a doc/patch
+                payload that is not canonical JSON.
             BaseMismatchError — base hash mismatch on patch frame.
         """
         state = self.get(frame.sid)
@@ -118,6 +129,8 @@ class StreamCursor:
             raise ValueError(
                 f"sequence gap: expected {state.last_seq + 1}, got {frame.seq}"
             )
+
+        _check_payload(frame)
 
         # Patch base verification.
         if frame.kind == KIND_PATCH and frame.base is not None:
@@ -229,6 +242,8 @@ class FrameHandler:
                     if not allow:
                         return
                 # If no callback or callback allowed, fall through.
+
+        _check_payload(frame)
 
         # Base check for patches.
         if frame.kind == KIND_PATCH and frame.base is not None and state.has_state:

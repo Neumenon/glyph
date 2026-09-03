@@ -1,41 +1,37 @@
 """
-GLYPH v2 Patch Parser and Applier.
+Glyph patch: JSON wire form (SPEC-CANON.md §7).
 
-Parses the canonical @patch format:
-
-    @patch
-    = .step 2
-    + .items {id=1 name="item_1"}
-    - .removed_field
-    ~ .counter +5
-    @end
+    {"glyph_patch":1,
+     "ops":[{"op":"=","path":["step"],"value":2},
+            {"op":"+","path":["items"],"value":{"id":1,"name":"item_1"}},
+            {"op":"-","path":["removed_field"]},
+            {"op":"~","path":["counter"],"value":5}],
+     "base":"<64 hex>"?, "target":"prefix:value"?, "schema":"<id>"?, "type":"<TypeName>"?}
 
 Operations:
     = (set)    — Replace value at path
-    + (append) — Append to list or add field
-    - (delete) — Remove field or list element
+    + (append) — Append to list (insert before "index" when given) or add field
+    - (delete) — Remove field
     ~ (delta)  — Numeric increment/decrement
+
+Path segments are strings (struct field or map key) or non-negative ints (list
+index). parse_patch accepts any JSON spelling; canonical bytes are enforced at
+the GS1 cursor (SPEC-CANON.md §5), and emit_patch always produces them.
 """
 
 from __future__ import annotations
 
 import copy
-import hashlib
+import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-from .types import GType, GValue, MapEntry, StructValue
-from .loose import (
-    canonicalize_loose,
-    canon_int,
-    canon_float,
-    canon_string,
-    canon_id,
-    canon_bytes,
-    canon_time,
-    escape_string,
-)
+from .types import GType, GValue, MapEntry
+from .canon import canon_json, fingerprint
+from .loose import from_json_loose
+
+PATCH_WIRE_VERSION = 1
 
 
 class PatchOpKind(Enum):
@@ -65,6 +61,8 @@ class PatchOp:
     path: List[PathSeg]
     value: Optional[GValue] = None
     delta: float = 0.0
+    # APPEND only: insert before this list position; -1 means append.
+    index: int = -1
 
 
 @dataclass
@@ -72,10 +70,9 @@ class Patch:
     ops: List[PatchOp] = field(default_factory=list)
     schema_id: str = ""
     target: str = ""
-    # First 16 hex chars of sha256(canonicalize_loose(base_state)); empty when
-    # the patch does not record a base. Matches Go BaseFingerprint / JS
-    # baseFingerprint (Go is the cross-language source of truth for @base) so a
-    # Python receiver can verify a Go/JS-emitted patch.
+    # glyph.fingerprint(base), 64 hex (SPEC-CANON.md §5); empty when the patch
+    # does not record a base. Same digest in Go BaseFingerprint / JS
+    # baseFingerprint, so any receiver can verify any emitter's patch.
     base_fingerprint: str = ""
     # Root type name, set by diff() (mirrors Go Patch.TargetType / JS
     # patch.targetType). Python has no schema/FID resolution pass yet, so this
@@ -84,8 +81,8 @@ class Patch:
     target_type: str = ""
 
 
-# Base-fingerprint length (hex chars). Mirrors Go/JS: first 16 of the SHA-256.
-BASE_FINGERPRINT_LEN = 16
+# Base fingerprint = glyph.fingerprint(base): full 64-hex sha256(canon_json) (SPEC-CANON.md §5).
+BASE_FINGERPRINT_LEN = 64
 
 
 class PatchBaseMismatch(ValueError):
@@ -101,21 +98,8 @@ class PatchBaseMismatch(ValueError):
 
 
 def compute_base_fingerprint(base: GValue) -> str:
-    """Compute the 16-hex patch base fingerprint of a base state.
-
-    base = sha256(canonicalize_loose(base))[:16] — the first 16 hex of the
-    SHA-256 of the *canonical loose form* (LOOSE_MODE_SPEC, "Patch Base
-    Fingerprint"). This is byte-identical to Go WithBaseValue / JS withBaseValue;
-    Go is the cross-language source of truth for @base.
-
-    Note: @base uses the tabular canonical form (null → '_'), which is distinct
-    from fingerprint_loose(state) — the value-identity digest, which uses the
-    no-tabular form (null → '∅'). The two coincide for null-free non-tabular
-    states but diverge when the base contains nulls or is a bare auto-tabular
-    list root.
-    """
-    canonical = canonicalize_loose(base)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:BASE_FINGERPRINT_LEN]
+    """Patch base fingerprint: glyph.fingerprint(base), the one digest (SPEC-CANON.md §5)."""
+    return fingerprint(base)
 
 
 def verify_patch_base(base: GValue, patch: Patch) -> None:
@@ -136,240 +120,143 @@ def verify_patch_base(base: GValue, patch: Patch) -> None:
         raise PatchBaseMismatch(got=got, want=patch.base_fingerprint)
 
 
-def parse_patch(text: str) -> Patch:
-    """Parse a @patch block from text.
+# ============================================================
+# Parse (SPEC-CANON.md §7)
+# ============================================================
 
-    Input should include the @patch header and @end footer.
+_OP_KINDS = {k.value: k for k in PatchOpKind}
+_HEADER_KEYS = {"glyph_patch", "ops", "base", "schema", "target", "type"}
+_HEADER_STRINGS = (("base", "base_fingerprint"), ("schema", "schema_id"),
+                   ("target", "target"), ("type", "target_type"))
+_OP_KEYS = {"op", "path", "value", "index"}
+
+
+def _is_int(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def parse_patch(data: Union[str, bytes]) -> Patch:
+    """Parse the JSON patch wire form (SPEC-CANON.md §7).
+
+    Accepts any JSON spelling (whitespace, key order); canonical bytes are the
+    GS1 cursor's job. Unknown keys at either level are errors.
     """
-    lines = text.split("\n")
+    try:
+        doc = json.loads(data)
+    except ValueError as e:
+        raise ValueError(f"patch is not JSON: {e}") from None
+    if not isinstance(doc, dict):
+        raise ValueError("patch must be a JSON object")
+    unknown = set(doc) - _HEADER_KEYS
+    if unknown:
+        raise ValueError(f"unknown patch key(s): {sorted(unknown)}")
+    if not _is_int(doc.get("glyph_patch")) or doc["glyph_patch"] != PATCH_WIRE_VERSION:
+        raise ValueError(f"patch must carry glyph_patch: {PATCH_WIRE_VERSION}")
+    ops = doc.get("ops")
+    if not isinstance(ops, list):
+        raise ValueError("patch ops must be a list")
+
     patch = Patch()
-
-    if not lines:
-        raise ValueError("empty patch input")
-
-    # Parse header
-    header = lines[0].strip()
-    if not header.startswith("@patch"):
-        raise ValueError("patch must start with @patch")
-
-    # Parse header tokens
-    tokens = header.split()
-    for tok in tokens:
-        if tok == "@patch":
-            continue
-        if tok.startswith("@schema#"):
-            patch.schema_id = tok[8:]
-        elif tok.startswith("@target="):
-            patch.target = tok[8:]
-        elif tok.startswith("@base="):
-            patch.base_fingerprint = tok[6:]
-
-    # Parse operations
-    for i, line in enumerate(lines[1:], start=2):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line == "@end":
-            break
-
-        op = _parse_op(line, i)
-        patch.ops.append(op)
-
+    for key, attr in _HEADER_STRINGS:
+        if key in doc:
+            if not isinstance(doc[key], str):
+                raise ValueError(f"patch {key} must be a string")
+            setattr(patch, attr, doc[key])
+    patch.ops = [_parse_op(raw, i) for i, raw in enumerate(ops)]
     return patch
 
 
-def _parse_op(line: str, line_num: int) -> PatchOp:
-    """Parse a single patch operation line."""
-    if not line:
-        raise ValueError(f"line {line_num}: empty operation")
+def _parse_op(raw: Any, i: int) -> PatchOp:
+    if not isinstance(raw, dict):
+        raise ValueError(f"op {i}: must be an object")
+    unknown = set(raw) - _OP_KEYS
+    if unknown:
+        raise ValueError(f"op {i}: unknown key(s): {sorted(unknown)}")
+    kind = _OP_KINDS.get(raw.get("op"))
+    if kind is None:
+        raise ValueError(f"op {i}: unknown operation: {raw.get('op')!r}")
+    path = raw.get("path")
+    if not isinstance(path, list):
+        raise ValueError(f"op {i}: path must be a list")
+    op = PatchOp(op=kind, path=[_parse_seg(seg, i) for seg in path])
 
-    op_char = line[0]
-    op_map = {
-        "=": PatchOpKind.SET,
-        "+": PatchOpKind.APPEND,
-        "-": PatchOpKind.DELETE,
-        "~": PatchOpKind.DELTA,
-    }
+    if kind == PatchOpKind.DELETE:
+        if "value" in raw:
+            raise ValueError(f"op {i}: '-' takes no value")
+    elif "value" not in raw:
+        raise ValueError(f"op {i}: '{kind.value}' requires a value")
+    elif kind == PatchOpKind.DELTA:
+        v = raw["value"]
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError(f"op {i}: invalid delta: {v!r}")
+        op.delta = float(v)
+    else:
+        op.value = from_json_loose(raw["value"])
 
-    op_kind = op_map.get(op_char)
-    if op_kind is None:
-        raise ValueError(f"line {line_num}: unknown operation: {op_char}")
-
-    rest = line[1:].strip()
-    if not rest:
-        raise ValueError(f"line {line_num}: missing path")
-
-    # Split into path and value
-    path_str, value_str = _split_path_value(rest)
-    path = _parse_path(path_str)
-
-    op = PatchOp(op=op_kind, path=path)
-
-    if op_kind == PatchOpKind.DELTA:
-        if value_str:
-            try:
-                op.delta = float(value_str)
-            except ValueError:
-                raise ValueError(f"line {line_num}: invalid delta: {value_str}")
-    elif op_kind != PatchOpKind.DELETE:
-        if value_str:
-            op.value = _parse_value(value_str)
-
+    if "index" in raw:
+        if kind != PatchOpKind.APPEND:
+            raise ValueError(f"op {i}: index is only allowed on '+'")
+        if not _is_int(raw["index"]) or raw["index"] < 0:
+            raise ValueError(f"op {i}: index must be a non-negative integer")
+        op.index = raw["index"]
     return op
 
 
-def _split_path_value(rest: str) -> tuple[str, str]:
-    """Split 'path value' into (path, value)."""
-    # Path starts with . and continues until whitespace
-    i = 0
-    while i < len(rest):
-        if rest[i] == " ":
-            return rest[:i], rest[i:].strip()
-        i += 1
-    return rest, ""
+def _parse_seg(seg: Any, i: int) -> PathSeg:
+    if isinstance(seg, str):
+        return PathSeg(kind=PathSegKind.FIELD, field=seg)
+    if _is_int(seg) and seg >= 0:
+        return PathSeg(kind=PathSegKind.LIST_IDX, list_idx=seg)
+    raise ValueError(f"op {i}: path segment must be a string or non-negative integer: {seg!r}")
 
 
-def _parse_path(path_str: str) -> List[PathSeg]:
-    """Parse a dotted path.
-
-    Accepts both GLYPH-Python's leading-dot form ('.step', '.items[0]') and the
-    bare form emitted by Go/JS ('step', 'home.score'), so a Python receiver can
-    parse a patch produced by any implementation.
-    """
-    if not path_str:
-        raise ValueError("empty path")
-
-    body = path_str[1:] if path_str.startswith(".") else path_str
-    segments = []
-    parts = body.split(".")
-
-    for part in parts:
-        if not part:
-            continue
-        # Check for list index: field[N]
-        if "[" in part:
-            field_name = part[:part.index("[")]
-            idx_str = part[part.index("[") + 1 : part.index("]")]
-            if field_name:
-                segments.append(PathSeg(kind=PathSegKind.FIELD, field=field_name))
-            try:
-                segments.append(PathSeg(kind=PathSegKind.LIST_IDX, list_idx=int(idx_str)))
-            except ValueError:
-                raise ValueError(f"invalid list index: {idx_str}")
-        else:
-            segments.append(PathSeg(kind=PathSegKind.FIELD, field=part))
-
-    return segments
+# ============================================================
+# Emit (SPEC-CANON.md §7)
+# ============================================================
 
 
-def _parse_value(value_str: str) -> GValue:
-    """Parse a simple inline value from a patch operation."""
-    s = value_str.strip()
-    if not s:
-        return GValue.null()
-
-    # Null
-    if s in ("_", "null", "∅"):
-        return GValue.null()
-
-    # Boolean
-    if s in ("t", "true"):
-        return GValue.bool_(True)
-    if s in ("f", "false"):
-        return GValue.bool_(False)
-
-    # Quoted string
-    if s.startswith('"') and s.endswith('"'):
-        return GValue.str_(s[1:-1].replace('\\"', '"').replace("\\\\", "\\"))
-
-    # Map/struct: {key=val ...}
-    if s.startswith("{") and s.endswith("}"):
-        return _parse_inline_map(s)
-
-    # List: [a b c]
-    if s.startswith("[") and s.endswith("]"):
-        return _parse_inline_list(s)
-
-    # Number
-    try:
-        if "." in s or "e" in s.lower():
-            return GValue.float_(float(s))
-        return GValue.int_(int(s))
-    except ValueError:
-        pass
-
-    # Bare string
-    return GValue.str_(s)
+def _seg_gv(seg: PathSeg) -> GValue:
+    if seg.kind == PathSegKind.LIST_IDX:
+        return GValue.int_(seg.list_idx)
+    return GValue.str_(seg.field if seg.kind == PathSegKind.FIELD else seg.map_key)
 
 
-def _parse_inline_map(s: str) -> GValue:
-    """Parse {key=val key2=val2} into a GValue map."""
-    inner = s[1:-1].strip()
-    entries = []
-    while inner:
-        inner = inner.strip()
-        if not inner:
-            break
-        eq_idx = inner.find("=")
-        if eq_idx < 0:
-            break
-        key = inner[:eq_idx].strip()
-        rest = inner[eq_idx + 1:]
-        val_str, rest = _split_next_value(rest)
-        entries.append(MapEntry(key=key, value=_parse_value(val_str)))
-        inner = rest
+def _path_gv(path: List[PathSeg]) -> GValue:
+    return GValue.list_(*(_seg_gv(s) for s in path))
+
+
+def _op_gv(op: PatchOp) -> GValue:
+    entries = [MapEntry("op", GValue.str_(op.op.value)), MapEntry("path", _path_gv(op.path))]
+    if op.op == PatchOpKind.DELTA:
+        entries.append(MapEntry("value", GValue.float_(op.delta)))
+    elif op.op != PatchOpKind.DELETE:
+        entries.append(MapEntry("value", op.value if op.value is not None else GValue.null()))
+    if op.op == PatchOpKind.APPEND and op.index >= 0:
+        entries.append(MapEntry("index", GValue.int_(op.index)))
     return GValue.map_(*entries)
 
 
-def _parse_inline_list(s: str) -> GValue:
-    """Parse [a b c] into a GValue list."""
-    inner = s[1:-1].strip()
-    items = []
-    while inner:
-        inner = inner.strip()
-        if not inner:
-            break
-        val_str, inner = _split_next_value(inner)
-        items.append(_parse_value(val_str))
-    return GValue.list_(*items)
+def emit_patch(patch: Patch) -> str:
+    """Emit the canonical JSON wire form — the inverse of parse_patch.
+
+    Ops are sorted by (canon_json(path), op) so a patch diffed independently
+    in any of the three languages for the same from/to pair emits identical
+    bytes. Empty header fields are omitted.
+    """
+    ops = sorted(patch.ops, key=lambda op: (canon_json(_path_gv(op.path)), op.op.value))
+    entries = [
+        MapEntry("glyph_patch", GValue.int_(PATCH_WIRE_VERSION)),
+        MapEntry("ops", GValue.list_(*(_op_gv(op) for op in ops))),
+    ]
+    for key, attr in _HEADER_STRINGS:
+        if getattr(patch, attr):
+            entries.append(MapEntry(key, GValue.str_(getattr(patch, attr))))
+    return canon_json(GValue.map_(*entries))
 
 
-def _split_next_value(s: str) -> tuple[str, str]:
-    """Split out the next value token from a space-separated string."""
-    s = s.strip()
-    if not s:
-        return "", ""
-
-    if s[0] == '"':
-        # Quoted string — find matching close quote
-        i = 1
-        while i < len(s):
-            if s[i] == "\\" and i + 1 < len(s):
-                i += 2
-                continue
-            if s[i] == '"':
-                return s[: i + 1], s[i + 1 :]
-            i += 1
-        return s, ""
-
-    if s[0] in ("{", "["):
-        # Find matching brace
-        open_char, close_char = s[0], "}" if s[0] == "{" else "]"
-        depth = 0
-        for i, c in enumerate(s):
-            if c == open_char:
-                depth += 1
-            elif c == close_char:
-                depth -= 1
-                if depth == 0:
-                    return s[: i + 1], s[i + 1 :]
-        return s, ""
-
-    # Bare token — split on space
-    idx = s.find(" ")
-    if idx < 0:
-        return s, ""
-    return s[:idx], s[idx:]
+# ============================================================
+# Apply
+# ============================================================
 
 
 def apply_patch(value: GValue, patch: Patch, verify_base: bool = True) -> GValue:
@@ -413,7 +300,7 @@ def _apply_op(v: GValue, op: PatchOp) -> GValue:
 
     # Navigate to parent
     seg = op.path[0]
-    rest_op = PatchOp(op=op.op, path=op.path[1:], value=op.value, delta=op.delta)
+    rest_op = PatchOp(op=op.op, path=op.path[1:], value=op.value, delta=op.delta, index=op.index)
 
     if v.type == GType.STRUCT and seg.kind == PathSegKind.FIELD:
         for i, f in enumerate(v._struct.fields):
@@ -424,14 +311,15 @@ def _apply_op(v: GValue, op: PatchOp) -> GValue:
                 return v
         raise ValueError(f"field not found: {seg.field}")
 
-    if v.type == GType.MAP and seg.kind == PathSegKind.FIELD:
+    if v.type == GType.MAP and seg.kind in (PathSegKind.FIELD, PathSegKind.MAP_KEY):
+        key = seg.field if seg.kind == PathSegKind.FIELD else seg.map_key
         for i, f in enumerate(v._map):
-            if f.key == seg.field:
+            if f.key == key:
                 v._map[i] = MapEntry(
                     key=f.key, value=_apply_op(f.value, rest_op)
                 )
                 return v
-        raise ValueError(f"key not found: {seg.field}")
+        raise ValueError(f"key not found: {key}")
 
     if v.type == GType.LIST and seg.kind == PathSegKind.LIST_IDX:
         idx = seg.list_idx
@@ -456,7 +344,10 @@ def _apply_to_parent(v: GValue, seg: PathSeg, op: PatchOp) -> GValue:
         if existing is None:
             _set_field(v, key, GValue.list_(op.value))
         elif existing.type == GType.LIST:
-            existing._list.append(op.value)
+            if op.index >= 0:
+                existing._list.insert(op.index, op.value)
+            else:
+                existing._list.append(op.value)
         else:
             raise ValueError(f"cannot append to {existing.type.value}")
         return v
@@ -516,146 +407,6 @@ def _delete_field(v: GValue, key: str) -> None:
         v._map = [f for f in v._map if f.key != key]
     else:
         raise ValueError(f"cannot delete field from {v.type.value}")
-
-
-# ============================================================
-# Patch Emit (schema-less / generic — mirrors Go EmitPatch(schema=nil) and
-# JS emitPatch({}))
-#
-# Python has no schema-driven patch builder yet (no FID resolution, no
-# packed-struct wire keys), so this only supports the "wire" key mode with
-# plain field names — the same fallback path Go/JS use when no schema is
-# given. This is enough to emit patches built by diff() below, and to
-# round-trip anything parse_patch can read back.
-# ============================================================
-
-
-def _is_letter_patch(c: str) -> bool:
-    return ("a" <= c <= "z") or ("A" <= c <= "Z")
-
-
-def _is_digit_patch(c: str) -> bool:
-    return "0" <= c <= "9"
-
-
-def _path_needs_quoting(s: str) -> bool:
-    """Mirrors Go emit_patch.go needsQuoting for PATH field segments — a
-    separate, more permissive rule than canon_string's value-quoting rule
-    (allows '-' after the first character; no reserved-word exclusion)."""
-    if not s:
-        return True
-    for i, c in enumerate(s):
-        if i == 0:
-            if not _is_letter_patch(c) and c != "_":
-                return True
-        else:
-            if not _is_letter_patch(c) and not _is_digit_patch(c) and c not in ("_", "-"):
-                return True
-    return False
-
-
-def _emit_field_name(name: str) -> str:
-    if _path_needs_quoting(name):
-        return f'"{escape_string(name)}"'
-    return name
-
-
-def _path_to_string(path: List[PathSeg]) -> str:
-    """Canonical string form of a path, used both for op emission and for
-    sorting ops by path (mirrors Go pathSegsToString / JS pathSegsToString)."""
-    parts: List[str] = []
-    for i, seg in enumerate(path):
-        if seg.kind == PathSegKind.FIELD:
-            if i > 0:
-                parts.append(".")
-            parts.append(_emit_field_name(seg.field))
-        elif seg.kind == PathSegKind.LIST_IDX:
-            parts.append(f"[{seg.list_idx}]")
-        else:  # MAP_KEY
-            parts.append(f'["{escape_string(seg.map_key)}"]')
-    return "".join(parts)
-
-
-def _emit_value(v: Optional[GValue]) -> str:
-    """Emit a value in the generic (schema-less) patch/packed form. Mirrors
-    Go emitPackedValue and JS emitValue for the types they both support."""
-    if v is None or v.type == GType.NULL:
-        return "∅"  # canonNull() is always "∅" in packed/patch mode
-
-    t = v.type
-    if t == GType.BOOL:
-        return "t" if v.as_bool() else "f"
-    if t == GType.INT:
-        return canon_int(v.as_int())
-    if t == GType.FLOAT:
-        return canon_float(v.as_float())
-    if t == GType.STR:
-        return canon_string(v.as_str())
-    if t == GType.ID:
-        return canon_id(v.as_id())
-    if t == GType.TIME:
-        return canon_time(v.as_time())
-    if t == GType.BYTES:
-        return canon_bytes(v.as_bytes())
-    if t == GType.LIST:
-        return "[" + " ".join(_emit_value(e) for e in v.as_list()) + "]"
-    if t == GType.MAP:
-        parts = [f"{canon_string(e.key)}:{_emit_value(e.value)}" for e in v.as_map()]
-        return "{" + " ".join(parts) + "}"
-    if t == GType.STRUCT:
-        sv = v.as_struct()
-        fparts = [f"{canon_string(f.key)}={_emit_value(f.value)}" for f in sv.fields]
-        return f"{sv.type_name}{{{' '.join(fparts)}}}"
-    if t == GType.SUM:
-        sm = v.as_sum()
-        if sm.value is None or sm.value.type == GType.NULL:
-            return f"{sm.tag}()"
-        if sm.value.type == GType.STRUCT:
-            fparts = [f"{canon_string(f.key)}={_emit_value(f.value)}" for f in sm.value.as_struct().fields]
-            return f"{sm.tag}{{{' '.join(fparts)}}}"
-        return f"{sm.tag}({_emit_value(sm.value)})"
-
-    raise ValueError(f"unsupported value type in patch emit: {t.value}")
-
-
-def _emit_op(op: PatchOp) -> str:
-    line = f"{op.op.value} {_path_to_string(op.path)}"
-    if op.op in (PatchOpKind.SET, PatchOpKind.APPEND):
-        if op.value is not None:
-            line += " " + _emit_value(op.value)
-    elif op.op == PatchOpKind.DELTA:
-        sign = "+" if op.delta >= 0 else ""
-        line += " " + sign + canon_float(op.delta)
-    # DELETE: no value
-    return line
-
-
-def emit_patch(patch: Patch, sort_ops: bool = True) -> str:
-    """Emit a @patch block from a Patch — the inverse of parse_patch.
-
-    Mirrors Go EmitPatch(patch, schema=nil) / JS emitPatch(patch, {}): the
-    "wire" key mode with plain field names (Python has no schema-driven
-    packed/FID emission yet). Ops are sorted by canonical path string by
-    default (sort_ops=True, matching Go/JS DefaultPatchOptions.SortOps),
-    so a patch diffed independently in any of the three languages for the
-    same from/to pair emits byte-identical text.
-    """
-    header = "@patch"
-    if patch.schema_id:
-        header += f" @schema#{patch.schema_id}"
-    header += " @keys=wire"
-    header += f" @target={patch.target}"
-    if patch.base_fingerprint:
-        header += f" @base={patch.base_fingerprint}"
-
-    ops = list(patch.ops)
-    if sort_ops:
-        ops.sort(key=lambda op: (_path_to_string(op.path), op.op.value))
-
-    lines = [header]
-    lines.extend(_emit_op(op) for op in ops)
-    lines.append("@end")
-    return "\n".join(lines)
 
 
 # ============================================================

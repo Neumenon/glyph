@@ -2,9 +2,18 @@
  * StreamCursor - Per-SID state tracking for GS1 streams.
  */
 
-import { Frame, FrameKind, BaseMismatchError } from './types';
+import { Frame, FrameKind, BaseMismatchError, kindToString } from './types';
 import { verifyBase, stateHashLooseSync } from './hash';
 import { GValue } from '../types';
+import { isCanonical } from '../canon';
+
+/** doc/patch payloads must be canonical JSON (SPEC-CANON.md §5). */
+function checkPayload(frame: Frame): void {
+  const kind = kindToString(frame.kind);
+  if ((kind === 'doc' || kind === 'patch') && !isCanonical(frame.payload)) {
+    throw new Error(`${kind} payload is not canonical JSON`);
+  }
+}
 
 /**
  * State for a single stream ID.
@@ -80,6 +89,8 @@ export class StreamCursor {
     if (state.lastSeq > 0n && frame.seq !== state.lastSeq + 1n) {
       throw new Error(`sequence gap: expected ${state.lastSeq + 1n}, got ${frame.seq}`);
     }
+
+    checkPayload(frame);
 
     // For patches with base, verify state hash
     if (frame.kind === 'patch' && frame.base && state.stateHash) {
@@ -196,6 +207,8 @@ export class FrameHandler {
         }
       }
     }
+
+    checkPayload(frame);
 
     // Check base for patches
     if (frame.kind === 'patch' && frame.base && state.stateHash) {

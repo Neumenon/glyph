@@ -320,7 +320,6 @@ func TestV2ModeDetection(t *testing.T) {
 		expected Mode
 	}{
 		{"@lyph v2 @mode=packed", ModePacked},
-		{"@patch @target=m:123", ModePatch},
 		{"@tab Hike [id name]", ModeTabular},
 		{"Team@(^t:ARS Arsenal EPL)", ModePacked},
 		{"Team@{bm=0b1}(data)", ModePacked},
@@ -352,7 +351,7 @@ func TestV2PatchIntegration(t *testing.T) {
 		Set("minute", Int(0))
 
 	// Emit patch
-	patchStr, err := EmitPatch(patch, schema)
+	patchStr, err := EmitPatch(patch)
 	if err != nil {
 		t.Fatalf("EmitPatch error: %v", err)
 	}
@@ -396,7 +395,7 @@ func TestV2DiffIntegration(t *testing.T) {
 		FieldVal("result", Str("home")),
 	)
 
-	patch := Diff(before, after, "Match")
+	patch := mustDiff(before, after, "Match")
 
 	// Apply patch to before
 	result, err := ApplyPatch(before, patch)

@@ -133,7 +133,7 @@ window.GAUNTLET_DATA = {
           "event": "TOOL_DETECTED",
           "token": 15,
           "charPos": 15,
-          "elapsed": 1,
+          "elapsed": 0,
           "detail": "tool=search allowed=true"
         },
         {
@@ -186,612 +186,612 @@ window.GAUNTLET_DATA = {
     }
   },
   "matchStream": {
-    "measurementNote": "Patch bytes measured using real emitPatch(PatchBuilder.build()). Each update patches 3 fields: minute, score_home, score_away. snapshotBytes = JSON.stringify(full snapshot). patchBytes = real @patch text bytes.",
-    "samplePatchText": "@patch @keys=wire @target=match:001\n= minute 45\n= score_away 0\n= score_home 1\n@end",
+    "measurementNote": "Patch bytes measured using real emitPatch(PatchBuilder.build()). Each update patches 3 fields: minute, score_home, score_away. snapshotBytes = JSON.stringify(full snapshot). patchBytes = the JSON patch wire form (SPEC-CANON.md §7). On a snapshot this small the patch is LARGER than resending it — a patch is a correctness primitive (it carries the base fingerprint it must apply to), not a compression one. Size crosses over as the unchanged part of the state grows.",
+    "samplePatchText": "{\"glyph_patch\":1,\"ops\":[{\"op\":\"=\",\"path\":[\"minute\"],\"value\":45},{\"op\":\"=\",\"path\":[\"score_away\"],\"value\":0},{\"op\":\"=\",\"path\":[\"score_home\"],\"value\":1}],\"target\":\"match:001\"}",
     "totalUpdates": 100,
     "cumSnapshotBytes": 12192,
-    "cumPatchBytes": 8192,
-    "savingsPct": 32.81,
+    "cumPatchBytes": 17192,
+    "savingsPct": -41.01,
     "perUpdate": [
       {
         "update": 1,
         "minute": 1,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 2,
         "minute": 2,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 3,
         "minute": 3,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 4,
         "minute": 4,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 5,
         "minute": 5,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 6,
         "minute": 6,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 7,
         "minute": 7,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 8,
         "minute": 8,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 9,
         "minute": 9,
         "snapshotBytes": 121,
-        "patchBytes": 81
+        "patchBytes": 171
       },
       {
         "update": 10,
         "minute": 10,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 11,
         "minute": 11,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 12,
         "minute": 12,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 13,
         "minute": 13,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 14,
         "minute": 14,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 15,
         "minute": 15,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 16,
         "minute": 16,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 17,
         "minute": 17,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 18,
         "minute": 18,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 19,
         "minute": 19,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 20,
         "minute": 20,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 21,
         "minute": 21,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 22,
         "minute": 22,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 23,
         "minute": 23,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 24,
         "minute": 24,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 25,
         "minute": 25,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 26,
         "minute": 26,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 27,
         "minute": 27,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 28,
         "minute": 28,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 29,
         "minute": 29,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 30,
         "minute": 30,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 31,
         "minute": 31,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 32,
         "minute": 32,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 33,
         "minute": 33,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 34,
         "minute": 34,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 35,
         "minute": 35,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 36,
         "minute": 36,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 37,
         "minute": 37,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 38,
         "minute": 38,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 39,
         "minute": 39,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 40,
         "minute": 40,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 41,
         "minute": 41,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 42,
         "minute": 42,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 43,
         "minute": 43,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 44,
         "minute": 44,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 45,
         "minute": 45,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 46,
         "minute": 46,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 47,
         "minute": 47,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 48,
         "minute": 48,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 49,
         "minute": 49,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 50,
         "minute": 50,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 51,
         "minute": 51,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 52,
         "minute": 52,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 53,
         "minute": 53,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 54,
         "minute": 54,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 55,
         "minute": 55,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 56,
         "minute": 56,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 57,
         "minute": 57,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 58,
         "minute": 58,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 59,
         "minute": 59,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 60,
         "minute": 60,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 61,
         "minute": 61,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 62,
         "minute": 62,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 63,
         "minute": 63,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 64,
         "minute": 64,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 65,
         "minute": 65,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 66,
         "minute": 66,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 67,
         "minute": 67,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 68,
         "minute": 68,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 69,
         "minute": 69,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 70,
         "minute": 70,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 71,
         "minute": 71,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 72,
         "minute": 72,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 73,
         "minute": 73,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 74,
         "minute": 74,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 75,
         "minute": 75,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 76,
         "minute": 76,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 77,
         "minute": 77,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 78,
         "minute": 78,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 79,
         "minute": 79,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 80,
         "minute": 80,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 81,
         "minute": 81,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 82,
         "minute": 82,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 83,
         "minute": 83,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 84,
         "minute": 84,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 85,
         "minute": 85,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 86,
         "minute": 86,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 87,
         "minute": 87,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 88,
         "minute": 88,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 89,
         "minute": 89,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 90,
         "minute": 90,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 91,
         "minute": 91,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 92,
         "minute": 92,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 93,
         "minute": 93,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 94,
         "minute": 94,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 95,
         "minute": 95,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 96,
         "minute": 96,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 97,
         "minute": 97,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 98,
         "minute": 98,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 99,
         "minute": 99,
         "snapshotBytes": 122,
-        "patchBytes": 82
+        "patchBytes": 172
       },
       {
         "update": 100,
         "minute": 100,
         "snapshotBytes": 123,
-        "patchBytes": 83
+        "patchBytes": 173
       }
     ]
   },

@@ -23,6 +23,7 @@ Auto-Tabular:
 
 from __future__ import annotations
 import base64
+import binascii
 import hashlib
 import math
 from dataclasses import dataclass, field as dataclass_field
@@ -552,6 +553,70 @@ def unescape_tabular_cell(s: str) -> str:
 # JSON Bridge (Loose Mode)
 # ============================================================
 
+def _reserved_bytes(v: Any) -> GValue:
+    if not isinstance(v, str):
+        raise ValueError("$bytes payload must be a base64 string")
+    try:
+        return GValue.bytes_(base64.b64decode(v, validate=True))
+    except (ValueError, binascii.Error):
+        raise ValueError("$bytes payload is not valid base64") from None
+
+
+def _reserved_time(v: Any) -> GValue:
+    if not isinstance(v, str):
+        raise ValueError("$time payload must be an RFC 3339 string")
+    try:
+        return GValue.time(datetime.fromisoformat(v))
+    except ValueError:
+        raise ValueError(f"$time payload is not RFC 3339: {v!r}") from None
+
+
+def _reserved_id(v: Any) -> GValue:
+    if not (isinstance(v, list) and len(v) == 2 and all(isinstance(x, str) for x in v)):
+        raise ValueError("$id payload must be [prefix, value]")
+    return GValue.id(v[0], v[1])
+
+
+# SPEC-CANON.md §4: dtype name -> bits per element (cowrie SPEC-v1 §2.5 names).
+TENSOR_DTYPE_BITS = {
+    "float32": 32, "float16": 16, "bfloat16": 16, "int8": 8, "int16": 16, "int32": 32,
+    "int64": 64, "uint8": 8, "uint16": 16, "uint32": 32, "uint64": 64, "float64": 64,
+    "bool": 8, "qint4": 4, "qint2": 2, "qint3": 3, "ternary": 2, "binary": 1,
+}
+
+
+def _is_dim(d: Any) -> bool:
+    return isinstance(d, int) and not isinstance(d, bool) and d >= 0
+
+
+def _reserved_tensor(v: Any) -> GValue:
+    """SPEC-CANON.md §4. Validated, then kept as a map: there is no tensor GType
+    and the digest is the same either way. Validation is what stops an uppercase
+    or truncated sha256 from minting a second identity for the same bytes."""
+    ok = (
+        isinstance(v, dict) and set(v) == {"dtype", "shape", "sha256"}
+        and v["dtype"] in TENSOR_DTYPE_BITS
+        and isinstance(v["shape"], list) and all(_is_dim(d) for d in v["shape"])
+        and isinstance(v["sha256"], str) and len(v["sha256"]) == 64
+        and all(c in "0123456789abcdef" for c in v["sha256"])
+    )
+    if not ok:
+        raise ValueError(
+            "$tensor payload must be {dtype, shape, sha256}: known dtype, "
+            "non-negative int shape, 64 lowercase hex"
+        )
+    return GValue.map_(MapEntry("$tensor", GValue.map_(
+        MapEntry("dtype", GValue.str_(v["dtype"])),
+        MapEntry("shape", GValue.list_(*(GValue.int_(d) for d in v["shape"]))),
+        MapEntry("sha256", GValue.str_(v["sha256"])),
+    )))
+
+
+# SPEC-CANON.md §3-§4: single-key objects with these keys are typed values, not maps.
+_RESERVED = {"$bytes": _reserved_bytes, "$time": _reserved_time, "$id": _reserved_id,
+             "$tensor": _reserved_tensor}
+
+
 def from_json_loose(data: Any, _depth: int = 0) -> GValue:
     """Convert a Python/JSON value to GValue."""
     if _depth > MAX_JSON_DEPTH:
@@ -592,6 +657,10 @@ def from_json_loose(data: Any, _depth: int = 0) -> GValue:
     elif isinstance(data, dict):
         if len(data) > MAX_COLLECTION_LEN:
             raise ValueError(f"map too large ({len(data)} > {MAX_COLLECTION_LEN})")
+        if len(data) == 1:
+            (k, v), = data.items()
+            if k in _RESERVED:
+                return _RESERVED[k](v)
         entries = [MapEntry(str(k), from_json_loose(v, _depth + 1)) for k, v in data.items()]
         return GValue.map_(*entries)
     else:
@@ -648,27 +717,10 @@ def to_json_loose(v: GValue) -> Any:
 # Fingerprinting
 # ============================================================
 
-def fingerprint_loose(v: GValue, opts: Optional[LooseCanonOpts] = None) -> str:
-    """
-    Compute the SHA-256 hex digest of the NO-tabular canonical form of v.
-    Returns a 64-character lowercase hex string that is byte-identical
-    across Go, Python, and JS for semantically equal values. This is the
-    value-identity digest (content hashing/dedup) — by default (opts=None)
-    it always uses the no-tabular form so the result does not depend on
-    cross-language agreement about tabular triggering thresholds.
-
-    Disambiguation: this is NOT a patch's base fingerprint
-    (compute_base_fingerprint / verify_patch_base / the @base= token), which
-    is 16 hex chars of SHA-256 over the WITH-tabular canonical form. Different
-    length, different pre-hash bytes — do not compare or substitute one for
-    the other.
-    """
-    if opts is None:
-        opts = no_tabular_loose_canon_opts()  # Tabular affects fingerprint
-
-    canonical = canonicalize_loose(v, opts)
-    h = hashlib.sha256(canonical.encode('utf-8'))
-    return h.hexdigest()
+def fingerprint_loose(v: GValue) -> str:
+    """Deprecated name for glyph.fingerprint (sha256 of canon_json; SPEC-CANON.md §5)."""
+    from .canon import fingerprint  # local import: canon imports this module
+    return fingerprint(v)
 
 
 def equal_loose(a: GValue, b: GValue) -> bool:

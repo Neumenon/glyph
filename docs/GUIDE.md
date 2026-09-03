@@ -286,19 +286,18 @@ text = glyph.canonicalize_loose_no_tabular(glyph.from_json(data))
 
 ### Solution: Base Fingerprints
 
-Fingerprint the current state and embed it in the patch's `@base=` field. `apply_patch` verifies this fingerprint automatically, before applying any operation, and raises `PatchBaseMismatch` if the receiver's state has diverged — no manual pre-check needed:
+Fingerprint the current state and embed it in the patch's `base` field. `apply_patch` verifies this fingerprint automatically, before applying any operation, and raises `PatchBaseMismatch` if the receiver's state has diverged — no manual pre-check needed:
 
 ```python
+import json
 import glyph
 
 # Sender: compute the patch base fingerprint from current state
 state = {"current": "processing", "count": 5}
-base_fp = glyph.compute_base_fingerprint(glyph.from_json(state))
-# base_fp: "a1b2c3d4e5f6a7b8" (16 lowercase hex chars)
+base_fp = glyph.fingerprint(glyph.from_json(state))   # sha256(canon_json), 64 hex
 
-patch_text = f"""@patch @base={base_fp}
-= .count 6
-@end"""
+patch_text = json.dumps({"glyph_patch": 1, "base": base_fp,
+                         "ops": [{"op": "=", "path": ["count"], "value": 6}]})
 
 # Receiver: apply_patch checks the fingerprint before applying
 try:
@@ -308,7 +307,7 @@ except glyph.PatchBaseMismatch:
     request_snapshot()  # State diverged — request full doc frame instead
 ```
 
-Note: `compute_base_fingerprint` (16 hex chars, WITH-tabular canonical form) is a *different* digest from `fingerprint_loose` below (64 hex chars, NO-tabular form) — they are not interchangeable, and the GS1 stream protocol's own frame-level `base=sha256:...` header (enforced by the stream cursor, not by `apply_patch`) is a third, separately-computed hash again. See [GS1_SPEC.md](GS1_SPEC.md) for the streaming frame contract. Pass `verify_base=False` to `apply_patch` to opt out of the check (e.g. a caller that already verified the base out-of-band).
+Note: the patch base, `fingerprint`, and the GS1 frame-level `base=sha256:...` header (enforced by the stream cursor) are the same digest, `sha256(canon_json(value))` ([SPEC-CANON.md §5](../SPEC-CANON.md)). See [GS1_SPEC.md](GS1_SPEC.md) for the streaming frame contract. Pass `verify_base=False` to `apply_patch` to opt out of the check (e.g. a caller that already verified the base out-of-band).
 
 ### How Fingerprinting Works
 
@@ -316,7 +315,7 @@ SHA-256 hash of canonical representation:
 
 ```python
 state = {"user": "alice", "count": 42}
-canonical = "{count=42 user=alice}"  # Keys sorted
+canonical = '{"count":42,"user":"alice"}'  # canon_json: sorted keys, no whitespace
 hash = sha256(canonical)
 ```
 

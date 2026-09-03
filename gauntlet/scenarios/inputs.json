@@ -437,9 +437,16 @@
         "kickoff"
       ],
       "status": "live",
-      "var_check": true
+      "var_check": true,
+      "meta": {
+        "refs": {
+          "home": 1,
+          "away": 0
+        },
+        "odd key": 1
+      }
     },
-    "patch_text": "@patch @target=match:001\n= status finished\n~ minute +90\n+ events Goal\n- var_check\n@end",
+    "patch_text": "{\"glyph_patch\":1,\"ops\":[{\"op\":\"=\",\"path\":[\"status\"],\"value\":\"finished\"},{\"op\":\"~\",\"path\":[\"minute\"],\"value\":90},{\"op\":\"+\",\"path\":[\"events\"],\"value\":\"Goal\"},{\"op\":\"-\",\"path\":[\"var_check\"]},{\"op\":\"-\",\"path\":[\"meta\",\"odd key\"]},{\"op\":\"=\",\"path\":[\"meta\",\"refs\",\"away\"],\"value\":2},{\"op\":\"+\",\"path\":[\"meta\",\"refs\",\"extra\"],\"value\":3}],\"target\":\"match:001\"}",
     "expected": {
       "id": "match:001",
       "minute": 90,
@@ -449,7 +456,16 @@
         "kickoff",
         "Goal"
       ],
-      "status": "finished"
+      "status": "finished",
+      "meta": {
+        "refs": {
+          "home": 1,
+          "away": 2,
+          "extra": [
+            3
+          ]
+        }
+      }
     }
   },
   "S6_patch_base": {
@@ -460,8 +476,14 @@
       "score_away": 0,
       "last_goal": null
     },
-    "patch_op_lines": [
-      "= minute 90"
+    "patch_ops": [
+      {
+        "op": "=",
+        "path": [
+          "minute"
+        ],
+        "value": 90
+      }
     ],
     "target": "match:001",
     "stale_base": "deadbeefdeadbeef"
@@ -472,7 +494,7 @@
       {
         "kind": "doc",
         "seq": 0,
-        "payload": "{a=1 b=2}"
+        "payload": "{\"a\":1,\"b\":2}"
       },
       {
         "kind": "row",
@@ -482,7 +504,7 @@
       {
         "kind": "patch",
         "seq": 2,
-        "payload": "@patch\n= a 9\n@end"
+        "payload": "{\"glyph_patch\":1,\"ops\":[{\"op\":\"=\",\"path\":[\"a\"],\"value\":9}]}"
       },
       {
         "kind": "ui",
@@ -512,7 +534,7 @@
       {
         "kind": "doc",
         "seq": 8,
-        "payload": "done",
+        "payload": "\"done\"",
         "final": true
       }
     ],
@@ -520,7 +542,7 @@
       "x": 1,
       "y": 2
     },
-    "base_patch_payload": "@patch\n= x 2\n@end"
+    "base_patch_payload": "{\"glyph_patch\":1,\"ops\":[{\"op\":\"=\",\"path\":[\"x\"],\"value\":2}]}"
   },
   "S8_firewall": {
     "allowed_tool": "search",

@@ -19,7 +19,7 @@ Commands:
     Build key dictionary from a JSON value
 
   parse-patch <patch-string>
-    Parse a @patch block and return summary as JSON
+    Parse a patch (canonical JSON wire form, SPEC-CANON.md §7) and return summary as JSON
 
 Output: JSON with { success: bool, result?: string, error?: string }
 """

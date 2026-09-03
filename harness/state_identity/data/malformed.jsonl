@@ -1,0 +1,15 @@
+{"id": "trail_comma_obj", "error_class": "trailing-comma", "text": "{\"action\":\"search\",\"limit\":5,}", "expected": {"action": "search", "limit": 5}}
+{"id": "trail_comma_arr", "error_class": "trailing-comma", "text": "[1,2,3,]", "expected": [1, 2, 3]}
+{"id": "single_quotes", "error_class": "quote-style", "text": "{'action':'search','limit':5}", "expected": {"action": "search", "limit": 5}}
+{"id": "unquoted_keys", "error_class": "quote-style", "text": "{action:\"search\", limit:5}", "expected": {"action": "search", "limit": 5}}
+{"id": "colon_eq_mix", "error_class": "separator-mix", "text": "{\"action\"=\"search\", \"limit\":5}", "expected": {"action": "search", "limit": 5}}
+{"id": "eq_only", "error_class": "separator-mix", "text": "{action=search limit=5}", "expected": {"action": "search", "limit": 5}}
+{"id": "true_capital", "error_class": "literal-case", "text": "{\"verbose\":True,\"retry\":False}", "expected": {"verbose": true, "retry": false}}
+{"id": "none_literal", "error_class": "literal-case", "text": "{\"value\":None}", "expected": null}
+{"id": "js_undefined", "error_class": "literal-case", "text": "{\"value\":undefined}", "expected": null}
+{"id": "comment_line", "error_class": "comments", "text": "{\"action\":\"search\" // find stuff\n}", "expected": null}
+{"id": "misspelled_key", "error_class": "misspelled-key", "text": "{\"actoin\":\"search\",\"limit\":5}", "expected": null}
+{"id": "missing_close", "error_class": "structural", "text": "{\"action\":\"search\",\"limit\":5", "expected": null}
+{"id": "double_comma", "error_class": "structural", "text": "{\"a\":1,, \"b\":2}", "expected": null}
+{"id": "smart_quotes", "error_class": "quote-style", "text": "{\"action\":\\\"search\\\", \\\"limit\\\":5}", "expected": null}
+{"id": "loose_ok_plain", "error_class": "control-valid", "text": "{\"action\":\"search\",\"limit\":5}", "expected": {"action": "search", "limit": 5}}

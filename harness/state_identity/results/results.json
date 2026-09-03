@@ -1,0 +1,882 @@
+{
+  "_meta": {
+    "platform": "Linux-6.17.12-300.fc43.x86_64-x86_64-with-glibc2.42",
+    "python": "3.14.2",
+    "seed": 20260821,
+    "selftests": {
+      "go": "go/json-canonicalization selftest: 0/0 vectors pass",
+      "js": "js/canonicalize selftest: 6/6 vectors pass",
+      "python": "python/rfc8785 selftest: 6/6 vectors pass"
+    }
+  },
+  "part_a_divergence_hunt": {
+    "canon_json_idempotence": {
+      "failed": 0,
+      "ok": 951
+    },
+    "cross_language_by_subject": {
+      "canon_json/ALL": {
+        "agree": 317,
+        "disagree": 0,
+        "divergent_ids": [],
+        "errors": 1
+      },
+      "glyph/ALL": {
+        "agree": 317,
+        "disagree": 0,
+        "divergent_ids": [],
+        "errors": 1
+      },
+      "jcs/ALL": {
+        "agree": 223,
+        "disagree": 0,
+        "divergent_ids": [],
+        "errors": 95
+      },
+      "minified/ALL": {
+        "agree": 283,
+        "disagree": 34,
+        "divergent_ids": [
+          "f_pos_zero",
+          "f_neg_zero_raw",
+          "f_exp17",
+          "f_exp_neg7",
+          "f_max_double",
+          "f_trailing_zeros",
+          "i_2p53_plus1",
+          "i_2p53_plus1_neg",
+          "i_huge",
+          "i_boundary",
+          "u_nfc",
+          "u_nfd"
+        ],
+        "errors": 1
+      },
+      "naive/ALL": {
+        "agree": 119,
+        "disagree": 198,
+        "divergent_ids": [
+          "f_pos_zero",
+          "f_neg_zero_raw",
+          "f_exp17",
+          "f_exp_neg7",
+          "f_max_double",
+          "f_trailing_zeros",
+          "i_2p53_plus1",
+          "i_2p53_plus1_neg",
+          "i_huge",
+          "i_boundary",
+          "u_nfc",
+          "u_nfd"
+        ],
+        "errors": 1
+      }
+    },
+    "cross_language_by_subject_and_class": {
+      "canon_json/bigint": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 1
+      },
+      "canon_json/dupkeys": {
+        "agree": 2,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/float": {
+        "agree": 11,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/intedge": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/intfloat": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/keyorder": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/permutation": {
+        "agree": 3,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/random": {
+        "agree": 240,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/strings": {
+        "agree": 7,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/structure": {
+        "agree": 6,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/tensor": {
+        "agree": 8,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/unicode": {
+        "agree": 6,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/variant/agent_state": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/variant/config": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/variant/float_textual": {
+        "agree": 3,
+        "disagree": 0,
+        "errors": 0
+      },
+      "canon_json/variant/trace_rows": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/bigint": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 1
+      },
+      "glyph/dupkeys": {
+        "agree": 2,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/float": {
+        "agree": 11,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/intedge": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/intfloat": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/keyorder": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/permutation": {
+        "agree": 3,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/random": {
+        "agree": 240,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/strings": {
+        "agree": 7,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/structure": {
+        "agree": 6,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/tensor": {
+        "agree": 8,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/unicode": {
+        "agree": 6,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/variant/agent_state": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/variant/config": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/variant/float_textual": {
+        "agree": 3,
+        "disagree": 0,
+        "errors": 0
+      },
+      "glyph/variant/trace_rows": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "jcs/bigint": {
+        "agree": 0,
+        "disagree": 0,
+        "errors": 5
+      },
+      "jcs/dupkeys": {
+        "agree": 0,
+        "disagree": 0,
+        "errors": 2
+      },
+      "jcs/float": {
+        "agree": 0,
+        "disagree": 0,
+        "errors": 11
+      },
+      "jcs/intedge": {
+        "agree": 0,
+        "disagree": 0,
+        "errors": 4
+      },
+      "jcs/intfloat": {
+        "agree": 1,
+        "disagree": 0,
+        "errors": 3
+      },
+      "jcs/keyorder": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "jcs/permutation": {
+        "agree": 3,
+        "disagree": 0,
+        "errors": 0
+      },
+      "jcs/random": {
+        "agree": 177,
+        "disagree": 0,
+        "errors": 63
+      },
+      "jcs/strings": {
+        "agree": 6,
+        "disagree": 0,
+        "errors": 1
+      },
+      "jcs/structure": {
+        "agree": 6,
+        "disagree": 0,
+        "errors": 0
+      },
+      "jcs/tensor": {
+        "agree": 8,
+        "disagree": 0,
+        "errors": 0
+      },
+      "jcs/unicode": {
+        "agree": 0,
+        "disagree": 0,
+        "errors": 6
+      },
+      "jcs/variant/agent_state": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "jcs/variant/config": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "jcs/variant/float_textual": {
+        "agree": 3,
+        "disagree": 0,
+        "errors": 0
+      },
+      "jcs/variant/trace_rows": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "minified/bigint": {
+        "agree": 0,
+        "disagree": 4,
+        "errors": 1
+      },
+      "minified/dupkeys": {
+        "agree": 2,
+        "disagree": 0,
+        "errors": 0
+      },
+      "minified/float": {
+        "agree": 5,
+        "disagree": 6,
+        "errors": 0
+      },
+      "minified/intedge": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "minified/intfloat": {
+        "agree": 0,
+        "disagree": 4,
+        "errors": 0
+      },
+      "minified/keyorder": {
+        "agree": 0,
+        "disagree": 4,
+        "errors": 0
+      },
+      "minified/permutation": {
+        "agree": 3,
+        "disagree": 0,
+        "errors": 0
+      },
+      "minified/random": {
+        "agree": 240,
+        "disagree": 0,
+        "errors": 0
+      },
+      "minified/strings": {
+        "agree": 5,
+        "disagree": 2,
+        "errors": 0
+      },
+      "minified/structure": {
+        "agree": 5,
+        "disagree": 1,
+        "errors": 0
+      },
+      "minified/tensor": {
+        "agree": 8,
+        "disagree": 0,
+        "errors": 0
+      },
+      "minified/unicode": {
+        "agree": 0,
+        "disagree": 6,
+        "errors": 0
+      },
+      "minified/variant/agent_state": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "minified/variant/config": {
+        "agree": 5,
+        "disagree": 0,
+        "errors": 0
+      },
+      "minified/variant/float_textual": {
+        "agree": 1,
+        "disagree": 2,
+        "errors": 0
+      },
+      "minified/variant/trace_rows": {
+        "agree": 0,
+        "disagree": 5,
+        "errors": 0
+      },
+      "naive/bigint": {
+        "agree": 0,
+        "disagree": 4,
+        "errors": 1
+      },
+      "naive/dupkeys": {
+        "agree": 0,
+        "disagree": 2,
+        "errors": 0
+      },
+      "naive/float": {
+        "agree": 5,
+        "disagree": 6,
+        "errors": 0
+      },
+      "naive/intedge": {
+        "agree": 4,
+        "disagree": 0,
+        "errors": 0
+      },
+      "naive/intfloat": {
+        "agree": 0,
+        "disagree": 4,
+        "errors": 0
+      },
+      "naive/keyorder": {
+        "agree": 0,
+        "disagree": 4,
+        "errors": 0
+      },
+      "naive/permutation": {
+        "agree": 0,
+        "disagree": 3,
+        "errors": 0
+      },
+      "naive/random": {
+        "agree": 107,
+        "disagree": 133,
+        "errors": 0
+      },
+      "naive/strings": {
+        "agree": 1,
+        "disagree": 6,
+        "errors": 0
+      },
+      "naive/structure": {
+        "agree": 2,
+        "disagree": 4,
+        "errors": 0
+      },
+      "naive/tensor": {
+        "agree": 0,
+        "disagree": 8,
+        "errors": 0
+      },
+      "naive/unicode": {
+        "agree": 0,
+        "disagree": 6,
+        "errors": 0
+      },
+      "naive/variant/agent_state": {
+        "agree": 0,
+        "disagree": 5,
+        "errors": 0
+      },
+      "naive/variant/config": {
+        "agree": 0,
+        "disagree": 5,
+        "errors": 0
+      },
+      "naive/variant/float_textual": {
+        "agree": 0,
+        "disagree": 3,
+        "errors": 0
+      },
+      "naive/variant/trace_rows": {
+        "agree": 0,
+        "disagree": 5,
+        "errors": 0
+      }
+    },
+    "glyph_jcs_hash_equivalence": {
+      "diff": 10,
+      "same": 307
+    },
+    "variant_group_logical_invariance": {
+      "canon_json": {
+        "consistent": 12,
+        "inconsistent": 0
+      },
+      "glyph": {
+        "consistent": 12,
+        "inconsistent": 0
+      },
+      "jcs": {
+        "consistent": 12,
+        "inconsistent": 0
+      },
+      "minified": {
+        "consistent": 11,
+        "inconsistent": 1
+      },
+      "naive": {
+        "consistent": 11,
+        "inconsistent": 1
+      }
+    }
+  },
+  "s1_stale_patch_race": {
+    "error_samples": {
+      "ValueError: cannot delete field from list": 1,
+      "ValueError: cannot delete field from str": 1,
+      "ValueError: cannot set field on list": 1
+    },
+    "extra_hashes_for_baseline_recheck": 6000,
+    "notes": "baseline-unchecked cannot detect by construction; included as the realistic DIY floor",
+    "seed": 20260821,
+    "summary": {
+      "baseline-recheck": {
+        "detected": 3000,
+        "detection_rate": 1.0,
+        "error": 0,
+        "silent": 0,
+        "silent_corruption_rate": 0.0,
+        "total": 3000
+      },
+      "baseline-unchecked": {
+        "detected": 0,
+        "detection_rate": 0.0,
+        "error": 0,
+        "silent": 3000,
+        "silent_corruption_rate": 1.0,
+        "total": 3000
+      },
+      "glyph-default": {
+        "detected": 3000,
+        "detection_rate": 1.0,
+        "error": 0,
+        "silent": 0,
+        "silent_corruption_rate": 0.0,
+        "total": 3000
+      },
+      "glyph-noverify": {
+        "detected": 0,
+        "detection_rate": 0.0,
+        "error": 3,
+        "silent": 2997,
+        "silent_corruption_rate": 0.999,
+        "total": 3000
+      }
+    },
+    "trials": 3000
+  },
+  "s2_cross_lang_relay": {
+    "agreement_rate": 1.0,
+    "divergences": [],
+    "full_agreement": 43,
+    "note": "pipeline: py emit -> (go|js) parse+fingerprint; python reference included in comparison",
+    "relayed_values": 43
+  },
+  "s3_stream_desync": {
+    "note": "jsonl detects nothing by construction; jsonl+hash can only catch bitflips (content hashes) — drops/replays/swaps carry no signal without sequence numbers. GS1's seq+base checks cover all four.",
+    "results": {
+      "gs1-crc": {
+        "bitflip": {
+          "detection_rate": 1.0,
+          "median_detect_position": 6
+        },
+        "drop": {
+          "detection_rate": 1.0,
+          "median_detect_position": 4
+        },
+        "replay": {
+          "detection_rate": 1.0,
+          "median_detect_position": 8
+        },
+        "swap": {
+          "detection_rate": 1.0,
+          "median_detect_position": 6
+        }
+      },
+      "gs1-nocrc": {
+        "bitflip": {
+          "detection_rate": 1.0,
+          "median_detect_position": 7
+        },
+        "drop": {
+          "detection_rate": 1.0,
+          "median_detect_position": 4
+        },
+        "replay": {
+          "detection_rate": 1.0,
+          "median_detect_position": 8
+        },
+        "swap": {
+          "detection_rate": 1.0,
+          "median_detect_position": 6
+        }
+      },
+      "jsonl": {
+        "bitflip": {
+          "detection_rate": 0.0,
+          "median_detect_position": null
+        },
+        "drop": {
+          "detection_rate": 0.0,
+          "median_detect_position": null
+        },
+        "replay": {
+          "detection_rate": 0.0,
+          "median_detect_position": null
+        },
+        "swap": {
+          "detection_rate": 0.0,
+          "median_detect_position": null
+        }
+      },
+      "jsonl+hash": {
+        "bitflip": {
+          "detection_rate": 1.0,
+          "median_detect_position": 6
+        },
+        "drop": {
+          "detection_rate": 0.0,
+          "median_detect_position": null
+        },
+        "replay": {
+          "detection_rate": 0.0,
+          "median_detect_position": null
+        },
+        "swap": {
+          "detection_rate": 0.0,
+          "median_detect_position": null
+        }
+      }
+    },
+    "seed": 20260821,
+    "trials_per_fault": 30
+  },
+  "s4_cache_dedup": {
+    "design": "fill=minified form; probe=all forms incl. itself",
+    "results": {
+      "canon_json": {
+        "false_negative_misses": 0,
+        "hit_rate": 1.0,
+        "hits": 18,
+        "miss_detail": [],
+        "queries": 18,
+        "wasted_recompute_pct": 0.0
+      },
+      "glyph": {
+        "false_negative_misses": 0,
+        "hit_rate": 1.0,
+        "hits": 18,
+        "miss_detail": [],
+        "queries": 18,
+        "wasted_recompute_pct": 0.0
+      },
+      "jcs": {
+        "false_negative_misses": 0,
+        "hit_rate": 1.0,
+        "hits": 18,
+        "miss_detail": [],
+        "queries": 18,
+        "wasted_recompute_pct": 0.0
+      },
+      "minified": {
+        "false_negative_misses": 0,
+        "hit_rate": 1.0,
+        "hits": 18,
+        "miss_detail": [],
+        "queries": 18,
+        "wasted_recompute_pct": 0.0
+      },
+      "naive": {
+        "false_negative_misses": 0,
+        "hit_rate": 1.0,
+        "hits": 18,
+        "miss_detail": [],
+        "queries": 18,
+        "wasted_recompute_pct": 0.0
+      },
+      "rawtext": {
+        "false_negative_misses": 11,
+        "hit_rate": 0.3889,
+        "hits": 7,
+        "miss_detail": [
+          {
+            "group": "agent_state",
+            "missed_form": "pretty"
+          },
+          {
+            "group": "agent_state",
+            "missed_form": "reordered"
+          },
+          {
+            "group": "agent_state",
+            "missed_form": "spaced"
+          },
+          {
+            "group": "trace_rows",
+            "missed_form": "pretty"
+          },
+          {
+            "group": "trace_rows",
+            "missed_form": "reordered"
+          },
+          {
+            "group": "trace_rows",
+            "missed_form": "spaced"
+          },
+          {
+            "group": "config",
+            "missed_form": "pretty"
+          },
+          {
+            "group": "config",
+            "missed_form": "reordered"
+          },
+          {
+            "group": "config",
+            "missed_form": "spaced"
+          },
+          {
+            "group": "float_textual",
+            "missed_form": "exp"
+          },
+          {
+            "group": "float_textual",
+            "missed_form": "padded"
+          }
+        ],
+        "queries": 18,
+        "wasted_recompute_pct": 61.1
+      }
+    }
+  },
+  "s5_malformed_recovery": {
+    "fidelity_checked": 7,
+    "fidelity_ok": 6,
+    "glyph_loose_recovered": 11,
+    "note": "control-valid sample parses under both; expected=None marks samples where recovery semantics are ambiguous or the slip is judged unrecoverable-by-design",
+    "per_class": {
+      "comments": {
+        "loose": 0,
+        "strict": 0
+      },
+      "control-valid": {
+        "loose": 1,
+        "strict": 1
+      },
+      "literal-case": {
+        "loose": 3,
+        "strict": 0
+      },
+      "misspelled-key": {
+        "loose": 1,
+        "strict": 1
+      },
+      "quote-style": {
+        "loose": 1,
+        "strict": 0
+      },
+      "separator-mix": {
+        "loose": 2,
+        "strict": 0
+      },
+      "structural": {
+        "loose": 1,
+        "strict": 0
+      },
+      "trailing-comma": {
+        "loose": 2,
+        "strict": 0
+      }
+    },
+    "rows": [
+      {
+        "class": "trailing-comma",
+        "fidelity": true,
+        "id": "trail_comma_obj",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "trailing-comma",
+        "fidelity": true,
+        "id": "trail_comma_arr",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "quote-style",
+        "fidelity": null,
+        "id": "single_quotes",
+        "loose": false,
+        "strict": false
+      },
+      {
+        "class": "quote-style",
+        "fidelity": true,
+        "id": "unquoted_keys",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "separator-mix",
+        "fidelity": true,
+        "id": "colon_eq_mix",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "separator-mix",
+        "fidelity": true,
+        "id": "eq_only",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "literal-case",
+        "fidelity": false,
+        "id": "true_capital",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "literal-case",
+        "fidelity": null,
+        "id": "none_literal",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "literal-case",
+        "fidelity": null,
+        "id": "js_undefined",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "comments",
+        "fidelity": null,
+        "id": "comment_line",
+        "loose": false,
+        "strict": false
+      },
+      {
+        "class": "misspelled-key",
+        "fidelity": null,
+        "id": "misspelled_key",
+        "loose": true,
+        "strict": true
+      },
+      {
+        "class": "structural",
+        "fidelity": null,
+        "id": "missing_close",
+        "loose": false,
+        "strict": false
+      },
+      {
+        "class": "structural",
+        "fidelity": null,
+        "id": "double_comma",
+        "loose": true,
+        "strict": false
+      },
+      {
+        "class": "quote-style",
+        "fidelity": null,
+        "id": "smart_quotes",
+        "loose": false,
+        "strict": false
+      },
+      {
+        "class": "control-valid",
+        "fidelity": true,
+        "id": "loose_ok_plain",
+        "loose": true,
+        "strict": true
+      }
+    ],
+    "samples": 15,
+    "strict_json_recovered": 2
+  }
+}

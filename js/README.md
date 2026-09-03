@@ -53,6 +53,7 @@ const parsed = parsePacked(text, schema);
 - schema: `SchemaBuilder`, `t`
 - encoding: `emit`, `emitPacked`, `emitTabular`, `emitPatch`
 - parsing: `parsePacked`, `parseTabular`, `parsePatch`
+- patches: `emitPatch` / `parsePatch` speak the canonical-JSON wire form of [SPEC-CANON.md §7](../SPEC-CANON.md); `diff`, `applyPatch`, `verifyPatchBase`
 - streaming: `stream`, `StreamingValidator`, `ToolRegistry`
 
 ## Notes
