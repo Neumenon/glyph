@@ -49,7 +49,6 @@ from .parse import (
 from .loose import (
     canonicalize_loose,
     canonicalize_loose_no_tabular,
-    fingerprint_loose,
     equal_loose,
     # Options
     LooseCanonOpts,
@@ -131,7 +130,6 @@ __all__ = [
     "emit",
     "canonicalize_loose",
     "canonicalize_loose_no_tabular",
-    "fingerprint_loose",
     "equal_loose",
     # Canonical JSON identity
     "canon_json",

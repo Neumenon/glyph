@@ -17,7 +17,7 @@ import {
   parseJsonLoose, stringifyJsonLoose,
   parseTabularLoose, unescapeTabularCell,
   buildKeyDictFromValue, parseSchemaHeader, parseTabularLooseHeaderWithMeta,
-  fingerprintLoose,
+  fingerprint,
   Decimal128, DecimalError, decimal, isDecimalLiteral, parseDecimalLiteral,
   estimateTokens, compareTokens,
 } from './index';
@@ -833,12 +833,12 @@ describe('Loose coverage', () => {
     expect(result).toBe('_');
   });
 
-  test('fingerprintLoose', () => {
-    const fp = fingerprintLoose(g.int(42));
-    // SHA-256 hex of canonical no-tabular form "42"
+  test('fingerprint', () => {
+    const fp = fingerprint(g.int(42));
+    // SHA-256 hex of canonical JSON "42"
     expect(fp).toBe('73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049');
     expect(fp).toHaveLength(64);
-    expect(fingerprintLoose(g.int(42))).toBe(fingerprintLoose(g.int(42)));
+    expect(fingerprint(g.int(42))).toBe(fingerprint(g.int(42)));
   });
 
   test('tabular with allowMissing=false and mismatched keys', () => {

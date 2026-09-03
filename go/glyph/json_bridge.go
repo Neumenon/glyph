@@ -1,9 +1,11 @@
 package glyph
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"time"
@@ -59,6 +61,10 @@ func FromJSONLoose(data []byte) (*GValue, error) {
 	return FromJSONLooseWithOpts(data, DefaultBridgeOpts())
 }
 
+// bridgeMaxDepth mirrors py MAX_JSON_DEPTH / js MAX_JSON_DEPTH: nested JSON
+// deeper than this is rejected by the bridge (and therefore not canonical).
+const bridgeMaxDepth = 128
+
 // FromJSONLooseWithOpts converts JSON bytes to a GValue with options.
 //
 // Numbers are decoded with JSON-like (float64) semantics on purpose: a JSON
@@ -68,25 +74,43 @@ func FromJSONLoose(data []byte) (*GValue, error) {
 // parity gate enforces. Preserving full int64 precision is the typed Parse/Emit
 // path's job, not this JSON bridge. (The emit direction, ToJSONLoose, still
 // writes an Int GValue as a full integer literal — see toJSONValue.)
+//
+// Decoding uses json.Number (not float64) so the literal spelling survives:
+// "1" and "1.0" both canonicalize to the same bytes, but strict consumers
+// such as tensor shape dims can tell the fractional spelling apart and
+// reject it. Nesting deeper than bridgeMaxDepth (128) is rejected.
 func FromJSONLooseWithOpts(data []byte, opts BridgeOpts) (*GValue, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var v interface{}
-	if err := json.Unmarshal(data, &v); err != nil {
+	if err := dec.Decode(&v); err != nil {
 		return nil, fmt.Errorf("JSON parse error: %w", err)
 	}
-	return fromJSONValue(v, opts)
+	// json.Decoder stops after one top-level value; reject trailing data to
+	// keep json.Unmarshal parity ("{"a":1} x" must fail).
+	if _, err := dec.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("JSON parse error: trailing data after top-level value")
+		}
+		return nil, fmt.Errorf("JSON parse error: %w", err)
+	}
+	return fromJSONValue(v, opts, 0)
 }
 
 // FromJSONValueLoose converts a Go interface{} (from json.Unmarshal) to GValue.
 func FromJSONValueLoose(v interface{}) (*GValue, error) {
-	return fromJSONValue(v, DefaultBridgeOpts())
+	return fromJSONValue(v, DefaultBridgeOpts(), 0)
 }
 
 // FromJSONValueLooseWithOpts converts a Go interface{} to GValue with options.
 func FromJSONValueLooseWithOpts(v interface{}, opts BridgeOpts) (*GValue, error) {
-	return fromJSONValue(v, opts)
+	return fromJSONValue(v, opts, 0)
 }
 
-func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
+func fromJSONValue(v interface{}, opts BridgeOpts, depth int) (*GValue, error) {
+	if depth > bridgeMaxDepth {
+		return nil, fmt.Errorf("maximum nesting depth exceeded (%d)", bridgeMaxDepth)
+	}
 	if v == nil {
 		return Null(), nil
 	}
@@ -94,6 +118,9 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 	switch val := v.(type) {
 	case bool:
 		return Bool(val), nil
+
+	case json.Number:
+		return numberFromLiteral(val)
 
 	case float64:
 		// Check for special values (reject in Loose mode)
@@ -115,7 +142,7 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 	case []interface{}:
 		items := make([]*GValue, 0, len(val))
 		for i, elem := range val {
-			gv, err := fromJSONValue(elem, opts)
+			gv, err := fromJSONValue(elem, opts, depth+1)
 			if err != nil {
 				return nil, fmt.Errorf("array[%d]: %w", i, err)
 			}
@@ -127,14 +154,14 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 		// Check for extended markers
 		if opts.Extended {
 			if glyph, ok := val[glyphMarkerKey].(string); ok {
-				return fromGlyphMarker(glyph, val)
+				return fromGlyphMarker(glyph, val, depth)
 			}
 		}
 
 		// SPEC-CANON.md §3 reserved single-key objects decode to typed scalars.
 		if len(val) == 1 {
 			for k, elem := range val {
-				if gv, ok, err := fromReservedKey(k, elem); ok {
+				if gv, ok, err := fromReservedKey(k, elem, depth); ok {
 					return gv, err
 				}
 			}
@@ -143,7 +170,7 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 		// Regular object/map
 		entries := make([]MapEntry, 0, len(val))
 		for k, elem := range val {
-			gv, err := fromJSONValue(elem, opts)
+			gv, err := fromJSONValue(elem, opts, depth+1)
 			if err != nil {
 				return nil, fmt.Errorf("object[%q]: %w", k, err)
 			}
@@ -156,11 +183,36 @@ func fromJSONValue(v interface{}, opts BridgeOpts) (*GValue, error) {
 	}
 }
 
+// numberFromLiteral maps a json.Number to Int/Float with the same collapse
+// rule the float64 branch (and Python/JS) applies: an integer-valued literal
+// within ±(2^53-1) is an Int, everything else is a Float. The literal
+// spelling is preserved for strict consumers (tensorDim) to inspect.
+func numberFromLiteral(n json.Number) (*GValue, error) {
+	if i, err := strconv.ParseInt(n.String(), 10, 64); err == nil &&
+		i >= -canonMaxSafeInt && i <= canonMaxSafeInt {
+		return Int(i), nil
+	}
+	f, err := n.Float64()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON number %q", n.String())
+	}
+	if math.IsNaN(f) {
+		return nil, fmt.Errorf("NaN is not allowed in GLYPH-Loose")
+	}
+	if math.IsInf(f, 0) {
+		return nil, fmt.Errorf("Infinity is not allowed in GLYPH-Loose")
+	}
+	if f == math.Trunc(f) && f >= -9007199254740991 && f <= 9007199254740991 {
+		return Int(int64(f)), nil
+	}
+	return Float(f), nil
+}
+
 // fromReservedKey decodes {"$bytes":b64}, {"$time":rfc3339} and
 // {"$id":[prefix,value]} (SPEC-CANON.md §3) and {"$tensor":{…}} (§4). ok is
 // false when key is not
 // reserved. A malformed payload is an error, never a map fallback.
-func fromReservedKey(key string, v interface{}) (*GValue, bool, error) {
+func fromReservedKey(key string, v interface{}, depth int) (*GValue, bool, error) {
 	switch key {
 	case "$bytes":
 		s, isStr := v.(string)
@@ -194,13 +246,16 @@ func fromReservedKey(key string, v interface{}) (*GValue, bool, error) {
 		}
 		return ID(prefix, value), true, nil
 	case "$tensor":
-		gv, err := fromTensorPayload(v)
+		gv, err := fromTensorPayload(v, depth)
 		return gv, true, err
 	}
 	return nil, false, nil
 }
 
-func fromGlyphMarker(markerType string, obj map[string]interface{}) (*GValue, error) {
+func fromGlyphMarker(markerType string, obj map[string]interface{}, depth int) (*GValue, error) {
+	if depth > bridgeMaxDepth {
+		return nil, fmt.Errorf("maximum nesting depth exceeded (%d)", bridgeMaxDepth)
+	}
 	// Collision-safety: in extended mode the "$glyph" key is reserved, so a
 	// marker object must have EXACTLY the keys its type expects. An object that
 	// carries extra keys is not a well-formed marker and is rejected loudly
@@ -230,7 +285,7 @@ func fromGlyphMarker(markerType string, obj map[string]interface{}) (*GValue, er
 		if !ok {
 			return nil, fmt.Errorf("$glyph time marker missing value")
 		}
-		t, err := time.Parse(time.RFC3339, value)
+		t, err := time.Parse(time.RFC3339Nano, value)
 		if err != nil {
 			return nil, fmt.Errorf("invalid time: %w", err)
 		}
@@ -267,7 +322,7 @@ func fromGlyphMarker(markerType string, obj map[string]interface{}) (*GValue, er
 		if !ok {
 			return nil, fmt.Errorf("$glyph bytes marker missing base64")
 		}
-		data, err := base64.StdEncoding.DecodeString(b64)
+		data, err := base64.StdEncoding.Strict().DecodeString(b64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid base64: %w", err)
 		}
@@ -363,7 +418,7 @@ func toJSONValue(v *GValue, opts BridgeOpts) (interface{}, error) {
 		if opts.Extended {
 			return map[string]interface{}{
 				"$glyph": "time",
-				"value":  v.timeVal.Format(time.RFC3339),
+				"value":  v.timeVal.Format(time.RFC3339Nano),
 			}, nil
 		}
 		return v.timeVal.Format(time.RFC3339), nil

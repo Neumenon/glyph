@@ -9,7 +9,7 @@ The purpose is to give the current package names, import surfaces, and the core 
 | Language | Package | Primary Doc |
 |----------|---------|-------------|
 | Python | `glyph-py` | [../py/README.md](../py/README.md) |
-| Go | in-repo / source preview (module under `go/`; `go get` not yet a stable path) | [../go/README.md](../go/README.md) |
+| Go | `go get github.com/Neumenon/glyph/go` | [../go/README.md](../go/README.md) |
 | JavaScript / TypeScript | `cowrie-glyph` | [../js/README.md](../js/README.md) |
 | Rust | parked in `attic/` — emit-only, not published | [../attic/rust/glyph-codec/README.md](../attic/rust/glyph-codec/README.md) |
 | C | parked in `attic/c/` — emit-only, build from source | [../attic/c/glyph-codec/README.md](../attic/c/glyph-codec/README.md) |
@@ -27,7 +27,7 @@ Typical operations:
 - `from_json` / `fromJson` / `FromJSONLoose`
 - `to_json` / `toJson` / `ToJSONLoose`
 - `canonicalize_loose` / `canonicalizeLoose` / `CanonicalizeLoose`
-- Go/Python/JS value identity: `fingerprint_loose` / `fingerprintLoose` / `FingerprintLoose`
+- Go/Python/JS value identity: `fingerprint` / `fingerprint` / `Fingerprint` (SHA-256 of `canon_json(v)`, SPEC-CANON.md §5)
 
 Rust and C currently expose narrower hash helpers; use their language READMEs
 as the source of truth for those packages.
@@ -61,7 +61,7 @@ data = {"name": "Alice", "scores": [95, 87, 92]}
 
 text = glyph.json_to_glyph(data)
 value = glyph.parse(text)
-fingerprint = glyph.fingerprint_loose(glyph.from_json(data))
+fingerprint = glyph.fingerprint(glyph.from_json(data))
 ```
 
 ## Language Notes
@@ -70,7 +70,7 @@ fingerprint = glyph.fingerprint_loose(glyph.from_json(data))
 Use the `glyph` module after installing `glyph-py`. The Python README is the current source of truth for the shipped Python surface.
 
 ### Go
-**In-repo / source preview.** The Go codec is a full conformance implementation, but it is not yet a polished external module: the module lives under `go/`, and `go get github.com/Neumenon/glyph` / `go mod tidy` do not yet resolve cleanly (subdirectory layout plus an optional dev-only bridge that pulls an unpublished dependency). Use it from a checkout of this repo (`cd go && go build ./...`) until module packaging is stabilized.
+Install with `go get github.com/Neumenon/glyph/go`. The module (under `go/` in this repo) is dependency-free — standard library only — and builds with `go build ./...` from a checkout.
 
 Within the module, the import path is:
 

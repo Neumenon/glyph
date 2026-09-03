@@ -170,6 +170,12 @@ func (e *BaseMismatchError) Error() string {
 // ErrorCode is a machine-readable error identifier for use in kind=err
 // frame payloads and ResyncRequest reason fields.
 // These constants define the canonical set of GS1 error codes.
+//
+// The codes are informational/reserved: they name the errors a receiver may
+// report, but nothing in this package branches on them. In particular the
+// IsFinal/FlagFinal handling and the cursor's accept/reject decisions are
+// driven by the frame fields and the typed errors above, never by these
+// strings — renaming or adding a code changes no wire behavior.
 type ErrorCode = string
 
 const (

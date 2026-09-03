@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "py"))
 import glyph  # noqa: E402
 from glyph import (  # noqa: E402
     from_json_loose, to_json_loose, canonicalize_loose,
-    canonicalize_loose_no_tabular, parse_loose, fingerprint_loose,
+    canonicalize_loose_no_tabular, parse_loose, fingerprint,
     equal_loose, parse_patch, apply_patch, compute_base_fingerprint,
     verify_patch_base, PatchBaseMismatch, StreamingValidator, ToolRegistry,
 )
@@ -65,9 +65,9 @@ def s2(inp):
 def s3(inp):
     d = inp["S3_fingerprint"]
     return {
-        "fp_base": fingerprint_loose(from_json_loose(d["base"])),
-        "fp_equiv": fingerprint_loose(from_json_loose(d["equiv"])),
-        "fp_mutated": fingerprint_loose(from_json_loose(d["mutated"])),
+        "fp_base": fingerprint(from_json_loose(d["base"])),
+        "fp_equiv": fingerprint(from_json_loose(d["equiv"])),
+        "fp_mutated": fingerprint(from_json_loose(d["mutated"])),
     }
 
 
@@ -85,7 +85,7 @@ def s4(inp):
         "bytes_list": len(lst.encode()),
         "bytes_tab": len(tab.encode()),
         "roundtrip_ok": equal_loose(gv, recovered),
-        "fp_recovered": fingerprint_loose(recovered),
+        "fp_recovered": fingerprint(recovered),
     }
 
 
@@ -98,7 +98,7 @@ def s5(inp):
     result = apply_patch(base, patch)
     return {
         "result": to_json_loose(result),
-        "fp_result": fingerprint_loose(result),
+        "fp_result": fingerprint(result),
         "base_unchanged": to_json_loose(base) == before,
     }
 
@@ -107,11 +107,11 @@ def s5(inp):
 def s6(inp):
     d = inp["S6_patch_base"]
     state = from_json_loose(d["state"])
-    base16 = compute_base_fingerprint(state)
+    base64hex = compute_base_fingerprint(state)
     def wire(base):
         return json.dumps({"glyph_patch": 1, "ops": d["patch_ops"], "base": base, "target": d["target"]})
 
-    happy = parse_patch(wire(base16))
+    happy = parse_patch(wire(base64hex))
     try:
         verify_patch_base(state, happy)
         accept = True
@@ -125,7 +125,7 @@ def s6(inp):
     except PatchBaseMismatch:
         reject = True
 
-    return {"base16": base16, "verify_accept": accept, "verify_reject": reject}
+    return {"base64hex": base64hex, "verify_accept": accept, "verify_reject": reject}
 
 
 # ── S8 ──────────────────────────────────────────────────────────────────────

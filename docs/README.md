@@ -2,10 +2,11 @@
 
 This directory is the active documentation surface for the `glyph` codec.
 
-If you only read three files, read these:
+If you only read four files, read these:
 1. [../README.md](../README.md)
 2. [QUICKSTART.md](./QUICKSTART.md)
-3. [LOOSE_MODE_SPEC.md](./LOOSE_MODE_SPEC.md)
+3. [../SPEC-CANON.md](../SPEC-CANON.md)
+4. [LOOSE_MODE_SPEC.md](./LOOSE_MODE_SPEC.md)
 
 ## Active Docs
 
@@ -15,6 +16,7 @@ If you only read three files, read these:
 - [API_REFERENCE.md](./API_REFERENCE.md) — current package names and language doc links
 
 ### Authoritative Specs
+- [../SPEC-CANON.md](../SPEC-CANON.md) — canonical JSON profile: the one digest, `$tensor`, patch wire form
 - [LOOSE_MODE_SPEC.md](./LOOSE_MODE_SPEC.md) — loose mode and canonicalization
 - [GS1_SPEC.md](./GS1_SPEC.md) — multiplexed streaming protocol
 

@@ -1,5 +1,7 @@
 # GLYPH for Agents
 
+> **STALE (parked file — banner only):** install commands below are outdated — `go get github.com/Neumenon/glyph` is missing the `/go` suffix (use `go get github.com/Neumenon/glyph/go`) and `cargo add glyph-rs` is not a valid install path (Rust is parked in `attic/`, emit-only, not published). See the root README and language READMEs for current install paths.
+
 ## Testing Philosophy (VITAL)
 
 **`../../docs/TESTING_PHILOSOPHY.md`** is the canonical testing guide for all projects in this workspace. Read it before writing or reviewing tests.

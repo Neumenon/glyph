@@ -198,6 +198,8 @@ for token in llm_stream:
 - GLYPH streaming: Detect error as it appears, cancel immediately
 - **Savings: Tokens, time, reduced failure rate**
 
+> **Trust boundaries:** tolerant `Parse` recovers from unexpected tokens by substituting null by design (the substitution is recorded, not silent) — callers at a trust boundary must check the result's `Errors`/warnings or parse in strict (non-tolerant) mode.
+
 ---
 
 ## Auto-Tabular Mode
@@ -331,14 +333,14 @@ hash = sha256(canonical)
 state_value = glyph.from_json(current_state)
 checkpoint = {
     "state": current_state,
-    "hash": glyph.fingerprint_loose(state_value),
+    "hash": glyph.fingerprint(state_value),
     "timestamp": now()
 }
 save(checkpoint)
 
 # Resume later
 loaded = load_checkpoint()
-if glyph.fingerprint_loose(glyph.from_json(loaded["state"])) == loaded["hash"]:
+if glyph.fingerprint(glyph.from_json(loaded["state"])) == loaded["hash"]:
     resume(loaded["state"])  # Integrity verified
 else:
     error("Checkpoint corrupted")
@@ -371,7 +373,7 @@ assert restored == data  # Perfect round-trip
 llm_output = '{"action": "search"}'
 parsed = json.loads(llm_output)
 
-# Convert to GLYPH for storage (~40% fewer characters)
+# Convert to GLYPH for storage (shape-dependent savings — see §Token Efficiency; measure your shape with bench/token_savings.py)
 stored = glyph.json_to_glyph(parsed)
 save_to_db(stored)
 ```
@@ -443,7 +445,7 @@ conversation.append(
      "action": {"tool": "get_weather", "location": "NYC"}}
 )
 
-# Store efficiently (~40% fewer characters than JSON); auto-tabular kicks in for homogeneous lists
+# Store efficiently (savings are shape-dependent — repeated structures save most; auto-tabular kicks in for homogeneous lists; see bench/token_savings.py)
 stored = glyph.json_to_glyph(conversation)
 ```
 
@@ -456,7 +458,7 @@ embeddings = [
     for i in range(100)
 ]
 
-# Auto-tabular saves 50-70%
+# Auto-tabular saves 50-70% on uniform narrow rows; less on wide or varied rows — shape-dependent, measure with bench/token_savings.py
 glyph_text = glyph.json_to_glyph(embeddings)
 send_to_vector_db(glyph_text)
 ```
@@ -474,7 +476,7 @@ msg = {
 }
 
 text = glyph.json_to_glyph(msg)
-fp = glyph.fingerprint_loose(glyph.from_json(msg))
+fp = glyph.fingerprint(glyph.from_json(msg))
 
 bus.publish(text, fingerprint=fp)
 ```
@@ -502,7 +504,7 @@ bus.publish(text, fingerprint=fp)
 llm_output = generate(prompt)
 parsed = json.loads(llm_output)
 
-# Store as GLYPH (~40% fewer characters)
+# Store as GLYPH (shape-dependent savings — see §Token Efficiency; measure your shape with bench/token_savings.py)
 glyph_text = glyph.json_to_glyph(parsed)
 save_to_db(glyph_text)
 
@@ -566,7 +568,7 @@ Tools available (JSON format):
 
 # After
 system = """
-Tools available (GLYPH format - ~40% fewer characters):
+Tools available (GLYPH format — compact on repeated-shape definitions; savings are shape-dependent, see bench/token_savings.py):
 {name=search parameters={query=string}}
 """
 ```

@@ -161,6 +161,11 @@ def parse_patch(data: Union[str, bytes]) -> Patch:
         if key in doc:
             if not isinstance(doc[key], str):
                 raise ValueError(f"patch {key} must be a string")
+            if key == "target" and doc[key] and ":" not in doc[key]:
+                # Wire form is "prefix:value" (SPEC-CANON.md §7). The raw
+                # string is kept as-is (no API break) — only the shape is
+                # validated here.
+                raise ValueError(f"patch target must be \"prefix:value\": {doc[key]!r}")
             setattr(patch, attr, doc[key])
     patch.ops = [_parse_op(raw, i) for i, raw in enumerate(ops)]
     return patch
@@ -292,6 +297,8 @@ def _apply_op(v: GValue, op: PatchOp) -> GValue:
     """Apply a single operation."""
     if not op.path:
         if op.op == PatchOpKind.SET:
+            if op.value is None:
+                raise ValueError("cannot apply set with no value to root")
             return op.value
         raise ValueError(f"cannot apply {op.op.value} to root")
 
@@ -361,6 +368,13 @@ def _apply_to_parent(v: GValue, seg: PathSeg, op: PatchOp) -> GValue:
         if existing is None:
             _set_field(v, key, GValue.float_(op.delta))
         elif existing.type == GType.INT:
+            # Mirror Go ("delta %v would truncate when applied to int field"):
+            # a fractional delta on an int field is an error, never a silent
+            # int() truncation.
+            if not float(op.delta).is_integer():
+                raise ValueError(
+                    f"delta {op.delta} would truncate when applied to int field {key!r}"
+                )
             existing._int += int(op.delta)
         elif existing.type == GType.FLOAT:
             existing._float += op.delta

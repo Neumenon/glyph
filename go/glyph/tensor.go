@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 )
 
@@ -41,6 +40,15 @@ func TensorRef(dtype string, shape []int, data []byte) (*GValue, error) {
 	if want := (n*int64(bits) + 7) / 8; int64(len(data)) != want {
 		return nil, fmt.Errorf("tensor data is %d bytes; dtype %s shape %v packs to %d", len(data), dtype, shape, want)
 	}
+	// Sub-byte dtypes (qint4/qint2/qint3/ternary/binary) rarely fill the last
+	// byte: the unused high bits are padding and must be zero, otherwise two
+	// different byte strings would name two different tensors for the same
+	// elements.
+	if pad := (8 - (n*int64(bits))%8) % 8; pad > 0 && len(data) > 0 {
+		if last := data[len(data)-1]; last>>uint(8-pad) != 0 {
+			return nil, fmt.Errorf("tensor data has non-zero padding bits for dtype %s shape %v", dtype, shape)
+		}
+	}
 	sum := sha256.Sum256(data)
 	return tensorRefValue(dtype, dims, hex.EncodeToString(sum[:])), nil
 }
@@ -61,7 +69,10 @@ func tensorRefValue(dtype string, shape []int64, sha string) *GValue {
 // tensor GType and the digest is the same either way; validation is what
 // stops an uppercase or truncated sha256 from minting a second identity for
 // the same bytes.
-func fromTensorPayload(v interface{}) (*GValue, error) {
+func fromTensorPayload(v interface{}, depth int) (*GValue, error) {
+	if depth > bridgeMaxDepth {
+		return nil, errTensorPayload
+	}
 	obj, ok := v.(map[string]interface{})
 	if !ok || len(obj) != 3 {
 		return nil, errTensorPayload
@@ -86,10 +97,15 @@ func fromTensorPayload(v interface{}) (*GValue, error) {
 func tensorDim(x interface{}) (int64, bool) {
 	switch n := x.(type) {
 	case json.Number:
+		// Strict integer syntax only ("1", not "1.0" or "1e3"), capped at
+		// ±(2^53-1) so the dim stays inside the canonical int range.
 		i, err := strconv.ParseInt(string(n), 10, 64)
-		return i, err == nil && i >= 0
+		return i, err == nil && i >= 0 && i <= canonMaxSafeInt
 	case float64:
-		return int64(n), n >= 0 && n == math.Trunc(n) && n <= canonMaxSafeInt
+		// Never an integer: a float64 has lost the literal spelling, so
+		// "1" and "1.0" are indistinguishable here and both are rejected.
+		// Integer dims arrive as json.Number via FromJSONLoose (UseNumber).
+		return 0, false
 	}
 	return 0, false
 }

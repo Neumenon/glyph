@@ -29,7 +29,7 @@ at run time.
 | `naive` | `sha256(json.dumps(value, sort_keys=True))` per language's default serializer settings |
 | `minified` | same + compact separators / no whitespace |
 | `jcs` | RFC 8785 canonicalization + SHA-256 |
-| `glyph` | GLYPH-Loose canonical form + SHA-256 (`fingerprint_loose`) |
+| `glyph` | `fingerprint(v) = sha256(canon_json(v))` (SPEC-CANON.md §5) |
 
 Each subject runs in **Python 3.14, Go 1.25, Node 22** so cross-language
 agreement is a measured axis, not an assumption.

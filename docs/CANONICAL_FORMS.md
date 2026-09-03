@@ -46,13 +46,17 @@ wrappers (TypeName, tag syntax) are not preserved by design.
 Loose null has **two canonical emissions** depending on the options used — be precise about
 which one you are reproducing:
 
-- **Default (with-tabular)** — `DefaultLooseCanonOpts` / `CanonicalizeLoose` / `StateHashLoose`
+- **Default (with-tabular)** — `DefaultLooseCanonOpts` / `CanonicalizeLoose`
   use `NullStyleUnderscore` and emit `_` (underscore) (`loose.go:344,357`).
-- **Fingerprint / no-tabular** — `NoTabularLooseCanonOpts` / `FingerprintLoose` use
-  `NullStyleSymbol` and emit `∅`. **This is the form the published conformance corpus
-  (`go/glyph/testdata/loose_json/`) is generated in**, so a conforming implementation MUST
-  emit `∅` for null on the no-tabular/fingerprint path. All three reference impls (Go, Python,
-  JS) agree on `∅` here.
+- **No-tabular** — `NoTabularLooseCanonOpts` / `CanonicalizeLooseNoTabular` (used by
+  `EqualLoose`) use `NullStyleSymbol` and emit `∅`. **This is the form the published
+  conformance corpus (`go/glyph/testdata/loose_json/`) is generated in**, so a conforming
+  implementation MUST emit `∅` for null on the no-tabular path. All three reference impls
+  (Go, Python, JS) agree on `∅` here.
+
+Neither emission is hashed for value identity: `fingerprint(v)` is `sha256(canon_json(v))`
+(SPEC-CANON.md §5), a separate JSON byte form where null is always `null`. `StateHashLoose`
+computes that same digest, despite the name.
 
 `∅` is also always accepted as Loose *input* on parse (see `LOOSE_MODE_SPEC.md`, NullStyle table).
 
@@ -260,16 +264,16 @@ No silent coercion to a bare string, no fallback to treating the bytes as raw te
 Ground truth: `parse.go:204-212` documents and implements this contract
 (`"Invalid base64 is a hard error (never silently coerced to a string)"`).
 
-### 6.3 Current Bugs (to be fixed by W2)
+### 6.3 Past Bugs (resolved)
 
-The following emit paths produce the wrong bytes representation and MUST be corrected:
+The following emit paths once produced the wrong bytes representation (raw bytes quoted
+instead of base64). All three are RESOLVED in code — verified at `emit_packed.go:269`,
+`emit_tabular.go:202` (both route through `canonBytes`), and `canon.go:212` (uses
+`base64.StdEncoding.EncodeToString`):
 
-- `emit_packed.go:269-270`: emits `"b64" + quoteString(string(val.bytesVal))` where
-  `string(val.bytesVal)` is the raw byte string, not base64-encoded. The `quoteString` call
-  then produces an escaped raw-byte string, which the packed parser cannot decode as bytes.
-- `emit_tabular.go:202-203`: same bug as above for tabular cells.
-- `canon.go:219-220` (`canonValue`): emits `"b64" + quoteString(string(v.bytesVal))` — same
-  bug; raw bytes are not base64-encoded before quoting.
+- `emit_packed.go:269-270`: RESOLVED.
+- `emit_tabular.go:202-203`: RESOLVED (same bug as above).
+- `canon.go:219-220` (`canonValue`): RESOLVED.
 
 The correct implementation is shown in `loose.go:104-113` (`writeCanonBytes`) and in
 `emit.go:103-105` (Typed emitter), both of which correctly call
@@ -451,6 +455,10 @@ Input:  {"b":1,"a":2,"aa":3,"A":4,"_":5}
 Output: {"_"=5 A=4 a=2 aa=3 b=1}
 ```
 
+This quoted-form sort applies to the GLYPH text surfaces only. `canon_json`
+(SPEC-CANON.md §1) sorts by the UTF-8 bytes of the raw key string — keys are never bare
+there, so there is no quoted-vs-bare distinction to order by.
+
 ### 10.2 Duplicate Key Policy
 
 When a GLYPH map (or JSON object input) contains duplicate keys, the **last-wins** policy
@@ -592,9 +600,9 @@ This appendix consolidates the bugs cited in-line above for the W2 implementer.
 | `emit.go` | lines 148-153 | Float: `'f'/-1` never uses exponent; whole numbers correctly get `.0` but large values are long | Use `'g'/-1` (shortest) then append `.0` if no `.` or `e` present |
 | `canon.go` | lines 50-55 (`canonFloat`) | Float: whole numbers below `1e6` emitted without `.` (integer format) | Add `.0` for whole number floats |
 | `canon.go` | line 218 (`canonValue`) | Time: drops sub-second | Conditional nano format |
-| `canon.go` | lines 219-220 | Bytes: raw bytes `quoteString(string(bytesVal))` not base64 | Use `base64.StdEncoding.EncodeToString` |
-| `emit_packed.go` | lines 269-270 | Bytes: same raw-bytes bug | Same fix |
-| `emit_tabular.go` | lines 202-203 | Bytes: same raw-bytes bug | Same fix |
+| `canon.go` | lines 219-220 | Bytes: raw bytes `quoteString(string(bytesVal))` not base64 | RESOLVED — now emits `base64.StdEncoding.EncodeToString` (verified) |
+| `emit_packed.go` | lines 269-270 | Bytes: same raw-bytes bug | RESOLVED — now routes through `canonBytes` (verified) |
+| `emit_tabular.go` | lines 202-203 | Bytes: same raw-bytes bug | RESOLVED — now routes through `canonBytes` (verified) |
 | `emit_packed.go` | line 266 | Time: drops sub-second | Conditional nano format |
 | `emit_tabular.go` | line 199 | Time: drops sub-second | Conditional nano format |
 | `loose.go` | line 475 (`writeCanonLoose`) | Float: bare `'g'` no decimal-point guard for whole floats | Add `.0` guard |

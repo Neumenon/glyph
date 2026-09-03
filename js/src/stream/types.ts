@@ -51,14 +51,16 @@ export const VALUE_KINDS: Record<number, FrameKind> = {
 
 /** Parse kind from string or number */
 export function parseKind(s: string): FrameKind | number {
-  if (s in KIND_VALUES) {
+  if (Object.prototype.hasOwnProperty.call(KIND_VALUES, s)) {
     return s as FrameKind;
   }
   const n = parseInt(s, 10);
   if (!isNaN(n) && n >= 0 && n <= 255) {
     return VALUE_KINDS[n] ?? n;
   }
-  throw new Error(`Invalid kind: ${s}`);
+  // ParseError, not a generic Error: callers (gs1t Reader) only catch GS1
+  // error types, and Go/Py report unknown kinds as parse errors too.
+  throw new ParseError(`invalid kind: ${s}`);
 }
 
 /** Get kind string for output */
@@ -126,8 +128,15 @@ export class CRCMismatchError extends Error {
 
 /** Base hash mismatch error */
 export class BaseMismatchError extends Error {
-  constructor() {
+  /** Base hash the frame carried (what the sender based its patch on). */
+  readonly expected?: Uint8Array;
+  /** Receiver's current state hash. */
+  readonly got?: Uint8Array;
+
+  constructor(expected?: Uint8Array, got?: Uint8Array) {
     super('gs1: base hash mismatch');
     this.name = 'BaseMismatchError';
+    this.expected = expected;
+    this.got = got;
   }
 }

@@ -98,6 +98,12 @@ func opGV(op *PatchOp) (*GValue, error) {
 			return nil, fmt.Errorf("glyph: patch path has unresolved FID #%d; call ResolveFIDs first", s.FID)
 		}
 	}
+	// Index rides only on "+" (parse rejects it elsewhere): a set index on
+	// any other op is a caller bug, fail loudly instead of dropping it.
+	// Index 0/-1 are the Go zero value / parsed default, i.e. "unset".
+	if op.Op != OpAppend && op.Index != -1 && op.Index != 0 {
+		return nil, fmt.Errorf("glyph: index %d is only allowed on append (+), not %q", op.Index, string(op.Op))
+	}
 	entries := []MapEntry{
 		{Key: "op", Value: Str(string(op.Op))},
 		{Key: "path", Value: pathGV(op.Path)},
@@ -115,13 +121,21 @@ func opGV(op *PatchOp) (*GValue, error) {
 			v = Null()
 		}
 		entries = append(entries, MapEntry{Key: "value", Value: v})
-		if op.Op == OpAppend && op.Index >= 0 {
+		if op.Op == OpAppend && op.Index >= 0 && !endsInListIdx(op.Path) {
 			entries = append(entries, MapEntry{Key: "index", Value: Int(int64(op.Index))})
 		}
 	default:
 		return nil, fmt.Errorf("glyph: unknown patch op %q", string(op.Op))
 	}
 	return Map(entries...), nil
+}
+
+// endsInListIdx reports whether a patch path addresses a list position
+// directly (e.g. items[0]). For "+" ops the position already lives in the
+// path bytes, so emitting {"index":N} alongside would contradict them;
+// the emitter omits index in that case (apply ignores op.Index there too).
+func endsInListIdx(path []PathSeg) bool {
+	return len(path) > 0 && path[len(path)-1].Kind == PathSegListIdx
 }
 
 // ParsePatch decodes the SPEC-CANON.md §7 wire form. It accepts any JSON

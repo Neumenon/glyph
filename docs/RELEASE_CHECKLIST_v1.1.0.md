@@ -251,11 +251,11 @@ scratch, with no reference to this local checkout:
 ```bash
 # Python
 python -m venv /tmp/glyph-smoke-py && /tmp/glyph-smoke-py/bin/pip install glyph-py==1.1.0
-/tmp/glyph-smoke-py/bin/python -c "import glyph; print(glyph.__version__); print(glyph.fingerprint_loose(glyph.parse('{a=1 b=2}')))"
+/tmp/glyph-smoke-py/bin/python -c "import glyph; print(glyph.__version__); print(glyph.fingerprint(glyph.parse('{a=1 b=2}')))"
 
 # JS
 mkdir -p /tmp/glyph-smoke-js && cd /tmp/glyph-smoke-js && npm init -y >/dev/null && npm install cowrie-glyph@1.1.0
-node -e "const {fingerprintLoose, parseLoose} = require('cowrie-glyph'); console.log(fingerprintLoose(parseLoose('{a=1 b=2}')))"
+node -e "const {fingerprint, parseLoose} = require('cowrie-glyph'); console.log(fingerprint(parseLoose('{a=1 b=2}')))"
 
 # Go (already covered by Step 6, repeated here for the fingerprint check)
 ```

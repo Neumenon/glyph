@@ -92,10 +92,16 @@ export class StreamCursor {
 
     checkPayload(frame);
 
-    // For patches with base, verify state hash
-    if (frame.kind === 'patch' && frame.base && state.stateHash) {
+    // For patches with base, verify state hash. Strict: a patch carrying
+    // base with NO prior state is an error, not a silent skip — accepting it
+    // would apply a patch against an unknown base (mirrors Go/Py
+    // StreamCursor; the lenient FrameHandler below still skips it).
+    if (frame.kind === 'patch' && frame.base) {
+      if (!state.stateHash) {
+        throw new Error(`cannot verify base: no state hash for SID ${frame.sid}`);
+      }
       if (!verifyBase(state.stateHash, frame.base)) {
-        throw new BaseMismatchError();
+        throw new BaseMismatchError(frame.base, state.stateHash);
       }
     }
 
@@ -210,14 +216,16 @@ export class FrameHandler {
 
     checkPayload(frame);
 
-    // Check base for patches
+    // Check base for patches (lenient: no prior state means "not yet
+    // synced" — skip the check, mirroring Go/Py FrameHandler; the strict
+    // StreamCursor above throws in that case instead).
     if (frame.kind === 'patch' && frame.base && state.stateHash) {
       if (!verifyBase(state.stateHash, frame.base)) {
         if (this.callbacks.onBaseMismatch) {
           const allow = this.callbacks.onBaseMismatch(frame.sid, frame);
           if (!allow) return;
         } else {
-          throw new BaseMismatchError();
+          throw new BaseMismatchError(frame.base, state.stateHash);
         }
       }
     }

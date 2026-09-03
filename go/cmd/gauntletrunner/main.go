@@ -271,7 +271,7 @@ func main() {
 			return nil, err
 		}
 		return map[string]interface{}{
-			"base16":        baseFP,
+			"base64hex":     baseFP,
 			"verify_accept": glyph.VerifyPatchBase(state, happy) == nil,
 			"verify_reject": glyph.VerifyPatchBase(state, stale) != nil,
 		}, nil

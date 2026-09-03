@@ -6,9 +6,8 @@
 > (see `conformance/run_conformance.py` and the golden corpus under
 > `go/glyph/testdata/loose_json`). Its output is not checked against
 > Go/Python/JS, and — as documented below — `glyph_hash_loose` here is not
-> byte-comparable with those languages' `fingerprint_loose` /
-> `FingerprintLoose`. Do not rely on this port for cross-language value
-> identity.
+> byte-comparable with those languages' `fingerprint`. Do not rely on this
+> port for cross-language value identity.
 
 Token-efficient serialization for AI agents.
 
@@ -120,12 +119,13 @@ bool glyph_equal_loose(a, b);                   // Semantic equality
 > **not** compute a hash. It is a plain alias for `glyph_canonicalize_loose`
 > and returns the canonical GLYPH string itself. The only function here that
 > actually hashes is `glyph_hash_loose`, and even that is **not**
-> interchangeable with Go/Python/JS `fingerprint_loose` / `FingerprintLoose`:
-> those hash the *no-tabular* canonical form and return the full
-> 64-hex-character SHA-256 digest, while this C port hashes the
-> *with-tabular* canonical form and truncates to 16 hex characters (8 bytes).
-> Do not compare, persist, or transmit `glyph_hash_loose` output expecting it
-> to match another language's fingerprint of the same value.
+> interchangeable with Go/Python/JS `fingerprint`: those hash `canon_json(v)`
+> (SPEC-CANON.md §5, a plain JSON byte form, not GLYPH-Loose text) and return
+> the full 64-hex-character SHA-256 digest, while this C port hashes the
+> *with-tabular* GLYPH-Loose canonical form and truncates to 16 hex
+> characters (8 bytes). Do not compare, persist, or transmit
+> `glyph_hash_loose` output expecting it to match another language's
+> fingerprint of the same value.
 
 ### JSON Bridge
 

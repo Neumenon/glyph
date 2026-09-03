@@ -21,7 +21,7 @@ from glyph import (
     from_json_loose, to_json_loose,
     canonicalize_loose, canonicalize_loose_no_tabular,
     parse_json_loose, stringify_json_loose,
-    equal_loose, fingerprint_loose,
+    equal_loose, fingerprint,
     LooseCanonOpts, NullStyle,
 )
 
@@ -334,7 +334,7 @@ def run_equality_tests():
         gv2 = from_json_loose(val2)
 
         are_equal = equal_loose(gv1, gv2)
-        fp_equal = fingerprint_loose(gv1) == fingerprint_loose(gv2)
+        fp_equal = fingerprint(gv1) == fingerprint(gv2)
 
         # equal_loose and fingerprint should agree
         consistent = are_equal == fp_equal

@@ -1,8 +1,8 @@
 # GLYPH Stream v1 (GS1) Specification
 
-**Spec ID:** `gs1-1.0.0`  
-**Date:** 2026-01-13  
-**Status:** Frozen (v1.0)
+**Spec ID:** `gs1-1.1.0`  
+**Date:** 2026-09-03  
+**Status:** Normative (v1.1)
 
 > **Implementation scope:** GS1 framing is implemented in Go, Python, and JavaScript / TypeScript. Rust and C do not implement GS1.
 
@@ -80,7 +80,7 @@ Inside `{}` is a space-separated or comma-separated list of `key=value` pairs.
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `v` | uint8 | Protocol version (MUST be 1; enforced in Go and JS — frames with v ≠ 1 are rejected) |
+| `v` | uint8 | Protocol version (MUST be 1; enforced in Go, Python, and JS — frames with v ≠ 1 are rejected) |
 | `sid` | uint64 | Stream identifier |
 | `seq` | uint64 | Sequence number (per-SID, monotonic) |
 | `kind` | string/uint8 | Frame kind (name or number) |
@@ -94,7 +94,18 @@ Inside `{}` is a space-separated or comma-separated list of `key=value` pairs.
 | `base` | string | State hash: `sha256:<64hex>` |
 | `final` | bool | End-of-stream marker for this SID |
 | `flags` | uint8 | Bitmask (hex) |
-| `hashmode` | string | Canonicalization mode used for `base` hash: `loose` (default) or `strict`. Absent = `loose`. A receiver MUST reject a frame whose `hashmode` it does not support. |
+
+> **Breaking-spec note (v1.1):** the `hashmode` header key specified in v1.0.1 is REMOVED —
+> no implementation ever implemented it. Senders MUST NOT send it; receivers ignore it if
+> present. `base` is always `sha256(canon_json(stateDoc))` (SPEC-CANON.md §5); there is no
+> mode negotiation.
+
+Senders MUST include all five required keys (`v/sid/seq/kind/len`). Receivers default
+absent keys (`v`→1, `sid`/`seq`/`len`→0, `kind`→doc); a present-but-malformed required
+value is an error. Trailing data after the closing `}` is ignored by the Go and Python
+readers but rejected by the JS reader (`trailing data after header`). A malformed `flags`
+value is ignored (kept 0) by Go and Python but throws in JS. Unknown keys are silently
+ignored by all three readers (forward-compatibility).
 
 ### 3.3 Payload Reading Rule (Critical)
 
@@ -117,6 +128,9 @@ Receiver **MUST NOT** parse payload boundaries using delimiters.
 ---
 
 ## 4. GS1-B (Binary Framing) - Reserved
+
+No GS1-B implementation exists in Go, Python, or JS. The binary header layout below is a
+placeholder for future work, not a conformance target.
 
 GS1-B is reserved for future implementation. Binary header layout:
 
@@ -159,7 +173,8 @@ When `base` is present:
 
 - Algorithm: **SHA-256**
 - Input: `canon_json(stateDoc)` ([SPEC-CANON.md §5](../SPEC-CANON.md))
-- Format in GS1-T: `base=sha256:<64 lowercase hex digits>`
+- Format in GS1-T: `base=sha256:<64 lowercase hex digits>` — exactly 64 hex characters,
+  the value fingerprint, with no mode negotiation (v1.0.1 `hashmode` removed, see §3.2)
 
 ### 6.1 State Hash Definition
 
@@ -171,19 +186,14 @@ This is the same digest as the value fingerprint and the patch base fingerprint.
 Because `doc` and `patch` payloads are rejected unless they are canonical JSON,
 `sha256(payload)` of a `doc` frame equals the state hash of the value it carries.
 
-The default canonicalization mode is `loose` (`CanonicalizeLoose`).
-Senders using strict mode MUST include `hashmode=strict` in the frame header.
-Receivers that do not implement strict mode MUST reject frames bearing
-`hashmode=strict` with a `BASE_MISMATCH` error.
-
-If `hashmode` is absent, `loose` is assumed. In Go, the source-of-truth
+In Go, the source-of-truth
 helper for loose mode is `stream.StateHashLoose`, which hashes
 `glyph.CanonJSON(stateDoc)`.
 
 > **Implementation note:** `stream.StateHashEmit` (which hashes `Emit()` output)
 > is not part of this specification and MUST NOT be used to compute the `base`
-> field. Its output is not reproducible across formatting changes and is
-> incompatible with both `loose` and `strict` modes defined here.
+> field. Its output is not reproducible across formatting changes and does not
+> equal `sha256(canon_json(stateDoc))`.
 
 ### 6.2 Patch Application Rule
 
@@ -206,6 +216,9 @@ For each `sid`:
 - The initial `seq` value is **0**. A frame with `seq=0` is the stream-open
   frame; receivers treat it as the first frame for that SID and reset
   per-SID ordering state.
+- The first frame for a SID is accepted with any `seq` value, and a repeated `seq=0`
+  while no higher `seq` has been seen is accepted idempotently (it does not advance
+  ordering state). This is a clarification only; behavior is unchanged.
 - A frame with `seq=0` received after a higher `seq` has already been seen
   for that SID is a protocol error and **MUST** be rejected.
 - Receivers **SHOULD** detect gaps and handle appropriately.
@@ -217,6 +230,10 @@ For each `sid`:
 > `OnSeqGap` callback and continues if the callback returns nil, and
 > silently discards duplicates. Both behaviours are conformant with this
 > spec; choose based on application requirements.
+>
+> Sequence validation precedes the SPEC-CANON.md §5 canonical-payload check in both modes,
+> so a duplicate frame is discarded (lenient) or rejected (strict) without inspecting its
+> payload. This ordering is intentional idempotency, not a validation bypass.
 
 ### 7.2 ACK Frames
 
@@ -227,11 +244,14 @@ For each `sid`:
 
 ### 7.3 FINAL Flag
 
-- In **GS1-T**, end-of-stream is indicated solely by the `final=true` key
-  in the header.
-- The `FlagFinal` bit (`0x04`) in the `flags` field is reserved for
-  **GS1-B** (binary) framing only and MUST NOT be used as the sole
-  end-of-stream signal in GS1-T.
+- In **GS1-T**, end-of-stream is indicated by the `final=true` header key. Senders MUST
+  emit it; no writer emits a `flags=` key (the Go writer normalizes an in-memory
+  `FlagFinal (0x04)` bit to `final=true` on the wire).
+- The `flags` `0x04` (FINAL) bit is honored as end-of-stream on receipt: Go
+  (`Frame.IsFinal`) and Python (`Frame.is_final`) cursors treat a frame with the bit set
+  as final even without the key; the JS reader preserves the parsed `flags` value on the
+  frame while its cursor consults `frame.final`. The bit alone is not a portable signal —
+  senders MUST NOT rely on it without the key.
 - Receiver may clean up per-SID state after receiving a final frame.
 
 ---
@@ -285,7 +305,9 @@ The following `code` values are defined for `Error{...}` payloads and
 ### 8.6 Resync Request
 
 When a receiver detects a base mismatch or sequence gap, it SHOULD send a
-resync request using `kind=ui` with a `ResyncRequest{...}` payload:
+resync request using `kind=ui` with a `ResyncRequest{...}` payload. Resync is manual:
+libraries surface gap/mismatch signals (`NeedsResync`, `OnSeqGap`/`OnBaseMismatch`
+callbacks) and composing and sending the request frame is caller code.
 
 ```glyph
 ResyncRequest{sid=1 seq=42 want="sha256:..." reason="BASE_MISMATCH"}
@@ -305,7 +327,7 @@ Fields:
 - `base` hash prevents accidental state drift but is not authentication.
 - Implementations **MUST** enforce maximum `len` (recommended: 64 MiB).
 - Implementations **MUST** enforce a maximum header line length
-  (recommended: 64 KiB). Headers exceeding this limit MUST be rejected.
+  (recommended default: 64 KiB). Headers exceeding this limit MUST be rejected.
 - Use TLS for transport security; GS1 does not provide encryption.
 
 ---
@@ -316,11 +338,11 @@ A GS1 implementation is conformant if it:
 
 1. Correctly reads/writes GS1-T frames per this spec
 2. Enforces `len` limits (recommended max: 64 MiB)
-3. Enforces header line length limits (recommended max: 64 KiB)
+3. Enforces header line length limits (recommended default: 64 KiB)
 4. Verifies CRC-32 when present
-5. Parses `base` hash correctly and uses `loose` mode by default
-6. Rejects `hashmode=strict` if strict mode is not implemented
-7. Accepts `seq=0` as the stream-open frame and rejects it after a higher seq
+5. Parses `base` as exactly 64 lowercase hex of `sha256(canon_json)` (§6); no mode negotiation
+6. Ignores unknown header keys, including the removed v1.0.1 `hashmode` key
+7. Accepts `seq=0` as the stream-open frame and rejects it after a higher seq (repeat `seq=0` before any higher seq is idempotent)
 8. Exposes `(sid, seq, kind, payloadBytes, base?, crc?)` to caller
 9. Does not require GLYPH parser changes
 10. Does not treat GS1 headers as part of GLYPH canonicalization
@@ -362,6 +384,7 @@ Payload: (empty)
 |---------|------|---------|
 | 1.0.0 | 2026-01-13 | Initial frozen spec (GS1-T only) |
 | 1.0.1 | 2026-06-20 | Document seq=0 sentinel (§7.1); add hashmode optional header (§3.2, §6.1); add error-code registry (§8.5); add ResyncRequest schema (§8.6); fix Error@ struct name in §8.2; clarify FlagFinal scope (§7.3); document header size limit (§9); update conformance checklist (§10) |
+| 1.1.0 | 2026-09-03 | BREAKING SPEC: remove `hashmode` (§3.2, §6.1, §10 — never implemented; receivers ignore the key); `base` is unconditionally `sha256(canon_json)`; describe actual `FlagFinal 0x04` behavior (§7.3); document receiver header defaults, JS trailing-data rejection, and per-language `flags` handling (§3.2); clarify seq=0 first-frame/idempotency and duplicate-skip-before-canonical-check ordering (§7.1); mark GS1-B as having no implementation (§4); clarify resync is manual caller code (§8.6) |
 
 ---
 

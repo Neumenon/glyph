@@ -45,6 +45,10 @@ export async function stateHashLoose(value: GValue): Promise<Uint8Array> {
 
 /**
  * Compute state hash synchronously (Node.js only).
+ *
+ * Despite the "Loose" name this hashes canon_json, not loose text — the name
+ * is kept for cross-language API parity (Go StateHashLoose, Python
+ * state_hash_loose all hash the one canonical JSON digest, SPEC-CANON.md §5).
  */
 export function stateHashLooseSync(value: GValue): Uint8Array {
   const canonical = canonJson(value);

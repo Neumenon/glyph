@@ -700,11 +700,13 @@ describe('Cross-language compatibility documentation', () => {
     expect(true).toBe(true); // Documentation test
   });
 
-  test('[DOC] fingerprintLoose uses crypto (Node-only, not browser-safe)', () => {
-    // The browser bundle (glyph.bundle.js) was built with --external:crypto.
-    // fingerprintLoose() calls require('crypto') which works in Node but not browser.
-    // All other loose-mode functions (canonicalizeLoose, fromJsonLoose, etc.) are safe.
-    // Downstream browser pages must avoid fingerprintLoose or provide a crypto shim.
+  test('[DOC] fingerprint uses crypto (Node-only, not browser-safe)', () => {
+    // fingerprint() calls require('crypto') which works in Node but not browser.
+    // The old browser bundle (gauntlet/web/glyph.bundle.js) is deleted — no
+    // browser build ships, so browser callers should hash canonJson(v) with
+    // crypto.subtle instead (see stream/hash sha256). All other loose-mode
+    // functions (canonicalizeLoose, fromJsonLoose, etc.) are safe.
+    // Byte counts and savings numbers in this file come from gauntlet-data.json.
     expect(true).toBe(true); // Documentation test
   });
 });

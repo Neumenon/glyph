@@ -1,6 +1,6 @@
 # GLYPH Canonical JSON Profile (identity substrate)
 
-**Spec ID:** `glyph-canon-json-1.0.0` · **Date:** 2026-09-02 · **Status:** Normative for identity.
+**Spec ID:** `glyph-canon-json-1.1.0` · **Date:** 2026-09-03 · **Status:** Normative for identity.
 
 This document defines the **only** byte form that GLYPH hashes. `fingerprint(v)`, the patch
 `base`, and the GS1 per-frame state hash are all `SHA-256(canon_json(v))`. There is one digest.
@@ -16,13 +16,16 @@ round-trip the value model; identity is computed on the value, not on the render
 1. **No whitespace** anywhere outside string literals.
 2. **Root** may be any value (object, array, string, number, `true`, `false`, `null`).
 3. **Object keys** are unique and sorted by the **UTF-8 bytes of the raw key string**
-   (equivalently: by Unicode code point). Duplicate keys in the value model are an error.
+   (for valid Unicode, equivalently by code point). Duplicate keys in the value model are an error.
+   Lone surrogates (`\uD800`–`\uDFFF` without a pair) are not valid Unicode and have no
+   canonical form: encoders never emit them.
 4. **Strings** (keys and values) are always quoted. Escaping is exactly RFC 8785 §3.2.2.2:
    `\"` `\\` `\b` `\f` `\n` `\r` `\t`; any other code point < U+0020 as `\u00xx` with
    lowercase hex; every other code point emitted as raw UTF-8 (no `\uXXXX` for non-ASCII,
    no HTML escaping, no `/` escaping). No Unicode normalization is applied.
 5. **Numbers** (§2).
-6. **Depth** (nesting of arrays/objects) greater than 1000 is an error.
+6. **Depth** (nesting of arrays/objects) greater than 1000 is an error. Bridge ingest
+   is capped lower (128) — see §8.
 
 ## 2. Numbers
 
@@ -53,28 +56,39 @@ typed scalar.
 | Kind | canon_json | Payload text rule |
 |---|---|---|
 | bytes | `{"$bytes":"<b64>"}` | RFC 4648 §4 standard base64 with `=` padding (CANONICAL_FORMS §6.1) |
-| time | `{"$time":"<rfc3339>"}` | UTC, `Z` suffix, fractional seconds trimmed of trailing zeros (CANONICAL_FORMS §7.1) |
+| time | `{"$time":"<rfc3339>"}` | UTC, `Z` suffix, MILLISECOND precision (truncate sub-ms, never round), fractional seconds trimmed of trailing zeros (CANONICAL_FORMS §7.1 as limited by this section) |
 | id | `{"$id":["<prefix>","<value>"]}` | two-element array; empty prefix is `""` |
 | tensor | `{"$tensor":{"dtype":"<name>","sha256":"<64 hex>","shape":[…]}}` | §4 |
 | struct | plain object of its fields | TypeName dropped (same as Loose, CANONICAL_FORMS D1) |
 | sum | `{"<tag>":<value>}` | same as Loose |
 
-A bridge that meets one of the first four keys with a malformed payload (wrong JSON type, invalid base64, unparseable time, `$id` not a two-string array) errors; it never falls back to a map. `$time` beyond microsecond precision is not portable (the Python value model is microseconds), so producers that want cross-language identity do not emit it.
+A bridge that meets one of the first four keys with a malformed payload (wrong JSON type, invalid base64, unparseable time, `$id` not a two-string array) errors; it never falls back to a map. Time precision is pinned to MILLISECONDS: all three implementations truncate sub-millisecond digits (never round), so sub-ms distinctions are not preserved. Producers MUST truncate to whole milliseconds before emitting; a `$time` with more than 3 fractional digits is not portable and MUST NOT be emitted for cross-language identity.
+
+**Reserved-key shadowing.** A map, struct, or sum whose emitted form would be a single-key
+object with a reserved key is unrepresentable through the JSON bridge: e.g. a data map
+`{"$time": "x"}` always reconstructs as a time scalar, never as a map. There is no escape
+form — producers that need such keys must rename them. (Malformed reserved payloads likewise
+error; a bridge never falls back to a plain map.)
 
 ## 4. Tensor reference
 
 A tensor never carries its bytes inside the value. `sha256` is over the **raw element bytes**:
 little-endian, row-major, contiguous; dtypes narrower than 8 bits packed LSB-first with the
-final byte's unused high bits zero (cowrie SPEC-v1 §tensor). `dtype` names: `float32`,
+final byte's unused high bits zero — non-zero padding bits MUST be rejected, otherwise two
+byte strings would name different tensors with the same element sequence (cowrie SPEC-v1
+§tensor). `dtype` names: `float32`,
 `float16`, `bfloat16`, `int8`, `int16`, `int32`, `int64`, `uint8`, `uint16`, `uint32`,
 `uint64`, `float64`, `bool`, `qint4`, `qint2`, `qint3`, `ternary`, `binary`. `shape` is an
-array of non-negative integers; rank 0 is `[]`.
+array of non-negative integers; rank 0 is `[]`. Integer positions are strict: a fractional
+JSON number is never an integer, so a shape dim of `1.0` is rejected.
 
 The same rule (`sha256(uncompressed bytes)`) is used for wshard block leaves, so a
 `signal/*` block hash equals the `$tensor.sha256` an agent state would cite. A wshard
 file commits to all its blocks in a `meta/identity` block, written last, holding
 `{"entries":{"<block>":"<64 hex>",…},"leaf":"sha256","v":1}` in this canonical form; the
-file's identity is `sha256` of that block, i.e. the fingerprint of that value.
+file's identity is `sha256` of that block, i.e. the fingerprint of that value. No wshard
+implementation exists in this repo; this paragraph is a forward reference constraining future
+block layouts, not a claim about current code.
 
 ## 5. Digest and strict check
 
@@ -84,11 +98,17 @@ file's identity is `sha256` of that block, i.e. the fingerprint of that value.
   bytes that fail this check: the GS1 cursor rejects `kind=doc` and `kind=patch` frames whose
   payload is not canonical. This gives "exactly one valid encoding" without a bespoke
   decoder, and makes `sha256(payload)` of a doc frame equal to the state hash of its value.
+  Malformed input (bad JSON, nesting over the bridge limit, an uncanonicalizable value)
+  yields `False`; for bytes/str input `is_canonical` never raises.
 
 ## 6. Relationship to RFC 8785 (JCS)
 
-On values with ASCII keys, safe integers, and non-integral floats inside JCS's exponent
-window, `canon_json` and JCS produce identical bytes. Documented divergences:
+On values with ASCII keys, safe integers, and non-integral floats whose magnitude exponent
+`E` satisfies `-4 <= E <= 5` (plain decimal in both systems), `canon_json` and JCS produce
+identical bytes. Outside that window the exponent rules differ even when both sides choose
+exponent form — `canon_json(1500000.5)` is `1.5000005e+06` where JCS emits `1500000.5`, and
+`canon_json(1e-7)` is `1e-07` where JCS emits `1e-7` — so no broader identity holds.
+Documented divergences:
 
 1. **Key order**: UTF-8 byte order here; UTF-16 code-unit order in JCS. Differs only when a
    non-BMP key is compared with a key in U+E000–U+FFFF.
@@ -105,7 +125,8 @@ A patch is a value of this profile, emitted with `canon_json`:
  "schema":"<id>"?,"type":"<TypeName>"?}
 op  := {"op":"="|"+"|"-"|"~","path":[seg,…],"value":<v>?,"index":<n>?}
 seg := <string>   -- struct field or map key
-     | <integer>  -- list index, ≥ 0
+     | <integer>  -- list index, ≥ 0, strict: a fractional JSON number (e.g. `1.0`)
+                      is never an integer segment
 ```
 
 - `glyph_patch` is always `1`. `ops` is required and may be empty. The other top-level keys
@@ -113,8 +134,12 @@ seg := <string>   -- struct field or map key
 - `value` is required for `=`, `+`, `~` and forbidden for `-`. For `~` it is a number (the
   delta). Otherwise it is any value of this profile, so typed scalars ride as §3 objects.
 - `index` is allowed only on `+`: insert before that list position; omitted means append.
+  Like path segments, `index` must be a strict non-negative integer (`1.0` rejected).
 - Emitters sort ops by (`canon_json(path)`, op) so a patch diffed in any language emits the
   same bytes. Parsers accept any JSON spelling; canonical bytes are enforced by §5 receivers.
+- `base`, when present, is format-lenient at parse (any string is accepted) and verified at
+  apply (it must be 64 hex equal to the fingerprint of the base state) — intentional, so a
+  node can parse and forward a patch without hashing.
 - Unknown keys at either level are an error.
 
 ## 8. Conformance
@@ -124,5 +149,8 @@ seg := <string>   -- struct field or map key
   language's stdlib JSON and re-canonicalize to identical bytes.
 - Depth and integer-range errors are unit-tested per language (Python's stdlib JSON parser
   cannot load a 1001-deep fixture, so depth is not a harness fixture).
-- Bridges may enforce tighter resource limits on ingest than §1's depth 1000: the JSON
-  bridges reject nesting deeper than 128, and `is_canonical` inherits that limit.
+- Bridges may enforce tighter resource limits on ingest than §1's depth 1000. Normatively:
+  `canon_json` emits nesting up to depth 1000; the JSON bridges MUST reject nesting deeper
+  than 128; `is_canonical` parses via the bridge and therefore inherits the 128 limit. A
+  value nested 129–1000 deep has a well-defined fingerprint but its bytes are unstreamable
+  (GS1 receivers reject them) — this split is intentional.

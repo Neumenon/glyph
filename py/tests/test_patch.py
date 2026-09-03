@@ -47,8 +47,8 @@ class TestParsePatchHeader:
         assert (p.ops, p.schema_id, p.target, p.base_fingerprint, p.target_type) == ([], "", "", "", "")
 
     def test_header_fields(self):
-        p = parse_patch(_wire(schema="Foo", target="bar", base="ab" * 32, type="T"))
-        assert (p.schema_id, p.target, p.base_fingerprint, p.target_type) == ("Foo", "bar", "ab" * 32, "T")
+        p = parse_patch(_wire(schema="Foo", target="doc:bar", base="ab" * 32, type="T"))
+        assert (p.schema_id, p.target, p.base_fingerprint, p.target_type) == ("Foo", "doc:bar", "ab" * 32, "T")
 
     def test_bytes_input_and_any_spelling(self):
         # Parsing is lenient about spelling; canonical bytes are the GS1 cursor's job (§5).
@@ -552,10 +552,10 @@ class TestIntegration:
             MapEntry("counter", GValue.int_(10)),
         )
         text = _wire(("=", ["step"], 2), ("+", ["items"], "b"), ("-", ["to_remove"]),
-                     ("~", ["counter"], 5), schema="GameState", target="obj1")
+                     ("~", ["counter"], 5), schema="GameState", target="game:obj1")
         patch = parse_patch(text)
         assert patch.schema_id == "GameState"
-        assert patch.target == "obj1"
+        assert patch.target == "game:obj1"
 
         result = apply_patch(doc, patch)
         assert result.get("step").as_int() == 2

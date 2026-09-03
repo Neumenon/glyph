@@ -436,7 +436,10 @@ function parseOp(raw: unknown, i: number): PatchOp {
 
   if ('index' in r) {
     if (kind !== '+') throw new Error(`op ${i}: index is only allowed on '+'`);
-    if (!isInt(r.index) || r.index < 0) throw new Error(`op ${i}: index must be a non-negative integer`);
+    // Number.isSafeInteger, not just Number.isInteger: wire indexes ride JS
+    // numbers, so anything past 2^53-1 has already lost precision (mirror
+    // Go jsonInt int64 strictness / Python's exact-int parse).
+    if (!isInt(r.index) || !Number.isSafeInteger(r.index) || r.index < 0) throw new Error(`op ${i}: index must be a non-negative integer`);
     op.index = r.index;
   } else if (kind === '+') {
     op.index = -1;
@@ -586,6 +589,12 @@ function applyAtPath(value: GValue, path: PathSeg[], op: PatchOp): GValue {
 }
 
 function applyToParent(value: GValue, seg: PathSeg, op: PatchOp): GValue {
+  // A list-index leaf operates positionally on the list itself, not via a
+  // keyed set/get (mirrors Go applyToParentSeg -> applyToListSeg).
+  if (seg.kind === 'listIdx') {
+    return applyToListSeg(value, seg, op);
+  }
+
   const key = seg.kind === 'mapKey' ? seg.mapKey! : seg.field!;
   
   switch (op.op) {
@@ -633,6 +642,9 @@ function applyToParent(value: GValue, seg: PathSeg, op: PatchOp): GValue {
       const delta = op.value?.type === 'float' ? op.value.asFloat() : op.value?.asInt() || 0;
       
       if (existing.type === 'int') {
+        if (!Number.isInteger(delta)) {
+          throw new Error(`delta ${delta} would truncate when applied to int field "${key}"`);
+        }
         value.set(key, GValue.int(existing.asInt() + delta));
       } else if (existing.type === 'float') {
         value.set(key, GValue.float(existing.asFloat() + delta));
@@ -644,6 +656,73 @@ function applyToParent(value: GValue, seg: PathSeg, op: PatchOp): GValue {
   }
   
   throw new Error(`unknown operation: ${op.op}`);
+}
+
+/**
+ * Apply an operation positionally at a list index: the leaf of a path like
+ * items[0], or a root-list operation whose only segment is a list index.
+ * Mirrors Go applyToListSeg: '=' replaces in place, '+' inserts before idx
+ * (idx == len appends; op.index is ignored — the position already lives in
+ * the path, cf. Go endsInListIdx), '-' removes, '~' adds a numeric delta
+ * (fractional deltas on int elements are rejected, mirroring Go).
+ */
+function applyToListSeg(value: GValue, seg: PathSeg, op: PatchOp): GValue {
+  if (value.type !== 'list') {
+    throw new Error(`cannot apply ${op.op} at list index to ${value.type}`);
+  }
+  const list = value.asList();
+  const idx = seg.listIdx!;
+
+  switch (op.op) {
+    case '=': {
+      if (idx < 0 || idx >= list.length) {
+        throw new Error(`list index out of bounds: ${idx} (len=${list.length})`);
+      }
+      list[idx] = op.value || GValue.null();
+      return value;
+    }
+
+    case '+': {
+      if (idx < 0 || idx > list.length) {
+        throw new Error(`list insert index out of bounds: ${idx} (len=${list.length})`);
+      }
+      list.splice(idx, 0, op.value || GValue.null());
+      return value;
+    }
+
+    case '-': {
+      if (idx < 0 || idx >= list.length) {
+        throw new Error(`list index out of bounds: ${idx} (len=${list.length})`);
+      }
+      list.splice(idx, 1);
+      return value;
+    }
+
+    case '~': {
+      if (idx < 0 || idx >= list.length) {
+        throw new Error(`list index out of bounds: ${idx} (len=${list.length})`);
+      }
+      if (!op.value || (op.value.type !== 'int' && op.value.type !== 'float')) {
+        throw new Error('delta value must be numeric');
+      }
+      const delta = op.value.type === 'float' ? op.value.asFloat() : op.value.asInt();
+      const existing = list[idx];
+      if (existing.type === 'int') {
+        if (!Number.isInteger(delta)) {
+          throw new Error(`delta ${delta} would truncate when applied to int at index ${idx}`);
+        }
+        list[idx] = GValue.int(existing.asInt() + delta);
+      } else if (existing.type === 'float') {
+        list[idx] = GValue.float(existing.asFloat() + delta);
+      } else {
+        throw new Error(`cannot apply delta to ${existing.type}`);
+      }
+      return value;
+    }
+
+    default:
+      throw new Error(`cannot apply ${op.op} at list index`);
+  }
 }
 
 // ============================================================

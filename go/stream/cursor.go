@@ -217,7 +217,9 @@ func NewFrameHandler() *FrameHandler {
 func (h *FrameHandler) Handle(frame *Frame) error {
 	state := h.Cursor.Get(frame.SID)
 
-	// Check sequence
+	// Check sequence. Duplicates are skipped BEFORE the canonical-payload
+	// check on purpose: a redelivered seq was already validated and applied,
+	// so idempotent redelivery stays cheap and cannot fail on revalidation.
 	if frame.Seq != 0 && state.LastSeq > 0 {
 		if frame.Seq <= state.LastSeq {
 			// Duplicate or out of order - skip
@@ -237,8 +239,14 @@ func (h *FrameHandler) Handle(frame *Frame) error {
 		return err
 	}
 
-	// Check base for patches
-	if frame.Kind == KindPatch && frame.Base != nil && state.HasState {
+	// Check base for patches. Like the strict ProcessFrame path, a patch
+	// that carries a base hash is unverifiable (and therefore rejected) when
+	// we hold no state for the SID — accepting it would apply a patch
+	// against an unknown base.
+	if frame.Kind == KindPatch && frame.Base != nil {
+		if !state.HasState {
+			return fmt.Errorf("cannot verify base: no state hash for SID %d", frame.SID)
+		}
 		if !VerifyBase(state.StateHash, *frame.Base) {
 			if h.OnBaseMismatch != nil {
 				return h.OnBaseMismatch(frame.SID, frame)

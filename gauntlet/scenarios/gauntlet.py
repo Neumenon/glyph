@@ -199,11 +199,8 @@ def eval_S6(ev, inp):
         if L in ev:
             e.check(f"{L}: correct base accepted", ev[L]["verify_accept"])
             e.check(f"{L}: stale base rejected (fail-closed)", ev[L]["verify_reject"])
-    for L, d in ev.items():
-        e.evidence[L] = {"base16": d["base16"]}
-    okb, vals = equal_across(ev, "base16")
-    e.check("cross-lang: base fingerprint identical (Go/Py/JS)", okb,
-            "" if okb else "; ".join(f"{L}={v}" for L, v in sorted(vals.items())))
+    okb, _ = equal_across(ev, "base64hex")
+    e.check("cross-lang: base fingerprint identical (Go/Py/JS)", okb)
     return e
 
 

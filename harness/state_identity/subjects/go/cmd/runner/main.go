@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -46,12 +47,22 @@ func runFixture(id, raw string) []outRow {
 			errRow(id, "jcs", msg), errRow(id, "glyph", msg), errRow(id, "canon_json", msg),
 		}
 	}
+	// Strictness parity with FromJSONLoose (json.Unmarshal rejects trailing
+	// garbage): a second Decode must hit io.EOF, otherwise naive/minified
+	// would hash a prefix while glyph/jcs refuse the whole input.
+	trailing := false
+	var extra interface{}
+	if err := dec.Decode(&extra); err != io.EOF {
+		trailing = true
+	}
 
 	rows := make([]outRow, 0, 5)
 
 	// naive/minified: re-marshal (encoding/json sorts map keys; output is compact).
-	norm, err := json.Marshal(v)
-	if err != nil {
+	if trailing {
+		msg := "trailing data after top-level JSON value"
+		rows = append(rows, errRow(id, "naive", msg), errRow(id, "minified", msg))
+	} else if norm, err := json.Marshal(v); err != nil {
 		msg := fmt.Sprintf("marshal: %v", err)
 		rows = append(rows, errRow(id, "naive", msg), errRow(id, "minified", msg))
 	} else {

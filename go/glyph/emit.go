@@ -351,8 +351,8 @@ func sortMapEntries(entries []MapEntry) []MapEntry {
 //
 // Deprecated: experimental, not part of the stable surface; may change or be removed.
 // Zero production callers; the non-cryptographic FNV-1a digest here is not the
-// canonical fingerprint. Use FingerprintLoose (SHA-256 over the Loose canonical
-// form, cross-language stable) for hashing/deduplication. See PARITY_ROADMAP.md (P4).
+// canonical fingerprint. Use Fingerprint (SHA-256 over CanonJSON, cross-language
+// stable, SPEC-CANON.md §5) for hashing/deduplication. See PARITY_ROADMAP.md (P4).
 func CanonicalHash(v *GValue) string {
 	opts := EmitOptions{
 		UseWireKeys: false,

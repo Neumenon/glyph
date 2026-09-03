@@ -78,8 +78,17 @@ export class GValue {
   }
 
   static int(v: number): GValue {
+    // Strict: fractional values, NaN and ±Infinity would silently truncate
+    // via Math.floor (e.g. 3.5 -> 3, NaN -> NaN), minting a wrong integer.
+    // Out-of-range integer literals are the bridges' job: fromJson /
+    // fromJsonLoose collapse those to float before calling here (mirror
+    // Go FromJSONLoose / Python from_json_loose). Integers outside ±(2^53-1)
+    // are still constructible — canonJson rejects them with CanonError.
+    if (!Number.isInteger(v)) {
+      throw new Error(`GValue.int requires an integer, got ${v}`);
+    }
     const gv = new GValue('int');
-    gv._int = Math.floor(v);
+    gv._int = v;
     return gv;
   }
 

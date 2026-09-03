@@ -46,7 +46,7 @@ func main() {
 
 - `Parse`, `ParseWithSchema`, `ParseWithOptions`
 - `FromJSONLoose`, `ToJSONLoose`
-- `CanonicalizeLoose`, `CanonicalizeLooseNoTabular`, `FingerprintLoose`
+- `CanonicalizeLoose`, `CanonicalizeLooseNoTabular`, `Fingerprint`
 - packed / tabular / patch helpers under `go/glyph`
 - GS1 stream helpers under `go/stream`
 

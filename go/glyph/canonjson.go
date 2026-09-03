@@ -1,6 +1,6 @@
 package glyph
 
-// Canonical JSON profile glyph-canon-json-1.0.0 (see SPEC-CANON.md).
+// Canonical JSON profile glyph-canon-json-1.1.0 (see SPEC-CANON.md).
 //
 // The only byte form GLYPH hashes. Fingerprint, the patch base and the GS1
 // state hash are all sha256(CanonJSON(v)). GLYPH text is a renderer and is

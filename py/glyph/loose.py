@@ -38,15 +38,18 @@ from .types import GValue, GType, MapEntry, RefID
 # Options
 # ============================================================
 
+
 class NullStyle(Enum):
     """How to emit null values."""
-    SYMBOL = "symbol"      # ∅ (human-readable)
+
+    SYMBOL = "symbol"  # ∅ (human-readable)
     UNDERSCORE = "underscore"  # _ (LLM-friendly, ASCII-safe)
 
 
 @dataclass
 class LooseCanonOpts:
     """Options for loose canonicalization."""
+
     auto_tabular: bool = True
     min_rows: int = 3
     max_cols: int = 20
@@ -91,13 +94,28 @@ MAX_STRING_LEN = 10 * 1024 * 1024  # 10MB
 MAX_SAFE_INT = (1 << 53) - 1  # 9007199254740991
 
 # Reserved words that must be quoted (D8: matches Go isValidBareString reject list)
-RESERVED_WORDS = {"t", "f", "true", "false", "null", "none", "nil", "_", "NaN", "Inf",
-                   "struct", "sum", "list", "map"}
+RESERVED_WORDS = {
+    "t",
+    "f",
+    "true",
+    "false",
+    "null",
+    "none",
+    "nil",
+    "_",
+    "NaN",
+    "Inf",
+    "struct",
+    "sum",
+    "list",
+    "map",
+}
 
 
 # ============================================================
 # Canonical Scalar Encoding
 # ============================================================
+
 
 def canon_null(style: NullStyle = NullStyle.UNDERSCORE) -> str:
     """Canonicalize null."""
@@ -144,57 +162,57 @@ def canon_float(f: float) -> str:
     # repr() gives the shortest round-trip decimal string in Python 3.1+.
     r = repr(abs_f)
 
-    if 'e' in r:
+    if "e" in r:
         # Python already chose exponential (e.g. "1e-05", "1.5e-10").
         # Go also uses exponential here — just reformat the exponent sign/padding.
-        mant_str, exp_str = r.split('e')
+        mant_str, exp_str = r.split("e")
         py_exp = int(exp_str)
         # Re-emit with Go-style exponent: e+06, e-05
         abs_exp = abs(py_exp)
-        sign_char = '+' if py_exp >= 0 else '-'
+        sign_char = "+" if py_exp >= 0 else "-"
         s = f"{mant_str}e{sign_char}{abs_exp:02d}"
     else:
         # Python gave decimal form. Compute the magnitude exponent E EXACTLY from
         # the decimal digits — math.log10 rounds the wrong way for values just
         # below a power of ten (e.g. repr 999999999999999.8 -> true E is 14, but
         # math.log10 yields 15.0), which would diverge from Go/JS.
-        if '.' in r:
-            _int_p, _frac_p = r.split('.')
+        if "." in r:
+            _int_p, _frac_p = r.split(".")
         else:
-            _int_p, _frac_p = r, ''
-        if _int_p != '0':
+            _int_p, _frac_p = r, ""
+        if _int_p != "0":
             E = len(_int_p) - 1
         else:
-            _stripped = _frac_p.lstrip('0')
+            _stripped = _frac_p.lstrip("0")
             E = -(len(_frac_p) - len(_stripped)) - 1
         if E >= 6 or E <= -5:
             # Go uses exponential; Python used decimal.
             # Extract significant digits from Python's repr.
-            if '.' in r:
-                int_p, frac_p = r.split('.')
-                if int_p == '0':
-                    all_digits = frac_p.lstrip('0').rstrip('0') or '0'
+            if "." in r:
+                int_p, frac_p = r.split(".")
+                if int_p == "0":
+                    all_digits = frac_p.lstrip("0").rstrip("0") or "0"
                 else:
-                    all_digits = (int_p + frac_p).rstrip('0') or '0'
+                    all_digits = (int_p + frac_p).rstrip("0") or "0"
             else:
-                all_digits = r.rstrip('0') or '0'
+                all_digits = r.rstrip("0") or "0"
 
             if len(all_digits) == 1:
                 mant = all_digits
             else:
-                mant = all_digits[0] + '.' + all_digits[1:]
+                mant = all_digits[0] + "." + all_digits[1:]
 
             abs_exp = abs(E)
-            sign_char = '+' if E >= 0 else '-'
+            sign_char = "+" if E >= 0 else "-"
             s = f"{mant}e{sign_char}{abs_exp:02d}"
         else:
             # Go uses decimal; Python's repr is already correct.
             s = r
             # D4: ensure decimal point so token is unambiguously float.
-            if '.' not in s and 'e' not in s:
-                s += '.0'
+            if "." not in s and "e" not in s:
+                s += ".0"
 
-    return ('-' if neg else '') + s
+    return ("-" if neg else "") + s
 
 
 def is_bare_safe(s: str) -> bool:
@@ -214,7 +232,9 @@ def is_bare_safe(s: str) -> bool:
         return False
 
     for c in s[1:]:
-        if not (("A" <= c <= "Z") or ("a" <= c <= "z") or ("0" <= c <= "9") or c == "_"):
+        if not (
+            ("A" <= c <= "Z") or ("a" <= c <= "z") or ("0" <= c <= "9") or c == "_"
+        ):
             return False
     return True
 
@@ -225,19 +245,19 @@ def escape_string(s: str) -> str:
     for c in s:
         if c == '"':
             result.append('\\"')
-        elif c == '\\':
-            result.append('\\\\')
-        elif c == '\n':
-            result.append('\\n')
-        elif c == '\r':
-            result.append('\\r')
-        elif c == '\t':
-            result.append('\\t')
+        elif c == "\\":
+            result.append("\\\\")
+        elif c == "\n":
+            result.append("\\n")
+        elif c == "\r":
+            result.append("\\r")
+        elif c == "\t":
+            result.append("\\t")
         elif ord(c) < 32:
             result.append(f"\\u{ord(c):04x}")
         else:
             result.append(c)
-    return ''.join(result)
+    return "".join(result)
 
 
 def canon_string(s: str) -> str:
@@ -249,21 +269,28 @@ def canon_string(s: str) -> str:
 
 def canon_bytes(b: bytes) -> str:
     """Canonicalize bytes as base64."""
-    encoded = base64.b64encode(b).decode('ascii')
+    encoded = base64.b64encode(b).decode("ascii")
     return f'b64"{encoded}"'
 
 
 def canon_time(t: datetime) -> str:
-    """Canonicalize datetime as ISO-8601 UTC."""
+    """Canonicalize datetime as ISO-8601 UTC, pinned to milliseconds.
+
+    Sub-millisecond precision is TRUNCATED (not rounded): Python datetimes
+    carry microseconds but the cross-language canonical form only keeps
+    milliseconds (JS Date has ms resolution; Go/JS siblings truncate here
+    too). This is a breaking change vs pre-ms output for sub-ms inputs.
+    """
     if t.tzinfo is None:
         # Assume UTC if no timezone
         t = t.replace(tzinfo=timezone.utc)
     utc = t.astimezone(timezone.utc)
     # Format: 2025-01-13T12:34:56Z
     s = utc.strftime("%Y-%m-%dT%H:%M:%S")
-    if utc.microsecond:
+    ms = utc.microsecond // 1000  # truncate micro->ms
+    if ms:
         # Add fractional seconds, removing trailing zeros
-        frac = f".{utc.microsecond:06d}".rstrip("0")
+        frac = f".{ms:03d}".rstrip("0")
         s += frac
     return s + "Z"
 
@@ -278,8 +305,14 @@ def is_id_safe(s: str) -> bool:
     if not s:
         return False
     for c in s:
-        if not (("A" <= c <= "Z") or ("a" <= c <= "z") or ("0" <= c <= "9")
-                or c == "_" or c == "-" or c == "."):
+        if not (
+            ("A" <= c <= "Z")
+            or ("a" <= c <= "z")
+            or ("0" <= c <= "9")
+            or c == "_"
+            or c == "-"
+            or c == "."
+        ):
             return False
     return True
 
@@ -304,6 +337,7 @@ def canon_id(ref: RefID) -> str:
 # ============================================================
 # Main Canonicalization
 # ============================================================
+
 
 def canonicalize_loose(v: GValue, opts: Optional[LooseCanonOpts] = None) -> str:
     """
@@ -377,7 +411,7 @@ def _canonicalize_map(entries: List[MapEntry], opts: LooseCanonOpts) -> str:
         return "{}"
 
     # Sort by canonical key
-    sorted_entries = sorted(entries, key=lambda e: canon_string(e.key).encode('utf-8'))
+    sorted_entries = sorted(entries, key=lambda e: canon_string(e.key).encode("utf-8"))
 
     parts = []
     for e in sorted_entries:
@@ -388,7 +422,9 @@ def _canonicalize_map(entries: List[MapEntry], opts: LooseCanonOpts) -> str:
     return "{" + " ".join(parts) + "}"
 
 
-def _canonicalize_struct(type_name: str, fields: List[MapEntry], opts: LooseCanonOpts) -> str:
+def _canonicalize_struct(
+    type_name: str, fields: List[MapEntry], opts: LooseCanonOpts
+) -> str:
     """Canonicalize a struct.
 
     Loose collapses structs to a plain map — sorted keys, NO TypeName
@@ -400,7 +436,7 @@ def _canonicalize_struct(type_name: str, fields: List[MapEntry], opts: LooseCano
         return "{}"
 
     # Sort fields by canonical key
-    sorted_fields = sorted(fields, key=lambda f: canon_string(f.key).encode('utf-8'))
+    sorted_fields = sorted(fields, key=lambda f: canon_string(f.key).encode("utf-8"))
 
     parts = []
     for f in sorted_fields:
@@ -429,6 +465,7 @@ def _canonicalize_sum(tag: str, value: Optional[GValue], opts: LooseCanonOpts) -
 # ============================================================
 # Auto-Tabular
 # ============================================================
+
 
 def _try_tabular(items: List[GValue], opts: LooseCanonOpts) -> Optional[str]:
     """Try to emit items as tabular format. Returns None if not eligible."""
@@ -479,7 +516,7 @@ def _try_tabular(items: List[GValue], opts: LooseCanonOpts) -> Optional[str]:
     keys_set = union_keys
 
     # Sort columns
-    cols = sorted(keys_set, key=lambda k: canon_string(k).encode('utf-8'))
+    cols = sorted(keys_set, key=lambda k: canon_string(k).encode("utf-8"))
 
     # Build tabular output
     lines = []
@@ -529,16 +566,16 @@ def unescape_tabular_cell(s: str) -> str:
     result = []
     i = 0
     while i < len(s):
-        if s[i] == '\\' and i + 1 < len(s):
+        if s[i] == "\\" and i + 1 < len(s):
             next_char = s[i + 1]
-            if next_char == '|':
-                result.append('|')
+            if next_char == "|":
+                result.append("|")
                 i += 2
-            elif next_char == 'n':
-                result.append('\n')
+            elif next_char == "n":
+                result.append("\n")
                 i += 2
-            elif next_char == '\\':
-                result.append('\\')
+            elif next_char == "\\":
+                result.append("\\")
                 i += 2
             else:
                 result.append(s[i])
@@ -546,12 +583,13 @@ def unescape_tabular_cell(s: str) -> str:
         else:
             result.append(s[i])
             i += 1
-    return ''.join(result)
+    return "".join(result)
 
 
 # ============================================================
 # JSON Bridge (Loose Mode)
 # ============================================================
+
 
 def _reserved_bytes(v: Any) -> GValue:
     if not isinstance(v, str):
@@ -579,9 +617,24 @@ def _reserved_id(v: Any) -> GValue:
 
 # SPEC-CANON.md §4: dtype name -> bits per element (cowrie SPEC-v1 §2.5 names).
 TENSOR_DTYPE_BITS = {
-    "float32": 32, "float16": 16, "bfloat16": 16, "int8": 8, "int16": 16, "int32": 32,
-    "int64": 64, "uint8": 8, "uint16": 16, "uint32": 32, "uint64": 64, "float64": 64,
-    "bool": 8, "qint4": 4, "qint2": 2, "qint3": 3, "ternary": 2, "binary": 1,
+    "float32": 32,
+    "float16": 16,
+    "bfloat16": 16,
+    "int8": 8,
+    "int16": 16,
+    "int32": 32,
+    "int64": 64,
+    "uint8": 8,
+    "uint16": 16,
+    "uint32": 32,
+    "uint64": 64,
+    "float64": 64,
+    "bool": 8,
+    "qint4": 4,
+    "qint2": 2,
+    "qint3": 3,
+    "ternary": 2,
+    "binary": 1,
 }
 
 
@@ -594,10 +647,13 @@ def _reserved_tensor(v: Any) -> GValue:
     and the digest is the same either way. Validation is what stops an uppercase
     or truncated sha256 from minting a second identity for the same bytes."""
     ok = (
-        isinstance(v, dict) and set(v) == {"dtype", "shape", "sha256"}
+        isinstance(v, dict)
+        and set(v) == {"dtype", "shape", "sha256"}
         and v["dtype"] in TENSOR_DTYPE_BITS
-        and isinstance(v["shape"], list) and all(_is_dim(d) for d in v["shape"])
-        and isinstance(v["sha256"], str) and len(v["sha256"]) == 64
+        and isinstance(v["shape"], list)
+        and all(_is_dim(d) for d in v["shape"])
+        and isinstance(v["sha256"], str)
+        and len(v["sha256"]) == 64
         and all(c in "0123456789abcdef" for c in v["sha256"])
     )
     if not ok:
@@ -605,16 +661,25 @@ def _reserved_tensor(v: Any) -> GValue:
             "$tensor payload must be {dtype, shape, sha256}: known dtype, "
             "non-negative int shape, 64 lowercase hex"
         )
-    return GValue.map_(MapEntry("$tensor", GValue.map_(
-        MapEntry("dtype", GValue.str_(v["dtype"])),
-        MapEntry("shape", GValue.list_(*(GValue.int_(d) for d in v["shape"]))),
-        MapEntry("sha256", GValue.str_(v["sha256"])),
-    )))
+    return GValue.map_(
+        MapEntry(
+            "$tensor",
+            GValue.map_(
+                MapEntry("dtype", GValue.str_(v["dtype"])),
+                MapEntry("shape", GValue.list_(*(GValue.int_(d) for d in v["shape"]))),
+                MapEntry("sha256", GValue.str_(v["sha256"])),
+            ),
+        )
+    )
 
 
 # SPEC-CANON.md §3-§4: single-key objects with these keys are typed values, not maps.
-_RESERVED = {"$bytes": _reserved_bytes, "$time": _reserved_time, "$id": _reserved_id,
-             "$tensor": _reserved_tensor}
+_RESERVED = {
+    "$bytes": _reserved_bytes,
+    "$time": _reserved_time,
+    "$id": _reserved_id,
+    "$tensor": _reserved_tensor,
+}
 
 
 def from_json_loose(data: Any, _depth: int = 0) -> GValue:
@@ -632,7 +697,20 @@ def from_json_loose(data: Any, _depth: int = 0) -> GValue:
         # huge ints by design; use GLYPH-Typed/int64 when full precision matters.
         if -MAX_SAFE_INT <= data <= MAX_SAFE_INT:
             return GValue.int_(data)
-        return GValue.float_(float(data))
+        # Fail closed on ints that float64 cannot represent at all (beyond
+        # ~2^1024): float(data) would raise a bare OverflowError. Raise
+        # ValueError instead so is_canonical() returns False and direct
+        # callers get a clear message, never a raw OverflowError.
+        if data.bit_length() > 1024:
+            raise ValueError(
+                f"integer too large to represent as float64: bit_length={data.bit_length()}"
+            )
+        try:
+            return GValue.float_(float(data))
+        except OverflowError:
+            raise ValueError(
+                f"integer too large to represent as float64: bit_length={data.bit_length()}"
+            ) from None
     elif isinstance(data, float):
         if not math.isfinite(data):
             raise ValueError("non-finite floats are not supported")
@@ -658,10 +736,12 @@ def from_json_loose(data: Any, _depth: int = 0) -> GValue:
         if len(data) > MAX_COLLECTION_LEN:
             raise ValueError(f"map too large ({len(data)} > {MAX_COLLECTION_LEN})")
         if len(data) == 1:
-            (k, v), = data.items()
+            ((k, v),) = data.items()
             if k in _RESERVED:
                 return _RESERVED[k](v)
-        entries = [MapEntry(str(k), from_json_loose(v, _depth + 1)) for k, v in data.items()]
+        entries = [
+            MapEntry(str(k), from_json_loose(v, _depth + 1)) for k, v in data.items()
+        ]
         return GValue.map_(*entries)
     else:
         return GValue.str_(str(data))
@@ -685,7 +765,7 @@ def to_json_loose(v: GValue) -> Any:
     elif t == GType.STR:
         return v.as_str()
     elif t == GType.BYTES:
-        return base64.b64encode(v.as_bytes()).decode('ascii')
+        return base64.b64encode(v.as_bytes()).decode("ascii")
     elif t == GType.TIME:
         return canon_time(v.as_time())
     elif t == GType.ID:
@@ -708,19 +788,12 @@ def to_json_loose(v: GValue) -> Any:
         return result
     elif t == GType.SUM:
         sm = v.as_sum()
-        return {"$tag": sm.tag, "$value": to_json_loose(sm.value) if sm.value is not None else None}
+        return {
+            "$tag": sm.tag,
+            "$value": to_json_loose(sm.value) if sm.value is not None else None,
+        }
 
     return None
-
-
-# ============================================================
-# Fingerprinting
-# ============================================================
-
-def fingerprint_loose(v: GValue) -> str:
-    """Deprecated name for glyph.fingerprint (sha256 of canon_json; SPEC-CANON.md §5)."""
-    from .canon import fingerprint  # local import: canon imports this module
-    return fingerprint(v)
 
 
 def equal_loose(a: GValue, b: GValue) -> bool:
@@ -733,15 +806,18 @@ def equal_loose(a: GValue, b: GValue) -> bool:
 # Convenience Functions
 # ============================================================
 
+
 def parse_json_loose(json_str: str) -> GValue:
     """Parse JSON string to GValue."""
     import json
+
     return from_json_loose(json.loads(json_str))
 
 
 def stringify_json_loose(v: GValue, indent: Optional[int] = None) -> str:
     """Convert GValue to JSON string."""
     import json
+
     return json.dumps(to_json_loose(v), indent=indent)
 
 
@@ -753,5 +829,6 @@ def json_to_glyph(data: Any, opts: Optional[LooseCanonOpts] = None) -> str:
 def glyph_to_json(glyph_str: str) -> Any:
     """Parse GLYPH string to Python/JSON value."""
     from .parse import parse_loose
+
     v = parse_loose(glyph_str)
     return to_json_loose(v)

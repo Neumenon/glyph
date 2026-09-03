@@ -51,3 +51,6 @@ glyph_*_context.txt
 
 # harness/state_identity JS subject deps (npm-installed, regenerable)
 harness/state_identity/subjects/js/node_modules/
+
+# Local agent tool settings
+.claude/

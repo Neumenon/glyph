@@ -1,11 +1,10 @@
 # State Identity Harness — Results Report
 
-> **This is the 2026-08-21 snapshot, written before the identity substrate moved
-> to canonical JSON (`SPEC-CANON.md`).** The method, pre-registration, and
-> scenario design below are current; the headline numbers are not. Re-run
-> 2026-09-02 over the enlarged corpus (318 fixtures: the old 280 plus non-BMP
-> keys, integer edges around ±2⁵³, `1.0`/`1e21`/`-0.0`, duplicate keys, depth
-> 1001, and 8 tensor-ref vectors) with a fifth subject, `canon_json`:
+> **Snapshot history (2026-08-21 → 2026-09-02).** The first run predates the
+> identity substrate move to canonical JSON (`SPEC-CANON.md`). The body below
+> is the 2026-09-02 re-run over the enlarged corpus (318 fixtures: the old 280
+> plus non-BMP keys, integer edges around ±2⁵³, `1.0`/`1e21`/`-0.0`, duplicate
+> keys, depth 1001, and 8 tensor-ref vectors) with a fifth subject, `canon_json`:
 >
 > | | 2026-08-21 | 2026-09-02 |
 > |---|---:|---:|
@@ -27,8 +26,8 @@
 > GS1 channels; S5 11/15 loose vs 2/15 strict, fidelity 6/7. Current raw
 > numbers are always in `results.json` next to this file.
 
-**Run date:** 2026-08-21 · **Corpus:** 280 fixtures + 18 variant forms + 15 malformed + 4 bench payloads
-**Matrix:** 3 languages (Python 3.14 / Go 1.25 / Node 22) × 4 subjects (`naive`, `minified`, `jcs`, `glyph`)
+**Run date:** 2026-09-02 · **Corpus:** 318 fixtures + 18 variant forms + 15 malformed + 4 bench payloads
+**Matrix:** 3 languages (Python 3.14 / Go 1.25 / Node 22) × 5 subjects (`naive`, `minified`, `jcs`, `glyph`, `canon_json`)
 **Reproduce:** `python3 run_all.py` from this directory. Deterministic: two runs
 produced byte-identical `results.json`. JCS implementations validated against
 all 6 official RFC 8785 vector files before any measurement.
@@ -38,26 +37,26 @@ all 6 official RFC 8785 vector files before any measurement.
 ## Executive verdict
 
 **GLYPH's cross-language identity claim survives adversarial testing
-unconditionally: 297/298 fixtures agree byte-for-byte across all three
+unconditionally: 317/318 fixtures agree byte-for-byte across all three
 languages, with zero unexpected errors** (the single "error" is a deliberately
 malformed leading-zeros literal that every parser rejects). **No DIY baseline
 comes close**: naive per-language-default hashing agrees across languages on
-only 115/297 fixtures (39%); even sort_keys+minified misses 26. JCS, the
+only 119/318 fixtures (37%); even sort_keys+minified misses 34. JCS, the
 serious incumbent, is internally consistent where it runs at all — but its
-three vetted implementations *refused to hash* 88/298 values (non-object
+three vetted implementations *refused to hash* 95/318 values (non-object
 roots, out-of-safe-range integers), which is itself a portability finding no
 prose comparison had surfaced.
 
-The honest cost side: GLYPH fingerprints are 1–6× slower than naive hashing
-depending on language (Go is a surprise exception — fastest of all subjects),
+The honest cost side: GLYPH fingerprints are 2–9× slower than naive hashing
+in Python/JS depending on payload (Go is a surprise exception — fastest of all subjects),
 and token savings remain shape-dependent (−41% tokens on tabular batches,
 −1% on deep nested traces). Detection scenarios confirm the enforcement story:
 base-verified patches catch stale applies 100%, GS1 framing catches all four
 stream faults while content-hash sidecars catch only bit-flips.
 
 Per pre-registration #9: JCS+discipline matches GLYPH's detection rates when
-engineers add manual re-checks — but "discipline" proved to be exactly 88
-silent refusals and 182 silent cross-language disagreements deep. That gap is
+engineers add manual re-checks — but "discipline" proved to be exactly 95
+silent refusals and 198 silent cross-language disagreements deep. That gap is
 the product.
 
 ---
@@ -66,9 +65,9 @@ the product.
 
 | # | Expectation | Outcome |
 |---|---|---|
-| 1 | naive/minified diverge cross-language | **Confirmed** — 182/297 naive, 26/297 minified |
+| 1 | naive/minified diverge cross-language | **Confirmed** — 198/318 naive, 34/318 minified |
 | 2 | jcs agrees where it runs; parse-layer vs canon-layer split | **Confirmed** + unanticipated domain refusals |
-| 3 | GLYPH agrees on all fixtures | **Confirmed** — 297/298 (1 = malformed-by-design) |
+| 3 | GLYPH agrees on all fixtures | **Confirmed** — 317/318 (1 = malformed-by-design) |
 | 4 | S1 detection rates | **Confirmed exactly** — see below |
 | 5 | S3 GS1 catches desync | **Confirmed** — 100% all four fault types |
 | 6 | Cache FNs under formatting variance | **Partially falsified within-language** (Amendment A1); confirmed for raw-text hashing |
@@ -84,10 +83,10 @@ Cross-language agreement (identical hash in Py+Go+JS; lower bound = all three mu
 
 | Subject | Agree | Disagree | Errors | Verdict |
 |---|---:|---:|---:|---|
-| **glyph** | **297** | **0** | 1† | portable by construction |
-| jcs | 210 | 0 | 88‡ | consistent but frequently refuses |
-| minified | 271 | 26 | 1† | mostly portable; number/escape edges leak |
-| naive | 115 | 182 | 1† | not a portable spec at all |
+| **glyph** | **317** | **0** | 1† | portable by construction |
+| jcs | 223 | 0 | 95‡ | consistent but frequently refuses |
+| minified | 283 | 34 | 1† | mostly portable; number/escape edges leak |
+| naive | 119 | 198 | 1† | not a portable spec at all |
 
 † `i_leading_zeros_txt` ("007") — invalid JSON rejected identically everywhere.
 ‡ Go reference impl accepts top-level objects only; Python `rfc8785` raises
@@ -105,10 +104,10 @@ Divergence classes (where disagreement concentrates):
   different serializer conventions → different bytes
 
 Logical invariance over variant groups (same value, 3–5 textual forms):
-glyph 12/12 groups consistent · jcs 12/12 · naive 11/12 · minified 11/12
+glyph 12/12 groups consistent · canon_json 12/12 · jcs 12/12 · naive 11/12 · minified 11/12
 (the miss: trace-row integral floats across languages).
 
-Notable: for 105/298 simple values, JCS canonical text and GLYPH canonical
+Notable: for 307/317 values, JCS canonical text and GLYPH canonical
 text are byte-identical (plain ASCII scalars/structures) → identical SHA-256.
 The schemes genuinely converge on the easy middle of the value space.
 
@@ -119,7 +118,7 @@ The schemes genuinely converge on the easy middle of the value space.
 | Mode | Detection | Silent corruption |
 |---|---:|---:|
 | glyph default (verify_base ON) | **100%** | **0%** |
-| glyph verify=False (opted out) | 0% | 99.2% |
+| glyph verify=False (opted out) | 0% | 99.9% |
 | baseline unchecked merge-patch | 0% | 100% |
 | baseline + manual re-hash | 100% (+2 hashes/apply) | 0% |
 
@@ -127,7 +126,7 @@ Enforcement, not format, is what catches staleness — and GLYPH is the only
 subject where it is on by default. Baseline-recheck matches detection at the
 price of extra hashes per apply plus the discipline to never forget.
 
-### S2 cross-language relay — **40/40 full agreement** (py emit → go/js parse+fingerprint)
+### S2 cross-language relay — **43/43 full agreement** (py emit → go/js parse+fingerprint)
 
 ### S3 stream desync (30 trials/fault)
 
@@ -160,24 +159,27 @@ not boolean — recovered-but-re-typed beats a crash, but consumers should know.
 ## Part C — costs
 
 Tokens (cl100k, GLYPH canonical vs minified JSON): tabular_batch **−41.2%** ·
-small_state −16.7% · nested_trace −1.1%. Bytes: −22.9% / −26% / −63%.
+small_state −16.7% · nested_trace −1.1%. Bytes: small_state −22.9% ·
+nested_trace −26.0% · tabular_batch −63.0%.
 
-CPU ns/op (300 iters, committed payloads; informational):
+CPU ns/op (300 iters, committed payloads; informational — re-tabled from
+`costs.json`, 2026-09-02 run):
 
 | payload | lang | naive | jcs | glyph |
 |---|---|---:|---:|---:|
-| small_state | python | 3,200 | 13,053 | 18,229 |
-| | go | 1,921 | 3,615 | **1,297** |
-| | js | 6,028 | 7,906 | 18,670 |
-| tabular_batch | python | 32,558 | 209,171 | 303,903 |
-| | go | 29,853 | 61,986 | **17,533** |
-| | js | 21,894 | 55,231 | 71,695 |
-| nested_trace | python | 5,236 | 31,110 | 30,827 |
-| | go | 3,749 | 5,842 | **1,804** |
-| | js | 5,689 | 6,348 | 11,781 |
+| small_state | python | 3,511 | 13,862 | 17,202 |
+| | go | 2,092 | 4,289 | **1,445** |
+| | js | 6,381 | 8,624 | 17,411 |
+| tabular_batch | python | 34,115 | 219,800 | 304,410 |
+| | go | 35,283 | 68,090 | **22,534** |
+| | js | 24,839 | 56,139 | 60,771 |
+| nested_trace | python | 5,250 | 30,413 | 46,383 |
+| | go | 4,344 | 6,254 | **1,700** |
+| | js | 4,083 | 4,840 | 9,142 |
 
 Go's fingerprint path is the fastest subject tested (works on the parsed
-GValue; no re-marshal). Python pays ~5× on small states. JS ~3×. These are
+GValue; no re-marshal). Python pays ~5× on small states (~9× on the larger
+payloads). JS ~2–3×. These are
 identity-computation costs paid per state-version, dwarfed by network/model
 latency in the target use cases — but stated plainly, as promised.
 
@@ -196,10 +198,10 @@ latency in the target use cases — but stated plainly, as promised.
    glyph-default 3000/3000 detected with zero errors. Repro history:
    [`findings/2026-08-21-py-nested-map-key-remove.md`](./findings/2026-08-21-py-nested-map-key-remove.md).
 2. **[Medium] JCS portability friction** — the three vetted RFC 8785
-   implementations disagree on *what they will hash at all*: Go reference
-   impl rejects non-object roots; Python refuses out-of-safe-range integers;
-   JS silently degrades big-int precision at parse. Any cross-language system
-   built on JCS must handle 88/298 refusal/degradation paths. This is the
+    implementations disagree on *what they will hash at all*: Go reference
+    impl rejects non-object roots; Python refuses out-of-safe-range integers;
+    JS silently degrades big-int precision at parse. Any cross-language system
+    built on JCS must handle 95/318 refusal/degradation paths. This is the
    empirically strongest argument for a bridge that defines behavior on the
    whole value space.
 3. **[Low] `rawtext` hashing** — the most common real-world pattern (hash
@@ -210,7 +212,7 @@ latency in the target use cases — but stated plainly, as promised.
 
 Same-value→same-hash-everywhere holds for GLYPH on everything the corpus can
 throw at it, including the cases where the incumbent ecosystem either
-disagrees with itself (naive: 61%) or declines to answer (jcs refusals: 30%).
+disagrees with itself (naive: 62%) or declines to answer (jcs refusals: 30%).
 Identity is cheap-to-free relative to model latency, and the fail-loud
 properties (patch preconditions, stream cursors) demonstrably convert into
 detected-not-corrupted outcomes. What remains open is unchanged by this run:

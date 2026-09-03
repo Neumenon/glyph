@@ -23,7 +23,7 @@ GLYPH has two main specifications:
 - Deterministic canonical form
 - Cross-language parity (Go, Python, JS)
 
-**2. GS1 Stream** - Frame protocol for multiplexed streaming (Go and JS only)
+**2. GS1 Stream** - Frame protocol for multiplexed streaming (Go, Python, and JS)
 - Transport-agnostic (TCP, WebSocket, SSE, pipes)
 - CRC-32 integrity checking
 - SHA-256 state verification
@@ -69,7 +69,7 @@ This rule is unified and byte-identical across Go, Python, and JS.
 **Examples:**
 ```
 0.000001  →  1e-06
-100000000000000  →  1e+14
+100000000000000  →  100000000000000  (stays an integer literal; within ±2^53-1)
 0.0001  →  0.0001  (no exponent)
 10000000000000000  →  1e+16  (exponent)
 ```
@@ -124,7 +124,7 @@ Input:  {"b":1,"a":2,"aa":3,"A":4,"_":5}
 Output: {"_"=5 A=4 a=2 aa=3 b=1}
 ```
 
-UTF-8 byte order: `A` (0x41) < `_` (0x5F) < `a` (0x61) < ...
+UTF-8 byte order over the canonical key bytes, quotes included for keys that need them: `A` (0x41) < `_` (0x5F) < `a` (0x61) < ...
 
 #### Duplicate Keys
 
@@ -197,7 +197,7 @@ Deterministic SHA-256 hash of canonical form:
 import glyph
 
 data = {"user": "alice", "count": 42}
-hash = glyph.fingerprint_loose(glyph.from_json(data))
+hash = glyph.fingerprint(glyph.from_json(data))
 # a1b2c3d4e5f6... (64 lowercase hex chars)
 ```
 
@@ -307,12 +307,12 @@ print(f"crc={crc:08x}")
 When `base` is present:
 
 - **Algorithm:** SHA-256
-- **Input:** Canonical form of state document
+- **Input:** Canonical JSON bytes (`canon_json`) of state document
 - **Format:** `base=sha256:<64 lowercase hex digits>`
 
 **State hash definition:**
 ```
-base = sha256(Canonicalize(stateDoc))
+base = sha256(canon_json(stateDoc))
 ```
 
 **Patch application rule:**
@@ -323,20 +323,18 @@ Receiver MUST NOT apply patch if `receiverStateHash != base`.
 - Emit an `err` frame, OR
 - Emit an `ack` with failure payload
 
-**Example (pseudocode — GS1 framing is Go/JS only; hash logic shown for clarity):**
+**Example (GS1 framing is implemented in Go, Python, and JS; hash logic shown with the Python API):**
 ```python
 import glyph
-import hashlib
 
-# Sender: compute base hash using GLYPH canonical bytes
+# Sender: base is sha256 over the canonical JSON bytes (SPEC-CANON.md §5)
 current_state = {"user": "alice", "count": 5}
-state_bytes = glyph.json_to_glyph(current_state).encode("utf-8")
-base_hash = hashlib.sha256(state_bytes).hexdigest()
-# base=sha256:<base_hash> is embedded in the GS1 frame header by the Go/JS GS1 writer
+base_hash = glyph.fingerprint(glyph.from_json(current_state))
+# d694c81c9f78309195d4f7e93dfff49447fbdc79d7ab05f87aa68584678d4fc1
+# base=sha256:<base_hash> is embedded in the GS1 frame header by the GS1 writer
 
 # Receiver: recompute and compare
-receiver_bytes = glyph.json_to_glyph(receiver_state).encode("utf-8")
-receiver_hash = hashlib.sha256(receiver_bytes).hexdigest()
+receiver_hash = glyph.fingerprint(glyph.from_json(receiver_state))
 if receiver_hash == base_hash:
     apply_patch(patch_payload)
 else:
@@ -434,7 +432,7 @@ status enum[pending,active,complete]
 6. Accept any valid JSON as input
 7. Produce valid JSON as output
 
-**GS1 Streaming (Go and JS only):**
+**GS1 Streaming (Go, Python, and JS):**
 1. Parse frame headers correctly
 2. Read payload using `len`, not delimiters
 3. Verify CRC-32 if present

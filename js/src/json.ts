@@ -6,6 +6,7 @@
 
 import { GValue, RefID, MapEntry } from './types';
 import { Schema, TypeDef } from './schema';
+import { TENSOR_DTYPE_BITS, tensorRefValue } from './loose';
 
 const hasOwnProperty = Object.prototype.hasOwnProperty;
 
@@ -67,7 +68,11 @@ function convertValue(
 
   // Number
   if (typeof v === 'number') {
-    if (Number.isInteger(v)) {
+    // JSON-domain number semantics (mirror Go FromJSONLoose, Python
+    // from_json_loose, JS fromJsonLoose): only safe integers become int;
+    // out-of-range integer literals collapse to float. GValue.int throws on
+    // non-integers, so the guard must come first.
+    if (Number.isInteger(v) && Math.abs(v) <= Number.MAX_SAFE_INTEGER) {
       return GValue.int(v);
     }
     return GValue.float(v);
@@ -110,6 +115,8 @@ function convertValue(
     const timeMarker = hasOwn(obj, '$time') ? obj.$time : undefined;
     const bytesMarker = hasOwn(obj, '$bytes') ? obj.$bytes : undefined;
     const tagMarker = hasOwn(obj, '$tag') ? obj.$tag : undefined;
+    const idMarker = hasOwn(obj, '$id') ? obj.$id : undefined;
+    const tensorMarker = hasOwn(obj, '$tensor') ? obj.$tensor : undefined;
     
     // Check for special type markers
     if (typeof typeMarker === 'string') {
@@ -146,7 +153,13 @@ function convertValue(
 
     // Check for time marker
     if (typeof timeMarker === 'string') {
-      return GValue.time(new Date(timeMarker));
+      // Strict RFC 3339 at the bridge (mirror loose.ts $time): an invalid
+      // timestamp is rejected here, not as a RangeError at canon time. A
+      // syntactically valid but unparsable date (e.g. month 13) still throws.
+      const d = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(timeMarker)
+        ? new Date(timeMarker) : new Date(NaN);
+      if (Number.isNaN(d.getTime())) throw new Error(`$time payload is not RFC 3339: ${JSON.stringify(timeMarker)}`);
+      return GValue.time(d);
     }
 
     // Check for bytes marker
@@ -160,6 +173,29 @@ function convertValue(
         ? convertValue(obj.$value, schema, undefined, parseDates, parseRefs)
         : null;
       return GValue.sum(tagMarker, value);
+    }
+
+    // Check for id marker: {"$id": [prefix, value]} (mirror loose.ts $id —
+    // same payload shape, same validation).
+    if (idMarker !== undefined) {
+      if (!Array.isArray(idMarker) || idMarker.length !== 2 || typeof idMarker[0] !== 'string' || typeof idMarker[1] !== 'string') {
+        throw new Error('$id payload must be [prefix, value]');
+      }
+      return GValue.id(idMarker[0], idMarker[1]);
+    }
+
+    // Check for tensor marker: {"$tensor": {dtype, shape, sha256}} (mirror
+    // loose.ts $tensor — same payload shape, same validation).
+    if (tensorMarker !== undefined) {
+      const o = (typeof tensorMarker === 'object' && tensorMarker !== null && !Array.isArray(tensorMarker) ? tensorMarker : {}) as Record<string, unknown>;
+      const ok = Object.keys(o).length === 3
+        && typeof o.dtype === 'string' && hasOwn(TENSOR_DTYPE_BITS, o.dtype)
+        && Array.isArray(o.shape) && o.shape.every((d) => Number.isInteger(d) && d >= 0)
+        && typeof o.sha256 === 'string' && /^[0-9a-f]{64}$/.test(o.sha256);
+      if (!ok) {
+        throw new Error('$tensor payload must be {dtype, shape, sha256}: known dtype, non-negative int shape, 64 lowercase hex');
+      }
+      return tensorRefValue(o.dtype as string, o.shape as number[], o.sha256 as string);
     }
 
     // Regular object -> struct with typeName or map

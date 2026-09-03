@@ -3,26 +3,10 @@
   "description": "Groups of semantically equivalent inputs that must produce identical canonical output",
   "classes": [
     {
-      "id": "whitespace_variants",
-      "description": "Different whitespace around key-value pairs",
-      "inputs": [
-        "key value",
-        "key  value",
-        "key\tvalue",
-        "key   value",
-        " key value ",
-        "key value\n"
-      ],
-      "canonical": "key value"
-    },
-    {
       "id": "key_order_invariance",
       "description": "Object keys are sorted in canonical output",
-      "inputs": [
-        "{\"b\":2,\"a\":1}",
-        "{\"a\":1,\"b\":2}"
-      ],
-      "canonical": "a 1\nb 2"
+      "inputs_json": [{"b": 2, "a": 1}, {"a": 1, "b": 2}],
+      "canonical": "{a=1 b=2}"
     },
     {
       "id": "number_integer_forms",
@@ -47,12 +31,6 @@
       "description": "Various representations of 0.5",
       "inputs_json": [0.5, 5e-1, 50e-2],
       "canonical_value": "0.5"
-    },
-    {
-      "id": "escape_variants_string",
-      "description": "Different escape forms for the same string",
-      "inputs_json": ["hello\tworld", "hello\\tworld"],
-      "note": "These are actually different strings - tab vs literal backslash-t"
     },
     {
       "id": "null_forms",

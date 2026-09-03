@@ -14,6 +14,7 @@ import {
   canonicalizeLoose, canonicalizeLooseNoTabular, canonicalizeLooseWithOpts,
   equalLoose, fromJsonLoose, toJsonLoose, jsonEqual,
   parseTabularLoose, unescapeTabularCell,
+  stream,
 } from './index';
 
 // ============================================================
@@ -232,6 +233,51 @@ describe('JSON conversion', () => {
     const back = toJson(gv, { compactRefs: true });
     
     expect(back).toEqual(original);
+  });
+
+  test('out-of-range integer literals collapse to float (not int)', () => {
+    // Mirror Go FromJSONLoose / Python from_json_loose / JS fromJsonLoose:
+    // only safe integers become int, so GValue.int's strictness never fires
+    // here and precision loss is visible as float, not a wrong int.
+    expect(fromJson(Number.MAX_SAFE_INTEGER).type).toBe('int');
+    expect(fromJson(-Number.MAX_SAFE_INTEGER).type).toBe('int');
+    const over = fromJson(2 ** 53);
+    expect(over.type).toBe('float');
+    expect(over.asFloat()).toBe(2 ** 53);
+    expect(fromJson(-(2 ** 53)).type).toBe('float');
+  });
+
+  test('GValue.int throws on non-integer input', () => {
+    expect(() => g.int(1.5)).toThrow('GValue.int requires an integer');
+    expect(() => g.int(NaN)).toThrow('GValue.int requires an integer');
+    expect(() => g.int(Infinity)).toThrow('GValue.int requires an integer');
+    // Unsafe-but-integral values still construct — canonJson rejects them.
+    expect(g.int(2 ** 53).asInt()).toBe(2 ** 53);
+  });
+
+  test('fromJson $id arm mirrors the loose bridge', () => {
+    const v = fromJson({ $id: ['t', 'ARS'] });
+    expect(v.type).toBe('id');
+    expect(v.asId()).toEqual({ prefix: 't', value: 'ARS' });
+    expect(() => fromJson({ $id: 't:ARS' })).toThrow('$id payload must be [prefix, value]');
+    expect(() => fromJson({ $id: ['only-one'] })).toThrow('$id payload must be [prefix, value]');
+  });
+
+  test('fromJson $tensor arm mirrors the loose bridge', () => {
+    const sha = '0'.repeat(64);
+    const v = fromJson({ $tensor: { dtype: 'float32', shape: [1], sha256: sha } });
+    expect(v.type).toBe('map');
+    expect(v.get('$tensor')?.get('sha256')?.asStr()).toBe(sha);
+    expect(() => fromJson({ $tensor: { dtype: 'f32', shape: [1], sha256: sha } })).toThrow('$tensor payload');
+    expect(() => fromJson({ $tensor: { dtype: 'float32', shape: [1], sha256: 'ABC' } })).toThrow('$tensor payload');
+    expect(() => fromJson({ $tensor: { dtype: 'float32', shape: [-1], sha256: sha } })).toThrow('$tensor payload');
+  });
+
+  test('fromJson $time rejects non-RFC-3339 at the bridge', () => {
+    expect(() => fromJson({ $time: 'not-a-date' })).toThrow('$time payload is not RFC 3339');
+    expect(() => fromJson({ $time: '2025-13-45' })).toThrow('$time payload is not RFC 3339');
+    const v = fromJson({ $time: '2025-01-13T12:34:56.5Z' });
+    expect(v.type).toBe('time');
   });
 });
 
@@ -530,6 +576,115 @@ describe('Patch', () => {
     const input = '{"glyph_patch":1,"target":"m:ARS-LIV","ops":[{"op":"+","path":["events"],"value":"Goal!","index":-1}]}';
 
     expect(() => parsePatch(input)).toThrow('index must be a non-negative integer');
+  });
+
+  test('reject non-safe-integer patch index', () => {
+    // 9007199254740993 parses to 9007199254740992 (precision already lost),
+    // so the wire index must be a safe integer, not merely an integer.
+    const input = '{"glyph_patch":1,"target":"m:1","ops":[{"op":"+","path":["a"],"value":1,"index":9007199254740993}]}';
+
+    expect(() => parsePatch(input)).toThrow('index must be a non-negative integer');
+  });
+});
+
+// ============================================================
+// Patch list-index leaf apply (mirrors Go applyToListSeg)
+//
+// A path ending in a list index (items[0]) operates positionally on the
+// list; diff() still emits whole-list replaces — this only covers applying
+// hand- or wire-built patches with list-index leaves.
+// ============================================================
+
+describe('Patch list-index leaf apply', () => {
+  function listState(): GValue {
+    return g.struct('M', field('items', g.list(g.int(1), g.int(2), g.int(3))));
+  }
+
+  test('= replaces the element in place', () => {
+    const patch = parsePatch('{"glyph_patch":1,"target":"m:1","ops":[{"op":"=","path":["items",1],"value":9}]}');
+    const out = applyPatch(listState(), patch);
+    expect(out.get('items')?.asList().map(v => v.asInt())).toEqual([1, 9, 3]);
+  });
+
+  test('= out of bounds throws', () => {
+    const patch = parsePatch('{"glyph_patch":1,"target":"m:1","ops":[{"op":"=","path":["items",5],"value":9}]}');
+    expect(() => applyPatch(listState(), patch)).toThrow('list index out of bounds: 5 (len=3)');
+  });
+
+  test('+ inserts before idx, idx == len appends', () => {
+    const ins = parsePatch('{"glyph_patch":1,"target":"m:1","ops":[{"op":"+","path":["items",1],"value":9}]}');
+    expect(applyPatch(listState(), ins).get('items')?.asList().map(v => v.asInt())).toEqual([1, 9, 2, 3]);
+
+    const app = parsePatch('{"glyph_patch":1,"target":"m:1","ops":[{"op":"+","path":["items",3],"value":4}]}');
+    expect(applyPatch(listState(), app).get('items')?.asList().map(v => v.asInt())).toEqual([1, 2, 3, 4]);
+  });
+
+  test('+ past the end throws', () => {
+    const patch = parsePatch('{"glyph_patch":1,"target":"m:1","ops":[{"op":"+","path":["items",4],"value":9}]}');
+    expect(() => applyPatch(listState(), patch)).toThrow('list insert index out of bounds: 4 (len=3)');
+  });
+
+  test('- removes the element', () => {
+    const patch = parsePatch('{"glyph_patch":1,"target":"m:1","ops":[{"op":"-","path":["items",0]}]}');
+    expect(applyPatch(listState(), patch).get('items')?.asList().map(v => v.asInt())).toEqual([2, 3]);
+  });
+
+  test('list-index leaf on a non-list throws', () => {
+    const state = g.struct('M', field('name', g.str('x')));
+    const patch = parsePatch('{"glyph_patch":1,"target":"m:1","ops":[{"op":"=","path":["name",0],"value":9}]}');
+    expect(() => applyPatch(state, patch)).toThrow('cannot apply = at list index to str');
+  });
+});
+
+// ============================================================
+// GS1 stream strictness (mirrors Go go/stream + Python py/glyph/stream)
+// ============================================================
+
+describe('GS1 stream strictness', () => {
+  test('parseKind throws ParseError on unknown kind', () => {
+    expect(() => stream.parseKind('nope')).toThrow(stream.ParseError);
+    expect(stream.parseKind('doc')).toBe('doc');
+  });
+
+  test('BaseMismatchError carries expected/got hashes', () => {
+    const err = new stream.BaseMismatchError(new Uint8Array(32).fill(1), new Uint8Array(32).fill(2));
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('BaseMismatchError');
+    expect(err.expected?.[0]).toBe(1);
+    expect(err.got?.[0]).toBe(2);
+  });
+
+  test('strict cursor rejects patch+base with no prior state', () => {
+    const cursor = new stream.StreamCursor();
+    const frame = stream.patchFrame(1n, 1n, '{}', new Uint8Array(32).fill(7));
+    expect(() => cursor.processFrame(frame)).toThrow(/no state hash/);
+  });
+
+  test('strict cursor verifies base once state is set', () => {
+    const cursor = new stream.StreamCursor();
+    const state = fromJsonLoose({ a: 1 });
+    cursor.setState(1n, state);
+
+    const good = stream.patchFrame(1n, 1n, '{}', stream.stateHashLooseSync(state));
+    expect(() => cursor.processFrame(good)).not.toThrow();
+
+    const bad = stream.patchFrame(1n, 2n, '{}', new Uint8Array(32).fill(9));
+    let err: unknown;
+    try {
+      cursor.processFrame(bad);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(stream.BaseMismatchError);
+    expect((err as stream.BaseMismatchError).expected?.[0]).toBe(9);
+  });
+
+  test('Reader default header cap accepts headers past 8 KiB', () => {
+    // Pinned at the 64 KiB default: 9 KiB with no newline yet means "need
+    // more data" (null), not "header too large".
+    const reader = new stream.Reader();
+    reader.push(new TextEncoder().encode('x'.repeat(9 * 1024)));
+    expect(reader.next()).toBeNull();
   });
 });
 
@@ -1191,7 +1346,7 @@ describe('Golden Files', () => {
     '036_negative_zero', '037_many_duplicates', '038_mixed_duplicates', '039_numeric_keys',
     '040_reserved_word_keys', '041_special_chars_in_values', '042_bare_safe_edge', '043_not_bare_safe',
     '044_array_of_objects', '045_heterogeneous_array', '046_float_precision', '047_key_sort_stability',
-    '048_unicode_keys', '049_real_api_response',
+    '048_unicode_keys', '049_real_api_response', '050_dynamic_keys_metadata',
   ])('case %s matches golden', (caseName) => {
     const jsonPath = path.join(testdataDir, 'cases', caseName + '.json');
     const goldenPath = path.join(testdataDir, 'golden', caseName + '.want');

@@ -126,7 +126,6 @@ export {
 export {
   canonJson,
   fingerprint,
-  fingerprintLoose,
   isCanonical,
   CanonError,
   CANON_MAX_DEPTH,
@@ -168,7 +167,10 @@ export {
   parseLoose,
 } from './parse_loose';
 
-// GS1 Stream (streaming transport)
+// GS1 Stream (streaming transport).
+// Note: StreamCursor is strict — a patch frame carrying base with no prior
+// state hash throws (mirrors Go/Py); unknown header keys are ignored (flags
+// leniency) — see ./stream/gs1t and ./stream/cursor.
 export * as stream from './stream/index';
 
 // Decimal128 - High-precision decimal type

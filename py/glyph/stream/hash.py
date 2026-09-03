@@ -15,7 +15,11 @@ from ..types import GValue
 
 
 def state_hash_loose(value: GValue) -> bytes:
-    """GS1 state hash: sha256(canon_json(value)), 32 bytes."""
+    """GS1 state hash: sha256(canon_json(value)), 32 bytes.
+
+    The name is historical: it hashes canon_json despite the name (kept for
+    API parity with Go/JS — no rename).
+    """
     return hashlib.sha256(canon_json(value).encode("utf-8")).digest()
 
 

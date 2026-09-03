@@ -160,6 +160,18 @@ class Reader:
         self._r = r
         self._max_payload = max_payload
         self._verify_crc = verify_crc
+        # One-byte lookahead stash for non-seekable streams: when a frame's
+        # payload is not followed by "\n", the first byte of the next header
+        # is stashed here and replayed at the top of next() via _read1().
+        self._pending = bytearray()
+
+    def _read1(self) -> bytes:
+        """Read one byte, replaying any stashed lookahead first."""
+        if self._pending:
+            b = bytes(self._pending[:1])
+            del self._pending[:1]
+            return b
+        return self._r.read(1)
 
     def next(self) -> Optional[Frame]:
         """
@@ -175,7 +187,7 @@ class Reader:
         # memory (mirrors Go's ReadLine + isPrefix DoS guard).
         header_bytes = bytearray()
         while True:
-            b = self._r.read(1)
+            b = self._read1()
             if not b:
                 # EOF
                 if header_bytes:
@@ -188,7 +200,7 @@ class Reader:
                 # Drain until we find a newline so the stream position is
                 # at least at a potential boundary, then reject.
                 while True:
-                    drain = self._r.read(1)
+                    drain = self._read1()
                     if not drain or drain == b"\n":
                         break
                 raise ParseError(
@@ -206,9 +218,15 @@ class Reader:
                 f"payload too large: {payload_len} > {self._max_payload}"
             )
 
-        # Read exactly payload_len bytes
+        # Read exactly payload_len bytes (replaying any stashed lookahead first)
         if payload_len > 0:
-            payload = self._r.read(payload_len)
+            if self._pending:
+                take = min(len(self._pending), payload_len)
+                head = bytes(self._pending[:take])
+                del self._pending[:take]
+                payload = head + self._r.read(payload_len - len(head))
+            else:
+                payload = self._r.read(payload_len)
             if len(payload) != payload_len:
                 raise ParseError(
                     f"short read: expected {payload_len} bytes, got {len(payload)}"
@@ -217,22 +235,18 @@ class Reader:
             payload = b""
 
         # Consume optional trailing newline (SHOULD consume; MUST accept EOF)
-        peek = self._r.read(1)
+        peek = self._read1()
         if peek and peek != b"\n":
             # Not a newline — this byte belongs to the next frame.
             # We need to "unread" it.  For a plain binary IO we use seek if
-            # seekable, otherwise wrap once at construction time.
+            # seekable, otherwise stash it in _pending for replay at the top
+            # of the next next() call (only ever happens when the caller
+            # passes a non-seekable stream with no trailing newline between
+            # frames; all writers emit it).
             if hasattr(self._r, "seek") and self._r.seekable():
                 self._r.seek(-1, 1)
             else:
-                # Re-wrap with a prepend buffer — this is a one-byte lookahead
-                # and only ever happens when the caller passes a non-seekable
-                # stream with no trailing newline between frames (rare in
-                # practice; all writers emit it).  We attach the byte as a
-                # pending attribute so the next read picks it up first.
-                if not hasattr(self, "_pending"):
-                    self._pending = bytearray()
-                self._pending = bytearray(peek) + getattr(self, "_pending", bytearray())
+                self._pending = bytearray(peek) + self._pending
 
         frame.payload = payload
 

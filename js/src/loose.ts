@@ -213,8 +213,21 @@ function goFormatFloat(f: number): string {
     // JS chose exponential form — normalize to Go format.
     s = normalizeExpStr(jsStr);
   } else {
-    // JS gave decimal form. Apply Go's threshold: exp E = floor(log10(absF)).
-    const E = Math.floor(Math.log10(absF));
+    // JS gave decimal form. Compute the magnitude exponent E EXACTLY from the
+    // decimal digits — Math.log10 rounds the wrong way for values just below
+    // a power of ten (e.g. repr 999999999999999.8 -> true E is 14, but
+    // Math.log10 yields 15.0), which would diverge from Go/Python. Mirrors
+    // Python canon_float's decimal-digit E computation.
+    const dot = jsStr.indexOf('.');
+    const intPart = dot < 0 ? jsStr : jsStr.slice(0, dot);
+    const fracPart = dot < 0 ? '' : jsStr.slice(dot + 1);
+    let E: number;
+    if (intPart !== '0') {
+      E = intPart.length - 1;
+    } else {
+      const stripped = fracPart.replace(/^0+/, '');
+      E = -(fracPart.length - stripped.length) - 1;
+    }
     if (E >= 6 || E <= -5) {
       // Go uses exponential; JS used decimal — convert.
       s = decimalToGoExp(absF);
@@ -1291,6 +1304,28 @@ export const TENSOR_DTYPE_BITS: Record<string, number> = {
   int64: 64, uint8: 8, uint16: 16, uint32: 32, uint64: 64, float64: 64,
   bool: 8, qint4: 4, qint2: 2, qint3: 3, ternary: 2, binary: 1,
 };
+
+/**
+ * Reject non-zero padding bits for sub-byte dtypes (SPEC-CANON.md §4).
+ *
+ * Sub-byte dtypes pack LSB-first, so when n*bits is not a multiple of 8 the
+ * unused high bits of the last byte are padding and must be zero — otherwise
+ * two byte strings would name different tensors with the same element
+ * sequence. Mirrors Python tensor_ref and Go TensorRef.
+ *
+ * Callers validating raw tensor bytes (e.g. tensorRef) must call this after
+ * the packed-size check. Unknown dtypes are not this function's error (the
+ * dtype check belongs to the caller); they are ignored here. No-op when the
+ * packed bits end on a byte boundary or data is empty.
+ */
+export function checkTensorPadding(dtype: string, shape: number[], data: Uint8Array): void {
+  if (!hasOwn(TENSOR_DTYPE_BITS, dtype)) return;
+  const n = shape.reduce((a, d) => a * d, 1);
+  const used = (n * TENSOR_DTYPE_BITS[dtype]) % 8;
+  if (data.length > 0 && used !== 0 && data[data.length - 1] >> used !== 0) {
+    throw new Error(`tensor data has non-zero padding bits for dtype ${dtype} shape [${shape}]`);
+  }
+}
 
 /**
  * {"$tensor":{dtype,shape,sha256}} as a map: there is no tensor GType and the

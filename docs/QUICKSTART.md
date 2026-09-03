@@ -7,7 +7,7 @@ Get a verified feel for the codec in a few minutes.
 | Language | Command |
 |----------|---------|
 | Python | `pip install glyph-py` |
-| Go | in-repo / source preview — `cd go && go build ./...` (`go get` not yet a stable path) |
+| Go | `go get github.com/Neumenon/glyph/go` |
 | JavaScript / TypeScript | `npm install cowrie-glyph` |
 | Rust | parked in `attic/rust/glyph-codec/` — not published |
 | C | parked in `attic/c/glyph-codec/` — build from source |
@@ -26,17 +26,15 @@ print(text)
 value = glyph.parse(text)
 print(value.get("query").as_str())
 
-fp = glyph.fingerprint_loose(glyph.from_json(data))
+fp = glyph.fingerprint(glyph.from_json(data))
 print(fp)
 ```
 
 ## Go
 
-> **In-repo / source preview.** The Go module lives under `go/` and is a full
-> conformance implementation, but external `go get github.com/Neumenon/glyph`
-> does not yet resolve cleanly. Run this from a checkout of the repo
-> (`cd go && go build ./...`) until the module packaging is stabilized — see the
-> [Go README](../go/README.md).
+> The Go module path is `github.com/Neumenon/glyph/go` (dependency-free —
+> standard library only). Install with `go get github.com/Neumenon/glyph/go`;
+> details in the [Go README](../go/README.md).
 
 ```go
 package main

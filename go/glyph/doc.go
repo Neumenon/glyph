@@ -62,7 +62,7 @@
 //
 //   - Loose (schema-free, LLM-facing): CanonicalizeLoose / CanonicalizeLooseWithOpts.
 //     Deterministic, cross-language byte-identical, JSON-bridgeable via
-//     ToJSONLoose/FromJSONLoose. Use for hashing/dedup via FingerprintLoose.
+//     ToJSONLoose/FromJSONLoose. Use for hashing/dedup via Fingerprint.
 //   - Typed (schema-bound): Emit / EmitWithOptions (and the schema-driven
 //     EmitPacked / EmitTabular it composes). Round-trips through Parse.
 //
@@ -71,7 +71,7 @@
 //
 // Not part of the two supported layers (see PARITY_ROADMAP.md P4):
 //   - EmitTokenAware  — deprecated/experimental, zero production callers.
-//   - CanonicalHash   — deprecated/experimental; use FingerprintLoose instead.
+//   - CanonicalHash   — deprecated/experimental; use Fingerprint instead.
 //   - EmitV2, EncodeDictFrame, Decimal128 — experimental/emit-only,
 //     not round-trip-integrated; may change or be removed.
 //

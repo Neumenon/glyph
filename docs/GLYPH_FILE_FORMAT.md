@@ -52,7 +52,7 @@ A `.glyph` file can be identified by:
 
 ## Fingerprinting
 
-The canonical fingerprint of a `.glyph` file is the SHA-256 hash of its UTF-8 byte content after canonicalization. For value identity, Go/Python/JS `fingerprint_loose` helpers hash the no-tabular canonical form. GS1 stream base hashes are separate stream-level hashes; in Go, `stream.StateHashLoose` hashes `CanonicalizeLoose(stateDoc)`. Rust and C currently expose narrower hash helpers in their language READMEs.
+There is one digest: `fingerprint(v) = sha256(canon_json(v))` (SPEC-CANON.md §5). Value identity, a patch's `base`, and the GS1 state hash are all this same value — Go/Python/JS `Fingerprint`/`fingerprint`/`fingerprint` and Go's `stream.StateHashLoose` all compute it. GLYPH text is a renderer only and is never hashed. Rust and C currently expose narrower hash helpers in their language READMEs.
 
 ## In Shard v2 Context
 

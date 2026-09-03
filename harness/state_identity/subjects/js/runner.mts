@@ -27,7 +27,7 @@ const canonImpl = (canonMod.default ?? canonMod) as unknown as {
   canonJson: (v: unknown) => string;
   isCanonical: (b: string) => boolean;
 };
-const fingerprintLoose = canonImpl.fingerprint;
+const fingerprint = canonImpl.fingerprint;
 const { canonJson, isCanonical } = canonImpl;
 const parseLooseMod = parseLooseNS as unknown as Record<string, unknown> & { default?: Record<string, unknown> };
 const parseLooseImpl = (parseLooseMod.default ?? parseLooseMod) as unknown as { parseLoose: (t: string) => unknown };
@@ -68,7 +68,7 @@ function runSubjects(raw: string): Row[] {
   }
 
   try {
-    rows.push({ id: "", subject: "glyph", hash: fingerprintLoose(fromJsonLoose(v)), error: null });
+    rows.push({ id: "", subject: "glyph", hash: fingerprint(fromJsonLoose(v)), error: null });
   } catch (e) {
     rows.push({ id: "", subject: "glyph", hash: "", error: `${(e as Error).name}: ${(e as Error).message}` });
   }
@@ -115,7 +115,7 @@ function bench(payloadsPath: string): number {
 
     const gv = fromJsonLoose(v);
     t0 = performance.now();
-    for (let i = 0; i < iters; i++) fingerprintLoose(gv);
+    for (let i = 0; i < iters; i++) fingerprint(gv);
     row.glyph_ns = Math.round((performance.now() - t0) * 1e6 / iters);
 
     t0 = performance.now();
@@ -138,7 +138,7 @@ function main(): number {
         if (!line.trim()) continue;
         const fx = JSON.parse(line) as { id: string; text: string };
         try {
-          process.stdout.write(JSON.stringify({ id: fx.id, subject: "glyph", hash: fingerprintLoose(parseLoose(fx.text)), error: null }) + "\n");
+          process.stdout.write(JSON.stringify({ id: fx.id, subject: "glyph", hash: fingerprint(parseLoose(fx.text)), error: null }) + "\n");
         } catch (e) {
           process.stdout.write(JSON.stringify({ id: fx.id, subject: "glyph", hash: "", error: `${(e as Error).name}: ${(e as Error).message}` }) + "\n");
         }

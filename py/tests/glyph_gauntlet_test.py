@@ -47,7 +47,7 @@ from glyph import (
     to_json_loose,
     json_to_glyph,
     glyph_to_json,
-    fingerprint_loose,
+    fingerprint,
     equal_loose,
     StreamingValidator,
     ToolRegistry,
@@ -248,29 +248,24 @@ class TestGauntletTypeZoo:
         assert v2.as_id().value == "myref-001"
 
     def test_struct_roundtrip(self):
-        """Struct emits TypeName{field=val} and round-trips via parse."""
+        """Struct collapses to a plain map in Loose (G1): sorted keys, no TypeName."""
         gv = GValue.struct(
             "Team",
             MapEntry("name", GValue.str_("Arsenal")),
             MapEntry("rank", GValue.int_(1)),
         )
         text = canonicalize_loose(gv)
-        assert text == "Team{name=Arsenal rank=1}", f"unexpected struct text: {text!r}"
+        assert text == "{name=Arsenal rank=1}", f"unexpected struct text: {text!r}"
         v2 = parse(text)
-        assert v2.type == GType.STRUCT
-        sv = v2.as_struct()
-        assert sv.type_name == "Team"
+        assert v2.type == GType.MAP
 
     def test_sum_roundtrip(self):
-        """Sum (tagged union) emits tag(value) and round-trips."""
+        """Sum (tagged union) collapses to {tag=value} in Loose (G2)."""
         gv = GValue.sum("Ok", GValue.int_(42))
         text = canonicalize_loose(gv)
-        assert text == "Ok(42)", f"unexpected sum text: {text!r}"
+        assert text == "{Ok=42}", f"unexpected sum text: {text!r}"
         v2 = parse(text)
-        assert v2.type == GType.SUM
-        sm = v2.as_sum()
-        assert sm.tag == "Ok"
-        assert sm.value.as_int() == 42
+        assert v2.type == GType.MAP
 
     def test_time_forward_only(self):
         """
@@ -762,7 +757,7 @@ class TestGauntletPatch:
     def test_verify_patch_no_base_noop(self):
         """verify_patch_base is a no-op when patch has no @base."""
         base = self._make_match_base()
-        p = parse_patch(_wire(('=', ['minute'], 10), target='x'))
+        p = parse_patch(_wire(('=', ['minute'], 10), target=self._TARGET))
         assert p.base_fingerprint == ""
         # Should not raise
         verify_patch_base(base, p)
@@ -850,10 +845,10 @@ class TestGauntletStreamChunkInvariance:
             parse(truncated)
 
     def test_fingerprint_stable(self):
-        """fingerprint_loose is deterministic — same value -> same hex."""
+        """fingerprint is deterministic — same value -> same hex."""
         v = from_json_loose({"action": "search", "q": "test"})
-        fp1 = fingerprint_loose(v)
-        fp2 = fingerprint_loose(v)
+        fp1 = fingerprint(v)
+        fp2 = fingerprint(v)
         assert fp1 == fp2
         assert len(fp1) == 64  # SHA-256 hex
 

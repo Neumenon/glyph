@@ -27,8 +27,14 @@ from ..types import GValue
 from .types import (
     Frame,
     FrameKind,
+    KIND_ACK,
     KIND_DOC,
+    KIND_ERR,
     KIND_PATCH,
+    KIND_PING,
+    KIND_PONG,
+    KIND_ROW,
+    KIND_UI,
     BaseMismatchError,
 )
 from .hash import state_hash_loose, verify_base
@@ -262,21 +268,25 @@ class FrameHandler:
         if frame.kind == KIND_PATCH:
             if self.on_patch is not None:
                 self.on_patch(frame.sid, frame.seq, frame.payload, state)
-        elif frame.kind == 0:   # KIND_DOC
+        elif frame.kind == KIND_DOC:
             if self.on_doc is not None:
                 self.on_doc(frame.sid, frame.seq, frame.payload, state)
-        elif frame.kind == 2:   # KIND_ROW
+        elif frame.kind == KIND_ROW:
             if self.on_row is not None:
                 self.on_row(frame.sid, frame.seq, frame.payload, state)
-        elif frame.kind == 3:   # KIND_UI
+        elif frame.kind == KIND_UI:
             if self.on_ui is not None:
                 self.on_ui(frame.sid, frame.seq, frame.payload, state)
-        elif frame.kind == 4:   # KIND_ACK
+        elif frame.kind == KIND_ACK:
             if self.on_ack is not None:
                 self.on_ack(frame.sid, frame.seq, state)
-        elif frame.kind == 5:   # KIND_ERR
+        elif frame.kind == KIND_ERR:
             if self.on_err is not None:
                 self.on_err(frame.sid, frame.seq, frame.payload, state)
+        elif frame.kind in (KIND_PING, KIND_PONG):
+            # Keepalives intentionally have no callback: they only advance
+            # last_seq (committed above); no dispatch needed.
+            pass
 
         # Final flag.
         if frame.is_final():

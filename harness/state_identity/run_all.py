@@ -104,7 +104,7 @@ def collect_rows(inputs: list[dict]) -> dict:
 def analyse_part_a(matrix: dict, inputs: list[dict]) -> dict:
     klass_of = {i["id"]: i["klass"] for i in inputs}
     analysis: defaultdict = defaultdict(lambda: {"agree": 0, "disagree": 0, "errors": 0,
-                                                 "divergent_ids": []})
+                                                 "divergent_ids": [], "refused_by": {}})
     for subject in SUBJECTS:
         for fid in klass_of:
             hashes = set()
@@ -118,6 +118,13 @@ def analyse_part_a(matrix: dict, inputs: list[dict]) -> dict:
             a = analysis[f"{subject}/ALL"]
             if errored:
                 a["errors"] += 1
+                # Per-fixture refusal split: which langs refused this fixture.
+                # Keeps totals backward-compatible (additive field) while making
+                # e.g. Go-refuses-vs-Py/JS-last-wins (dupkeys) visible.
+                a["refused_by"][fid] = [
+                    lang for lang in LANGS
+                    if (cell := matrix[lang][subject].get(fid)) is None or cell["error"]
+                ]
             elif len(hashes) <= 1:
                 a["agree"] += 1
             else:
@@ -126,13 +133,18 @@ def analyse_part_a(matrix: dict, inputs: list[dict]) -> dict:
                     a["divergent_ids"].append(fid)
 
     # per-klass table per subject
-    by_klass2: defaultdict = defaultdict(lambda: {"agree": 0, "disagree": 0, "errors": 0})
+    by_klass2: defaultdict = defaultdict(lambda: {"agree": 0, "disagree": 0, "errors": 0,
+                                                  "refused_by": {}})
     for subject in SUBJECTS:
         for fid in klass_of:
             k = klass_of[fid]
             cell_any = [matrix[l][subject].get(fid) for l in LANGS]
             if any(c is None or c["error"] for c in cell_any):
                 by_klass2[f"{subject}/{k}"]["errors"] += 1
+                by_klass2[f"{subject}/{k}"]["refused_by"][fid] = [
+                    lang for lang in LANGS
+                    if (c := matrix[lang][subject].get(fid)) is None or c["error"]
+                ]
                 continue
             hs = {c["hash"] for c in cell_any}
             key = "agree" if len(hs) <= 1 else "disagree"

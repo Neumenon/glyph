@@ -13,9 +13,12 @@ import (
 // ============================================================
 
 // canonTime returns the canonical time representation per D2:
-// UTC, RFC3339Nano, trailing fractional zeros trimmed, always 'Z'.
+// UTC, millisecond precision (sub-millisecond digits are truncated, not
+// rounded), RFC3339Nano with trailing fractional zeros trimmed, always 'Z'.
+// Millisecond precision is pinned across Go/Python/JS: identity comes from
+// the truncated form even when a transport string carries finer digits.
 func canonTime(t time.Time) string {
-	s := t.UTC().Format(time.RFC3339Nano)
+	s := t.UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano)
 	if idx := strings.IndexByte(s, '.'); idx != -1 {
 		end := len(s) - 1 // index of 'Z'
 		i := end

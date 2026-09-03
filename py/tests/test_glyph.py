@@ -13,7 +13,7 @@ from glyph import (
     json_to_glyph,
     canonicalize_loose,
     equal_loose,
-    fingerprint_loose,
+    fingerprint,
     LooseCanonOpts, NullStyle,
 )
 
@@ -324,8 +324,8 @@ class TestFingerprint:
             MapEntry("a", GValue.int_(1)),
             MapEntry("b", GValue.int_(2))
         )
-        fp1 = fingerprint_loose(v)
-        fp2 = fingerprint_loose(v)
+        fp1 = fingerprint(v)
+        fp2 = fingerprint(v)
         assert fp1 == fp2
 
     def test_fingerprint_order_independent(self):
@@ -337,7 +337,7 @@ class TestFingerprint:
             MapEntry("b", GValue.int_(2)),
             MapEntry("a", GValue.int_(1))
         )
-        assert fingerprint_loose(v1) == fingerprint_loose(v2)
+        assert fingerprint(v1) == fingerprint(v2)
 
 
 class TestAutoTabular:

@@ -12,7 +12,10 @@ import { hashToHex, hexToHash } from './hash';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const DEFAULT_MAX_HEADER_BYTES = 8 * 1024;
+// Header cap 64 KiB (aligns Go MaxHeaderSize / Python MAX_HEADER_SIZE and the
+// GS1 spec): large enough for base hashes + flags, small enough to bound DoS
+// via a header line with no newline.
+const DEFAULT_MAX_HEADER_BYTES = 64 * 1024;
 
 // ============================================================
 // Writer
@@ -93,7 +96,7 @@ export function encodeFrames(frames: Frame[], options: WriterOptions = {}): Uint
 export interface ReaderOptions {
   /** Maximum payload size (default: 64 MiB) */
   maxPayload?: number;
-  /** Maximum header size in bytes before newline (default: 8 KiB) */
+  /** Maximum header size in bytes before newline (default: 64 KiB) */
   maxHeaderBytes?: number;
   /** Whether to verify CRC (default: true) */
   verifyCRC?: boolean;
@@ -246,7 +249,11 @@ export class Reader {
       kind: 'doc',
       payloadLen: 0,
     };
-    
+
+    // Header leniency is deliberate (mirrors the Go/Py readers): unknown keys
+    // are ignored so a sender using newer header fields stays readable, and
+    // `flags` accepts hex with an optional 0x prefix in either case.
+    // Malformed KNOWN fields still throw ParseError.
     for (const pair of pairs) {
       const eqIdx = pair.indexOf('=');
       if (eqIdx < 0) continue;

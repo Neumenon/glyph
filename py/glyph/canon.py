@@ -1,4 +1,4 @@
-"""Canonical JSON profile ``glyph-canon-json-1.0.0`` (see ``SPEC-CANON.md``).
+"""Canonical JSON profile ``glyph-canon-json-1.1.0`` (see ``SPEC-CANON.md``).
 
 The only byte form GLYPH hashes. ``fingerprint``, the patch ``base`` and the GS1
 state hash are all ``sha256(canon_json(v))``. GLYPH text is a renderer and is
@@ -53,7 +53,10 @@ def is_canonical(b: bytes) -> bool:
             canon_json(from_json_loose(json.loads(b.decode("utf-8")))).encode("utf-8")
             == b
         )
-    except ValueError:  # JSONDecodeError, UnicodeDecodeError, CanonError, bridge limits
+    except (ValueError, OverflowError, RecursionError):
+        # JSONDecodeError, UnicodeDecodeError, CanonError, bridge limits,
+        # float() overflow on huge ints, and RecursionError on nesting past
+        # the interpreter/bridge depth guards — all mean "not canonical".
         return False
 
 
@@ -69,12 +72,26 @@ def tensor_ref(dtype: str, shape: Sequence[int], data: bytes) -> GValue:
         raise ValueError(f"unknown tensor dtype {dtype!r}")
     n = 1
     for d in shape:
+        # Shape dims are strict ints: floats (even integral ones) and bools
+        # are rejected, matching the $tensor bridge (_is_dim in loose.py).
+        if isinstance(d, bool) or not isinstance(d, int):
+            raise ValueError(f"tensor shape dim must be an int, got {d!r}")
+        if d < 0:
+            raise ValueError(f"tensor shape has negative dim {d}")
         n *= d
     want = (n * bits + 7) // 8
     if len(data) != want:
         raise ValueError(
             f"tensor data is {len(data)} bytes; dtype {dtype} shape {list(shape)} packs to {want}"
         )
+    # Sub-byte dtypes pack LSB-first, so the unused high bits of the last
+    # byte are padding and must be zero — otherwise two byte strings would
+    # name different tensors with the same element sequence.
+    if data and (n * bits) % 8:
+        if data[-1] >> ((n * bits) % 8):
+            raise ValueError(
+                f"tensor data has non-zero padding bits for dtype {dtype} shape {list(shape)}"
+            )
     return from_json_loose(
         {"$tensor": {"dtype": dtype, "shape": list(shape), "sha256": hashlib.sha256(data).hexdigest()}}
     )

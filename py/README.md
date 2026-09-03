@@ -33,7 +33,7 @@ value = glyph.parse('{name=Alice age=30 active=t}')
 print(value.get("name").as_str())
 print(value.get("age").as_int())
 
-fp = glyph.fingerprint_loose(glyph.from_json(data))
+fp = glyph.fingerprint(glyph.from_json(data))
 print(fp)
 ```
 
@@ -47,7 +47,7 @@ print(fp)
 | `glyph_to_json(text)` | Parse GLYPH text to Python data |
 | `from_json(data)` | Convert Python data to `GValue` |
 | `to_json(value)` | Convert `GValue` to Python data |
-| `fingerprint_loose(value)` | SHA-256 fingerprint of canonical loose form |
+| `fingerprint(value)` | SHA-256 fingerprint of canonical JSON form (SPEC-CANON.md §5) |
 | `equal_loose(a, b)` | Equality by canonical loose form |
 
 ## Building Values

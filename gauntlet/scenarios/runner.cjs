@@ -57,9 +57,9 @@ function s2(inp) {
 function s3(inp) {
   const d = inp.S3_fingerprint;
   return {
-    fp_base: G.fingerprintLoose(G.fromJsonLoose(d.base)),
-    fp_equiv: G.fingerprintLoose(G.fromJsonLoose(d.equiv)),
-    fp_mutated: G.fingerprintLoose(G.fromJsonLoose(d.mutated)),
+    fp_base: G.fingerprint(G.fromJsonLoose(d.base)),
+    fp_equiv: G.fingerprint(G.fromJsonLoose(d.equiv)),
+    fp_mutated: G.fingerprint(G.fromJsonLoose(d.mutated)),
   };
 }
 
@@ -77,7 +77,7 @@ function s4(inp) {
     bytes_list: Buffer.byteLength(lst, 'utf8'),
     bytes_tab: Buffer.byteLength(tab, 'utf8'),
     roundtrip_ok: G.equalLoose(gv, recovered),
-    fp_recovered: G.fingerprintLoose(recovered),
+    fp_recovered: G.fingerprint(recovered),
   };
 }
 
@@ -90,7 +90,7 @@ function s5(inp) {
   const result = G.applyPatch(base, patch);
   return {
     result: G.toJsonLoose(result),
-    fp_result: G.fingerprintLoose(result),
+    fp_result: G.fingerprint(result),
     base_unchanged: JSON.stringify(G.toJsonLoose(base)) === before,
   };
 }
@@ -99,7 +99,7 @@ function s5(inp) {
 function s6(inp) {
   const d = inp.S6_patch_base;
   const state = G.fromJsonLoose(d.state);
-  const base16 = G.computeBaseFingerprint(state);
+  const base64hex = G.computeBaseFingerprint(state);
   const wire = (base) => JSON.stringify({ glyph_patch: 1, ops: d.patch_ops, base, target: d.target });
   const verify = (base) => {
     try {
@@ -110,7 +110,7 @@ function s6(inp) {
       throw e;
     }
   };
-  return { base16, verify_accept: verify(base16), verify_reject: !verify(d.stale_base) };
+  return { base64hex, verify_accept: verify(base64hex), verify_reject: !verify(d.stale_base) };
 }
 
 // ── S7 ──────────────────────────────────────────────────────────────────────

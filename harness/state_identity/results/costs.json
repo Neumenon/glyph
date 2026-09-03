@@ -2,74 +2,74 @@
   "bench_ns_per_op": {
     "go": [
       {
-        "glyph_ns": 2065,
+        "glyph_ns": 1445,
         "id": "small_state",
         "iters": 300,
-        "jcs_ns": 4786,
-        "naive_ns": 2250
+        "jcs_ns": 4289,
+        "naive_ns": 2092
       },
       {
-        "glyph_ns": 20644,
+        "glyph_ns": 22534,
         "id": "tabular_batch",
         "iters": 300,
-        "jcs_ns": 76018,
-        "naive_ns": 34461
+        "jcs_ns": 68090,
+        "naive_ns": 35283
       },
       {
-        "glyph_ns": 1733,
+        "glyph_ns": 1700,
         "id": "nested_trace",
         "iters": 300,
-        "jcs_ns": 5629,
-        "naive_ns": 3871
+        "jcs_ns": 6254,
+        "naive_ns": 4344
       }
     ],
     "js": [
       {
-        "glyph_ns": 16811,
+        "glyph_ns": 17411,
         "id": "small_state",
         "iters": 300,
-        "jcs_ns": 8042,
-        "naive_ns": 7802
+        "jcs_ns": 8624,
+        "naive_ns": 6381
       },
       {
-        "glyph_ns": 62646,
+        "glyph_ns": 60771,
         "id": "tabular_batch",
         "iters": 300,
-        "jcs_ns": 66047,
-        "naive_ns": 19907
+        "jcs_ns": 56139,
+        "naive_ns": 24839
       },
       {
-        "glyph_ns": 8880,
+        "glyph_ns": 9142,
         "id": "nested_trace",
         "iters": 300,
-        "jcs_ns": 5202,
-        "naive_ns": 3635
+        "jcs_ns": 4840,
+        "naive_ns": 4083
       }
     ],
     "python": [
       {
-        "glyph_ns": 17137,
+        "glyph_ns": 17202,
         "id": "small_state",
         "iters": 300,
-        "jcs_ns": 11967,
-        "minified_ns": 3139,
-        "naive_ns": 3426
+        "jcs_ns": 13862,
+        "minified_ns": 2994,
+        "naive_ns": 3511
       },
       {
-        "glyph_ns": 289098,
+        "glyph_ns": 304410,
         "id": "tabular_batch",
         "iters": 300,
-        "jcs_ns": 215832,
-        "minified_ns": 34203,
-        "naive_ns": 35316
+        "jcs_ns": 219800,
+        "minified_ns": 33706,
+        "naive_ns": 34115
       },
       {
-        "glyph_ns": 48962,
+        "glyph_ns": 46383,
         "id": "nested_trace",
         "iters": 300,
-        "jcs_ns": 29603,
-        "minified_ns": 5492,
-        "naive_ns": 5371
+        "jcs_ns": 30413,
+        "minified_ns": 5313,
+        "naive_ns": 5250
       }
     ]
   },

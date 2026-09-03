@@ -41,7 +41,10 @@ GLYPH has a single abstract value model shared by every encoding surface:
 **Normative.** `Parse(Emit(x)) == x` MUST hold for every GType, in every
 mode. This includes the extended types (Bytes, Time, ID, and the
 Int-vs-Float distinction) that JSON cannot represent natively. GLYPH-Loose
-preserves the full value model; it does not collapse to a JSON-like subset.
+preserves the full scalar value model, but the struct/sum outer wrappers are
+not preserved by design: a struct collapses to a plain map
+`{field=val ...}` (sorted keys, no TypeName) and a sum to `{tag=value}`
+(CANONICAL_FORMS.md D1; CHANGELOG 1.1.0).
 
 ### 1.3 NaN / +Inf / -Inf (D3)
 
@@ -400,8 +403,8 @@ null optionals are treated as absent and omitted from the payload.
 | Aspect          | GLYPH-T (Typed)                    | GLYPH-Loose                         |
 |-----------------|------------------------------------|--------------------------------------|
 | NaN/Inf         | Valid bare tokens                  | Hard error                          |
-| Struct syntax   | `TypeName{field=val ...}`          | `TypeName{field=val ...}` (same)    |
-| Sum syntax      | `Tag(val)` or `Tag{...}`          | Same                                |
+| Struct syntax   | `TypeName{field=val ...}`          | Plain map `{field=val ...}` (TypeName dropped) |
+| Sum syntax      | `Tag(val)` or `Tag{...}`          | `{tag=value}` (no-payload sums: `{tag=_}`) |
 | Bytes           | `b64"..."` only                   | Same (after D6 bug fix)             |
 | Bare-string set | Conservative (ASCII only)          | Wider (Unicode + `-./`)             |
 | Float           | `emitFloat`: shortest + `.` always | `canonFloat`: same after D4 fix     |
@@ -472,9 +475,10 @@ Current deviations from this rule that must be fixed before W1 closes:
 ### 6.2 Loose round-trip
 
 GLYPH-Loose (`CanonicalizeLoose`) is a distinct emit path from GLYPH-T Emit.
-Both share the same canonical scalar forms (after bugs are fixed). The
-`FingerprintLoose` (SHA-256 over `CanonicalizeLoose`) is the stable
-cross-language hash; it MUST be byte-identical across Go, Python, and JS.
+Both share the same canonical scalar forms (after bugs are fixed). Neither
+emit path is hashed for identity: `fingerprint(v) = sha256(canon_json(v))`
+(SPEC-CANON.md §5) is the stable cross-language hash; it MUST be
+byte-identical across Go, Python, and JS.
 
 Float unification (D4) is required for cross-language fingerprint parity, and is
 **resolved** — the float rule is byte-identical across Go, Python, and JS. See
@@ -496,7 +500,7 @@ may change or be removed without notice (see `doc.go:69-73`):
 - `EmitTokenAware` — deprecated, zero production callers
 - `EncodeDictFrame` — experimental
 - `Decimal128` — experimental
-- `CanonicalHash` — deprecated; use `FingerprintLoose` instead
+- `CanonicalHash` — deprecated; use `Fingerprint` instead
 
 ---
 

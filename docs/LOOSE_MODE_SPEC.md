@@ -23,7 +23,7 @@ GLYPH-Loose is the schema-optional subset of GLYPH. It provides a deterministic 
 
 | Type | Canonical Form | Examples |
 |------|----------------|----------|
-| null | `_` | `_` (accepts `∅`, `null` on input) |
+| null | `_` (default) / `∅` (no-tabular) | `_` default; `∅` on the no-tabular path — `NoTabularLooseCanonOpts` / `CanonicalizeLooseNoTabular` (used by `EqualLoose`), which the published conformance corpus uses — in all three languages (see `CANONICAL_FORMS.md` §2.1); accepts `∅`, `null` on input |
 | bool | `t` / `f` | `t`, `f` |
 | int | Decimal, no leading zeros | `0`, `42`, `-100` |
 | float | Shortest roundtrip, `e` (not `E`) | `3.14`, `1e-06`, `9.007199254740992e+15` |
@@ -431,7 +431,7 @@ This enables:
 | `MinRows` | int | 3 | Minimum rows to trigger tabular |
 | `MaxCols` | int | 20 | Maximum columns allowed |
 | `AllowMissing` | bool | true | Allow rows with missing keys |
-| `NullStyle` | NullStyle | underscore | `symbol` for ∅, `underscore` for _. The default (with-tabular) canonicalization (`DefaultLooseCanonOpts` / `CanonicalizeLoose` / `StateHashLoose`) emits `_`. The fingerprint/no-tabular path (`NoTabularLooseCanonOpts` / `FingerprintLoose`) — which the published conformance corpus uses — emits `∅` (symbol) across Go, Python, and JS. |
+| `NullStyle` | NullStyle | underscore | `symbol` for ∅, `underscore` for _. The default (with-tabular) canonicalization (`DefaultLooseCanonOpts` / `CanonicalizeLoose`) emits `_`. The no-tabular path (`NoTabularLooseCanonOpts` / `CanonicalizeLooseNoTabular`, used by `EqualLoose`) — which the published conformance corpus uses — emits `∅` (symbol) across Go, Python, and JS. Neither is hashed for identity: `fingerprint(v) = sha256(canon_json(v))` (SPEC-CANON.md §5); `StateHashLoose` computes that same digest despite the name. |
 | `SchemaRef` | string | "" | Schema hash/id for @schema header |
 | `KeyDict` | []string | nil | Key dictionary for compact keys |
 | `UseCompactKeys` | bool | false | Emit #N instead of field names |

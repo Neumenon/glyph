@@ -73,17 +73,18 @@ func (r *Reader) Next() (*Frame, error) {
 	headerLine := string(line) + "\n"
 
 	// Parse header
-	frame, err := r.parseHeader(headerLine)
+	frame, payloadLen, err := r.parseHeader(headerLine)
 	if err != nil {
 		return nil, err
 	}
 
-	// Read exact payload bytes
-	payloadLen := len(frame.Payload) // temporary, set by parseHeader
+	// Validate the declared length BEFORE allocating: a huge len must fail
+	// on the limit check, not on a huge make([]byte).
 	if payloadLen > r.maxPayload {
 		return nil, &ParseError{Reason: fmt.Sprintf("payload too large: %d > %d", payloadLen, r.maxPayload), Offset: -1}
 	}
 
+	// Read exact payload bytes
 	if payloadLen > 0 {
 		frame.Payload = make([]byte, payloadLen)
 		if _, err := io.ReadFull(r.r, frame.Payload); err != nil {
@@ -112,23 +113,28 @@ func (r *Reader) Next() (*Frame, error) {
 	return frame, nil
 }
 
-// parseHeader parses the @frame{...} header line.
-func (r *Reader) parseHeader(line string) (*Frame, error) {
+// parseHeader parses the @frame{...} header line, returning the frame and
+// the declared payload length. The length is returned (not pre-allocated)
+// so the caller can enforce maxPayload before allocating.
+func (r *Reader) parseHeader(line string) (*Frame, int, error) {
 	line = strings.TrimSpace(line)
 
 	// Check prefix
 	if !strings.HasPrefix(line, "@frame{") {
-		return nil, &ParseError{Reason: "expected @frame{", Offset: 0}
+		return nil, 0, &ParseError{Reason: "expected @frame{", Offset: 0}
 	}
 
-	// Find closing brace
-	endIdx := strings.LastIndex(line, "}")
-	if endIdx < 0 {
-		return nil, &ParseError{Reason: "missing closing }", Offset: len(line)}
+	// The header must end at the closing brace: anything after "}" on the
+	// line is trailing garbage, not part of the frame.
+	if !strings.HasSuffix(line, "}") {
+		if !strings.Contains(line, "}") {
+			return nil, 0, &ParseError{Reason: "missing closing }", Offset: len(line)}
+		}
+		return nil, 0, &ParseError{Reason: "trailing data after header }", Offset: len(line) - 1}
 	}
 
 	// Extract key=value content
-	content := line[7:endIdx]
+	content := line[7 : len(line)-1]
 
 	// Parse key=value pairs
 	frame := &Frame{Version: 1}
@@ -146,52 +152,52 @@ func (r *Reader) parseHeader(line string) (*Frame, error) {
 		case "v":
 			v, err := strconv.ParseUint(val, 10, 8)
 			if err != nil {
-				return nil, &ParseError{Reason: "invalid version", Offset: -1}
+				return nil, 0, &ParseError{Reason: "invalid version", Offset: -1}
 			}
 			if v != 1 {
-				return nil, &ParseError{Reason: fmt.Sprintf("unsupported version %d, must be 1", v), Offset: -1}
+				return nil, 0, &ParseError{Reason: fmt.Sprintf("unsupported version %d, must be 1", v), Offset: -1}
 			}
 			frame.Version = uint8(v)
 
 		case "sid":
 			sid, err := strconv.ParseUint(val, 10, 64)
 			if err != nil {
-				return nil, &ParseError{Reason: "invalid sid", Offset: -1}
+				return nil, 0, &ParseError{Reason: "invalid sid", Offset: -1}
 			}
 			frame.SID = sid
 
 		case "seq":
 			seq, err := strconv.ParseUint(val, 10, 64)
 			if err != nil {
-				return nil, &ParseError{Reason: "invalid seq", Offset: -1}
+				return nil, 0, &ParseError{Reason: "invalid seq", Offset: -1}
 			}
 			frame.Seq = seq
 
 		case "kind":
 			kind, ok := ParseKind(val)
 			if !ok {
-				return nil, &ParseError{Reason: "invalid kind: " + val, Offset: -1}
+				return nil, 0, &ParseError{Reason: "invalid kind: " + val, Offset: -1}
 			}
 			frame.Kind = kind
 
 		case "len":
 			l, err := strconv.ParseUint(val, 10, 32)
 			if err != nil {
-				return nil, &ParseError{Reason: "invalid len", Offset: -1}
+				return nil, 0, &ParseError{Reason: "invalid len", Offset: -1}
 			}
 			payloadLen = int(l)
 
 		case "crc":
 			crc, ok := parseCRC(val)
 			if !ok {
-				return nil, &ParseError{Reason: "invalid crc: " + val, Offset: -1}
+				return nil, 0, &ParseError{Reason: "invalid crc: " + val, Offset: -1}
 			}
 			frame.CRC = &crc
 
 		case "base":
 			base, ok := parseBase(val)
 			if !ok {
-				return nil, &ParseError{Reason: "invalid base: " + val, Offset: -1}
+				return nil, 0, &ParseError{Reason: "invalid base: " + val, Offset: -1}
 			}
 			frame.Base = &base
 
@@ -206,10 +212,10 @@ func (r *Reader) parseHeader(line string) (*Frame, error) {
 		}
 	}
 
-	// Use payloadLen as temporary storage (we need it for reading)
-	frame.Payload = make([]byte, payloadLen)
+	// Payload bytes are read by the caller after the maxPayload check.
+	frame.Payload = nil
 
-	return frame, nil
+	return frame, payloadLen, nil
 }
 
 // tokenize splits key=value pairs separated by spaces or commas.

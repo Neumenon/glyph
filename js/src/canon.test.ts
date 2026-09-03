@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GValue, MapEntry } from './types';
 import { canonJson, fingerprint, isCanonical, tensorRef, CanonError } from './canon';
-import { fromJsonLoose } from './loose';
+import { fromJsonLoose, checkTensorPadding } from './loose';
 import { computeBaseFingerprint } from './patch';
 import { stateHashLooseSync, hashToHex } from './stream/hash';
 
@@ -111,6 +111,27 @@ describe('tensor refs (SPEC-CANON §4)', () => {
     expect(() => tensorRef('qint4', [3], new Uint8Array(3))).toThrow(CanonError);
     expect(() => tensorRef('float32', [2], new Uint8Array(7))).toThrow(CanonError);
     expect(() => tensorRef('f32', [2], new Uint8Array(8))).toThrow(CanonError); // cowrie names only
+  });
+
+  // SPEC-CANON.md §4: sub-byte dtypes pack LSB-first, so the unused high bits
+  // of the last byte are padding and must be zero (mirrors Python tensor_ref
+  // and Go TensorRef); tensorRef above enforces this via checkTensorPadding.
+  test('checkTensorPadding accepts zero padding', () => {
+    checkTensorPadding('qint4', [3], Uint8Array.from([0x21, 0x03])); // 12 bits, high nibble 0
+    checkTensorPadding('binary', [9], Uint8Array.from([0x01, 0x00])); // 9 bits, 7 pad bits 0
+    checkTensorPadding('float32', [2], new Uint8Array(8)); // byte-aligned: no-op
+    checkTensorPadding('int8', [0, 3], new Uint8Array(0)); // empty: no-op
+  });
+
+  test('checkTensorPadding rejects non-zero padding', () => {
+    // qint4[3] = 12 bits: only the low nibble of the last byte is used.
+    expect(() => checkTensorPadding('qint4', [3], Uint8Array.from([0x21, 0x30]))).toThrow(
+      /non-zero padding bits/,
+    );
+    // binary[9] = 9 bits: only bit0 of the last byte is used.
+    expect(() => checkTensorPadding('binary', [9], Uint8Array.from([0x01, 0x02]))).toThrow(
+      /non-zero padding bits/,
+    );
   });
 
   test('bridge rejects malformed $tensor', () => {

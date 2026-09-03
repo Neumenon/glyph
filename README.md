@@ -35,7 +35,7 @@ LLM-facing surfaces. It is never hashed.
 
 ## What GLYPH is
 
-- a **canonical JSON profile** (`glyph-canon-json-1.0.0`, [`SPEC-CANON.md`](./SPEC-CANON.md)): one deterministic byte sequence per value, expressible in stdlib JSON, with the number, key-order, and error rules pinned in two pages
+- a **canonical JSON profile** (`glyph-canon-json-1.1.0`, [`SPEC-CANON.md`](./SPEC-CANON.md)): one deterministic byte sequence per value, expressible in stdlib JSON, with the number, key-order, and error rules pinned in two pages
 - a **content-addressed identity primitive**: `fingerprint` / `Fingerprint` / `fingerprint` — SHA-256 of the canonical JSON, identical across Go, Python, and JS — for state caching, deduplication, and "did this sub-agent actually see the state I think it saw"
 - a **strict check**: `is_canonical(bytes)` — exactly one byte sequence per value is accepted, so bytes on a wire cannot disagree with their own digest
 - a **content reference for large blobs**: `{"$tensor":{"dtype","shape","sha256"}}` names a tensor by the SHA-256 of its raw elements, so multimodal state fingerprints without the bytes riding along
@@ -191,7 +191,7 @@ print(fp)
 # 43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777
 ```
 
-The same call in Go (`glyph.Fingerprint(parsed.Value)`) and JavaScript (`fingerprint(parseLoose("{a=1 b=2}"))`) produces the identical 64-character hex string: `sha256(canon_json(value))`, the canonical JSON profile in [`SPEC-CANON.md`](./SPEC-CANON.md). It is the one digest — value identity, patch base, and GS1 state hash are all this value. `fingerprint_loose` remains as an alias.
+The same call in Go (`glyph.Fingerprint(parsed.Value)`) and JavaScript (`fingerprint(parseLoose("{a=1 b=2}"))`) on the same value produces the identical 64-character hex string: `sha256(canon_json(value))`, the canonical JSON profile in [`SPEC-CANON.md`](./SPEC-CANON.md). It is the one digest — value identity, patch base, and GS1 state hash are all this value.
 
 ### 3. Patch application with an enforced base
 
@@ -218,7 +218,7 @@ glyph.apply_patch(stale, patch)           # base does NOT match -> raises
 # glyph.PatchBaseMismatch: patch base fingerprint mismatch: got '426bfbce2b3c5546b7ac7fda0e5e82f41fc4816cf94ee919aa4ae5234a98d28c', want 'f7a5eb1274c380e4b693fedd20e06f2ae1cc5964a67cce9e944e3a6c57763b3d'
 ```
 
-The same patch, applied through `glyph.ApplyPatch` in Go and `applyPatch` in JS, produces the identical accepted result and the identical rejected-fingerprint pair above — verified directly while writing this document, not assumed from the Python behavior. `apply_patch(base, patch, verify_base=False)` (Go: `ApplyPatchUnchecked`; JS: `applyPatch(v, p, { verifyBase: false })`) is the explicit opt-out for callers who already verified the base elsewhere. `glyph.diff(from_value, to_value)` computes a `Patch` between two states in all three languages if you'd rather generate one than hand-write it.
+The same patch, applied through `glyph.ApplyPatch` in Go and `applyPatch` in JS, produces the identical value and the identical rejected-fingerprint pair above — verified directly while writing this document, not assumed from the Python behavior. `apply_patch(base, patch, verify_base=False)` (Go: `ApplyPatchUnchecked`; JS: `applyPatch(v, p, { verifyBase: false })`) is the explicit opt-out for callers who already verified the base elsewhere. `glyph.diff(from_value, to_value)` computes a `Patch` between two states in all three languages if you'd rather generate one than hand-write it.
 
 A patch path is a list of segments: a string segment walks a struct field or a map key (one kind on the wire, resolved against whatever the value is), an integer segment indexes a list. Hand-written and `diff()`-generated patches share the JSON wire form in [`SPEC-CANON.md`](./SPEC-CANON.md) §7, and a GS1 cursor rejects any patch or state frame whose bytes are not canonical.
 
@@ -264,6 +264,8 @@ except BaseMismatchError as e:
 accepted: patch base matched current state
 rejected: gs1: base hash mismatch
 ```
+
+> **Name trap:** `state_hash_loose` hashes `canon_json` bytes despite the name — its hex is `glyph.fingerprint(value)`, the same one digest, returned as raw bytes for frame headers.
 
 Full protocol details, including CRC and resync handling, are in [`docs/GS1_SPEC.md`](./docs/GS1_SPEC.md).
 

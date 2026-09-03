@@ -55,8 +55,11 @@ func TestEquivalenceClasses(t *testing.T) {
 				testObjectEquivalence(t, cls, opts)
 			case cls.CanonicalVal != "" && len(cls.InputsJSON) == 1:
 				testSingleCanon(t, cls, opts)
-			default:
-				t.Skipf("unhandled equivalence class type: %s", cls.ID)
+		default:
+			// Fail loud: every class in the manifest must match a handled
+			// schema (inputs_json/test_strings). Silent SKIPs hid three
+			// unmigrated classes here before.
+			t.Errorf("unhandled equivalence class type: %s (migrate to inputs_json/test_strings schema or delete)", cls.ID)
 			}
 		})
 	}

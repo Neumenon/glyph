@@ -7,16 +7,20 @@ external implementers can expect.
 
 ## 1. What counts as a spec
 
-Three documents form the normative specification surface:
+Five documents form the normative specification surface:
 
 | Document | Spec ID | Covers |
 |---|---|---|
+| `SPEC-CANON.md` | `glyph-canon-json-1.1.0` | Canonical JSON identity substrate (authoritative for identity) |
+| `docs/GLYPH_T_SPEC.md` | `glyph-t-1.0.0` | Typed surface + Patch + Path grammars |
 | `docs/CANONICAL_FORMS.md` | `glyph-canonical-1.0.0` | Canonical form rules (authoritative) |
 | `docs/LOOSE_MODE_SPEC.md` | `glyph-loose-1.0.0` | GLYPH-Loose subset |
-| `docs/GS1_SPEC.md` | `gs1-1.0.0` | GS1 stream framing |
+| `docs/GS1_SPEC.md` | `gs1-1.1.0` | GS1 stream framing |
 
 `CANONICAL_FORMS.md` is the authoritative contract for the canonical form rules; it supersedes
-conflicting statements in other documents where it says so explicitly.
+conflicting statements in other documents where it says so explicitly. For value identity —
+the bytes hashed by `fingerprint`, the patch `base`, and the GS1 `base` — `SPEC-CANON.md` is
+normative over `CANONICAL_FORMS.md` where the two overlap.
 
 The 51-case conformance corpus in `conformance/corpus/` (sourced from
 `go/glyph/testdata/loose_json/`) is normative test data. A case file + its paired `.want` file
@@ -49,7 +53,9 @@ changelog entry.
 1. Open an issue describing the proposed change and the reason.
 2. Update the relevant spec document(s) and bump the version in the header.
 3. If canonical output changes for any existing case, update `go/glyph/testdata/loose_json/golden/`
-   and regenerate `conformance/corpus/` (run `conformance/materialize_corpus.sh`).
+   and regenerate `conformance/corpus/` (run `conformance/materialize_corpus.sh`). Gate: the
+   change must keep `harness/state_identity` green for Go, Python, and JS alongside the
+   conformance corpus.
 4. All three gate implementations (Go, Python, JS) must pass `conformance/run_conformance.sh`
    before merging.
 5. Tag the commit with `spec-vX.Y.Z` (e.g. `spec-v1.0.1`) in addition to any code tags.

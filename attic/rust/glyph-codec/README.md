@@ -62,8 +62,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - loose-mode canonicalization
 - JSON bridge
 - 64-hex SHA-256 fingerprint (`hash_loose` / `fingerprint_loose`): hashes the
-  no-tabular canonical form and returns the full 64-character hex digest,
-  matching Go/Python/JS `FingerprintLoose` semantics
+  no-tabular canonical form and returns the full 64-character hex digest —
+  **not** interchangeable with Go/Python/JS `fingerprint`, which hashes
+  `canon_json(v)` (SPEC-CANON.md §5), a separate JSON byte form
 - schema evolution helpers
 - streaming validator
 

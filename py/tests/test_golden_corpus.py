@@ -39,7 +39,9 @@ def _collect_cases():
         name = os.path.basename(case_path)[:-5]  # strip .json
         want_path = os.path.join(_GOLDEN_DIR, name + ".want")
         if not os.path.exists(want_path):
-            # No golden file for this case; skip it (e.g. 050_dynamic_keys_metadata).
+            # No golden file for this case; skip it defensively. (Every case
+            # in the corpus currently ships one, including
+            # 050_dynamic_keys_metadata.want.)
             continue
         yield pytest.param(name, case_path, want_path, id=name)
 

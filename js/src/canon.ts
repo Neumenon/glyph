@@ -1,5 +1,5 @@
 /**
- * Canonical JSON profile glyph-canon-json-1.0.0 (see SPEC-CANON.md).
+ * Canonical JSON profile glyph-canon-json-1.1.0 (see SPEC-CANON.md).
  *
  * The only byte form GLYPH hashes. fingerprint, the patch base and the GS1
  * state hash are all sha256(canonJson(v)). GLYPH text is a renderer and is
@@ -14,6 +14,7 @@ import {
   fromJsonLoose,
   TENSOR_DTYPE_BITS,
   tensorRefValue,
+  checkTensorPadding,
 } from './loose';
 
 export const CANON_MAX_DEPTH = 1000;
@@ -45,14 +46,12 @@ export function fingerprint(v: GValue): string {
   return createHash('sha256').update(canonJson(v), 'utf8').digest('hex');
 }
 
-/** @deprecated Use fingerprint. */
-export const fingerprintLoose = fingerprint;
-
 /**
  * {"$tensor":{dtype,shape,sha256}} for raw element bytes (SPEC-CANON.md §4).
  * Only sha256(data) enters the value. Throws for an unknown dtype, a negative
- * dim, or data that is not the packed size dtype and shape imply
- * (little-endian, row-major, sub-byte dtypes LSB-first). Node-only (crypto).
+ * dim, data that is not the packed size dtype and shape imply
+ * (little-endian, row-major, sub-byte dtypes LSB-first), or non-zero padding
+ * bits in the unused high bits of the last byte. Node-only (crypto).
  */
 export function tensorRef(dtype: string, shape: number[], data: Uint8Array): GValue {
   if (!Object.prototype.hasOwnProperty.call(TENSOR_DTYPE_BITS, dtype)) {
@@ -66,6 +65,7 @@ export function tensorRef(dtype: string, shape: number[], data: Uint8Array): GVa
   if (data.length !== want) {
     throw new CanonError(`tensor data is ${data.length} bytes; dtype ${dtype} shape [${shape}] packs to ${want}`);
   }
+  checkTensorPadding(dtype, shape, data);
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { createHash } = require('crypto');
   return tensorRefValue(dtype, shape, createHash('sha256').update(data).digest('hex'));

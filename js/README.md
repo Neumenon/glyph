@@ -48,7 +48,7 @@ const parsed = parsePacked(text, schema);
 
 ## Main Surfaces
 
-- loose mode: `fromJsonLoose`, `toJsonLoose`, `canonicalizeLoose`, `fingerprintLoose`
+- loose mode: `fromJsonLoose`, `toJsonLoose`, `canonicalizeLoose`, `fingerprint`
 - JSON bridge: `fromJson`, `toJson`, `parseJson`
 - schema: `SchemaBuilder`, `t`
 - encoding: `emit`, `emitPacked`, `emitTabular`, `emitPatch`

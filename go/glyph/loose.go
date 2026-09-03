@@ -113,10 +113,9 @@ func writeCanonBytes(b *strings.Builder, data []byte) {
 }
 
 // ============================================================
-// Loose Mode Hash/Fingerprint
+// Loose Mode Equality
 // ============================================================
 
-// FingerprintLoose returns the SHA-256 hex digest of the no-tabular canonical
 // EqualLoose checks if two GValues are semantically equal using loose
 // canonicalization. Compares no-tabular canonical bytes directly so the
 // result aligns with Fingerprint equality.
