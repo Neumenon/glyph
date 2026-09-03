@@ -17,7 +17,7 @@ Capability coverage:
   S1 JSON bridge · S2 canonicalization · S3 fingerprint+parity · S4 tabular
   compaction · S5 patch apply · S6 patch-base fail-closed · S7 GS1 framing+wire
   parity · S8 streaming firewall. Cross-language conformance is woven through
-  S1-S5 (Go/Py/JS), S6 (base parity Go/Py/JS), S7 (Go/JS), S8 (Py/JS).
+  S1-S5 (Go/Py/JS), S6 (base parity Go/Py/JS), S7 (Go/Py/JS), S8 (Py/JS).
 """
 import json
 import os
@@ -205,7 +205,7 @@ def eval_S6(ev, inp):
 
 
 def eval_S7(ev, inp):
-    e = Eval("GS1 stream framing: wire parity + decode round-trip + base-enforced cursor", ["go", "js"])
+    e = Eval("GS1 stream framing: wire parity + decode round-trip + base-enforced cursor", ["go", "py", "js"])
     frames = inp["S7_gs1_stream"]["frames"]
     exp_kinds = [f["kind"] for f in frames]
     for L, d in ev.items():
@@ -216,9 +216,9 @@ def eval_S7(ev, inp):
         e.check(f"{L}: cursor rejects stale base (fail-closed)", d["base_reject"])
         e.evidence[L] = {"stream_sha256": d["stream_sha256"][:16] + "…"}
     oks, _ = equal_across(ev, "stream_sha256")
-    e.check("cross-lang: encoded wire bytes byte-for-byte identical (Go==JS)", oks)
+    e.check("cross-lang: encoded wire bytes byte-for-byte identical (Go==Py==JS)", oks)
     okh, _ = equal_across(ev, "statehash_hex")
-    e.check("cross-lang: stream state hash identical (Go==JS)", okh)
+    e.check("cross-lang: stream state hash identical (Go==Py==JS)", okh)
     return e
 
 
@@ -242,7 +242,7 @@ EVALUATORS = [
     ("S4", ["go", "py", "js"], eval_S4),
     ("S5", ["go", "py", "js"], eval_S5),
     ("S6", ["go", "py", "js"], eval_S6),
-    ("S7", ["go", "js"], eval_S7),
+    ("S7", ["go", "py", "js"], eval_S7),
     ("S8", ["py", "js"], eval_S8),
 ]
 

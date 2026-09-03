@@ -7,11 +7,12 @@ implementation, and prints a single JSON evidence object to stdout. It does NOT
 decide pass/fail — that is the orchestrator's job (one evaluator, applied
 identically to every language → "consistent evaluation method").
 
-Applicable scenarios: S1, S2, S3, S4, S5, S6, S8.
-(S7 / GS1 stream framing is Go+JS only — Python has no GS1 surface.)
+Applicable scenarios: S1, S2, S3, S4, S5, S6, S7, S8.
 
 Usage:  python3 runner.py <inputs.json>
 """
+import base64
+import hashlib
 import json
 import os
 import platform
@@ -27,6 +28,7 @@ from glyph import (  # noqa: E402
     equal_loose, parse_patch, apply_patch, compute_base_fingerprint,
     verify_patch_base, PatchBaseMismatch, StreamingValidator, ToolRegistry,
 )
+from glyph import stream as gstream  # noqa: E402
 
 
 def _cjson(value):
@@ -128,6 +130,62 @@ def s6(inp):
     return {"base64hex": base64hex, "verify_accept": accept, "verify_reject": reject}
 
 
+# ── S7 ──────────────────────────────────────────────────────────────────────
+def s7(inp):
+    d = inp["S7_gs1_stream"]
+    sid = int(d["sid"])
+    frames = []
+    for f in d["frames"]:
+        kind, ok = gstream.parse_kind(f["kind"])
+        if not ok:
+            raise ValueError(f"bad kind {f['kind']!r}")
+        frames.append(gstream.Frame(
+            version=1, sid=sid, seq=int(f["seq"]), kind=kind,
+            payload=f["payload"].encode("utf-8"), final=bool(f.get("final")),
+        ))
+    stream_bytes = gstream.encode_frames(frames)
+
+    decoded = gstream.decode_frames(stream_bytes)
+    payloads_ok = len(decoded) == len(d["frames"]) and all(
+        fr.payload.decode("utf-8") == d["frames"][i]["payload"] for i, fr in enumerate(decoded)
+    )
+
+    # Base-enforced cursor (fail-closed)
+    st = from_json_loose(d["base_state"])
+    cur = gstream.StreamCursor()
+    cur.set_state(sid, st)
+    correct = gstream.state_hash_loose(st)
+    try:
+        cur.process_frame(gstream.Frame(
+            version=1, sid=sid, seq=1, kind=gstream.KIND_PATCH,
+            payload=d["base_patch_payload"].encode("utf-8"), base=correct,
+        ))
+        base_accept = True
+    except Exception:
+        base_accept = False
+    wrong = bytes([0xde]) + bytes(31)
+    try:
+        cur.process_frame(gstream.Frame(
+            version=1, sid=sid, seq=2, kind=gstream.KIND_PATCH,
+            payload=d["base_patch_payload"].encode("utf-8"), base=wrong,
+        ))
+        base_reject = False
+    except Exception:
+        base_reject = True
+
+    return {
+        "stream_sha256": hashlib.sha256(stream_bytes).hexdigest(),
+        "stream_b64": base64.b64encode(stream_bytes).decode("ascii"),
+        "frame_count": len(decoded),
+        "kinds": [gstream.kind_to_str(fr.kind) for fr in decoded],
+        "seqs": [int(fr.seq) for fr in decoded],
+        "payloads_ok": payloads_ok,
+        "statehash_hex": gstream.hash_to_hex(correct),
+        "base_accept": base_accept,
+        "base_reject": base_reject,
+    }
+
+
 # ── S8 ──────────────────────────────────────────────────────────────────────
 def _registry(spec):
     reg = ToolRegistry()
@@ -185,6 +243,7 @@ def main():
             "S4": scenario(lambda: s4(inp)),
             "S5": scenario(lambda: s5(inp)),
             "S6": scenario(lambda: s6(inp)),
+            "S7": scenario(lambda: s7(inp)),
             "S8": scenario(lambda: s8(inp)),
         },
     }
